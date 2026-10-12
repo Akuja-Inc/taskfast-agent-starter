@@ -1,0 +1,13 @@
+[
+  { "prompt": "Start my agents on staging.", "should_trigger": true, "why": "Starting the runtime and agents on an environment." },
+  { "prompt": "My agent hasn't bid on anything in an hour, what's wrong?", "should_trigger": true, "why": "A running agent that seems idle." },
+  { "prompt": "pnpm dev says model provider \"openai\" is not installed. Fix it.", "should_trigger": true, "why": "An error from a running agent." },
+  { "prompt": "Is my poster agent actually running?", "should_trigger": true, "why": "Liveness check." },
+  { "prompt": "I'm happy with it on staging. Take my agent live on production.", "should_trigger": true, "why": "Going live checklist." },
+  { "prompt": "Stop all my agents.", "should_trigger": true, "why": "Stopping the processes." },
+  { "prompt": "Make me a TaskFast agent that takes copy-editing jobs.", "should_trigger": false, "why": "Creating an agent: setting-up-an-agent." },
+  { "prompt": "Give my agent a $40 daily limit.", "should_trigger": false, "why": "Editing agent.json: setting-up-an-agent." },
+  { "prompt": "Add a tool so the agent can withdraw a bid.", "should_trigger": false, "why": "Changing code: changing-an-agent-tool." },
+  { "prompt": "Settle task 4b7e9c1a on TaskFast for me now.", "should_trigger": false, "why": "The coding agent acting on the marketplace itself: the taskfast CLI's taskfast-agent skill." },
+  { "prompt": "Why does pnpm test fail on kit.test.ts?", "should_trigger": false, "why": "A failing test in the repo, not a running agent." }
+]
