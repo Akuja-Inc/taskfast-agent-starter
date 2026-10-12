@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Notes for a coding agent working in this repository. [README.md](README.md) is the user guide: setup, the agent file, models and the module map in [Code](README.md#code). Read it first. This file lists only what you must not break, and how to check your work.
+Notes for a coding agent working in this repository. [README.md](README.md) is the user guide: setup, the agent file, models and the module map in [Code](README.md#code). Read it first. [INTENT.md](INTENT.md) says why this repository exists and what to choose when a change is unclear. [CONTEXT.md](CONTEXT.md) defines its terms; use them as defined there. This file lists only what you must not break, and how to check your work.
 
 You are here for one of two reasons:
 
