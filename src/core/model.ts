@@ -1,49 +1,78 @@
-import { createRequire } from "node:module";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import type { LanguageModel } from "ai";
-import { PROVIDERS } from "./providers.js";
+import { createModels, createProvider, type Models, type Provider } from "@earendil-works/pi-ai/models";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { PROVIDERS, type ProviderSource } from "./providers.js";
 import { splitModel } from "./spec.js";
 
-type Provider = { languageModel(modelId: string): LanguageModel };
-
-// Where provider <id> lives: export <id> of @ai-sdk/<id>, unless providers.ts (generated
-// from the packages by scripts/gen-providers.mjs) names another package or export, as
-// for OpenRouter, Ollama and Amazon Bedrock.
-export const providerSource = (id: string): { package: string; export: string } => PROVIDERS[id] ?? { package: `@ai-sdk/${id}`, export: id };
-
-// The agent file names its model as "provider:model", and the provider's package must
-// be installed in the project (`pnpm setup-agent` installs it). Each provider reads its
-// own settings from the environment (ANTHROPIC_API_KEY, MOONSHOT_API_KEY, ...).
-//
-// The package is resolved from the project, not from the bundle: the runtime builds
-// actor code into its data directory, which may sit outside the project, where no
-// node_modules is found (checked in the real runtime, 2026-10-11). The project is where
-// PERSONA_ACTORS_CLIENT points (the generated client, an absolute file URL that self.ts
-// already needs), else the working directory. This is one of the core's two computed
-// imports (allowed by name in test/core-boundary.test.ts); spec.ts limits the provider
-// id to [a-z0-9-], and the package comes from providerSource.
-export const projectAnchor = (): string => process.env.PERSONA_ACTORS_CLIENT || join(process.cwd(), "package.json");
-
-export async function loadModel(id: string, from = projectAnchor()): Promise<LanguageModel> {
-  const { provider: name, modelId } = splitModel(id);
-  const source = providerSource(name);
-  let path: string;
-  try {
-    path = createRequire(from).resolve(source.package);
-  } catch {
-    throw new Error(`model provider "${name}" is not installed: run \`pnpm setup-agent\`, or \`pnpm add ${source.package}\` in the project (looked from ${from})`);
-  }
-  const provider = ((await import(pathToFileURL(path).href)) as Record<string, unknown>)[source.export] as Provider | undefined;
-  if (typeof provider?.languageModel !== "function") throw new Error(`${source.package} has no provider export "${source.export}"`);
-  return provider.languageModel(modelId);
+// Explicit allow-list. A provider ID is never a package name or an import path.
+export function providerSource(id: string): ProviderSource {
+  const source = Object.hasOwn(PROVIDERS, id) ? PROVIDERS[id] : undefined;
+  if (!source) throw new Error(`unsupported model provider "${id}"; see docs/providers.md and providers.json`);
+  return source;
 }
 
-let factory: (id: string) => Promise<LanguageModel> = (id) => loadModel(id);
+// Custom endpoints/deployments have no reliable catalog metadata. Do not borrow
+// reasoning, vision, prices or compatibility claims from an unrelated model.
+function customModel({ id, provider, api, baseUrl }: { id: string; provider: string; api: Api; baseUrl: string }): Model<Api> {
+  return {
+    id, name: id, provider, api, baseUrl, reasoning: false, input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 32768, maxTokens: 4096,
+    compat: { supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStore: false, maxTokensField: "max_tokens" },
+  };
+}
 
-export const languageModel = (id: string): Promise<LanguageModel> => factory(id);
+function ollamaProvider(modelId: string): Provider {
+  const baseUrl = "http://127.0.0.1:11434/v1";
+  return createProvider({
+    id: "ollama", name: "Ollama", baseUrl,
+    models: [customModel({ id: modelId, provider: "ollama", api: "openai-completions", baseUrl })],
+    auth: {
+      apiKey: {
+        name: "Ollama (optional proxy key)",
+        resolve: async ({ ctx, credential, signal }) => {
+          signal.throwIfAborted();
+          const apiKey = credential?.key || await ctx.env("OLLAMA_API_KEY") || "ollama";
+          const url = credential?.env?.OLLAMA_BASE_URL ?? await ctx.env("OLLAMA_BASE_URL") ?? baseUrl;
+          signal.throwIfAborted();
+          return { auth: { apiKey, baseUrl: url }, source: "Ollama endpoint" };
+        },
+      },
+    },
+    api: openAICompletionsApi(),
+  });
+}
 
-// For tests: replace how a model id becomes a model.
-export function setModelFactory(f: (id: string) => LanguageModel): void {
-  factory = async (id) => f(id);
+/** A private collection with only this agent's requested provider registered.
+ * No model/auth requests or package installation occur during construction.
+ * Native chat metadata comes from the pinned catalog; unknown IDs are refused
+ * except pulled Ollama models and Azure deployment names.
+ */
+export async function createAgentModels(id: string): Promise<Models> {
+  const { provider: name, modelId } = splitModel(id);
+  const source = providerSource(name);
+  const native = source.create ? await source.create() : ollamaProvider(modelId);
+  let deployment: Model<Api> | undefined;
+  if (!native.getModels().some((model) => model.id === modelId)) {
+    const template = name === "azure" ? native.getModels().find((model) => model.api === "azure-openai-responses") : undefined;
+    if (!template) throw new Error(`unsupported model "${id}" in the pinned chat catalog; see providers.json`);
+    deployment = customModel({ id: modelId, provider: native.id, api: template.api, baseUrl: template.baseUrl });
+  }
+  const chatModels = () => {
+    const current = native.getModels();
+    return (deployment ? [...current, deployment] : current).map((model) => ({ ...model, provider: name }));
+  }
+  // Preserve setup aliases in lookup and model IDs while dispatching with the
+  // native identity, which provider-specific protocol behavior can depend on.
+  const provider: Provider = {
+    ...native,
+    id: name,
+    getModels: chatModels,
+    getAllModels: chatModels,
+    stream: (model, context, options) => native.stream({ ...model, provider: native.id }, context, options),
+    streamSimple: (model, context, options) => native.streamSimple({ ...model, provider: native.id }, context, options),
+  };
+  const models = createModels();
+  models.setProvider(provider);
+  return models;
 }

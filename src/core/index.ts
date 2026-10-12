@@ -1,4 +1,4 @@
-// The public surface: what the starter kit (gh#1538) gets when it copies src/core/.
+// Shared pure helpers and types. The persistent agent lifecycle is exported by /agent.
 export * from "./prompt.js";
 export * from "./rng.js";
 export * from "./spec.js";

@@ -26,7 +26,7 @@ export interface PumpOptions {
   maxAttempts?: number;
   // A deliver() still pending after this counts as a failed attempt (default 60 s),
   // so a call that never settles cannot hold the stream. If it completes later, the
-  // re-pushed copy is dropped by the actor's dedupe.
+  // re-pushed copy is dropped by the agent's dedupe.
   deliverTimeoutMs?: number;
   // Failure counts by event id. runEventPumpForever passes one map to every child, so
   // a restart does not reset an event's attempts.
@@ -177,7 +177,7 @@ async function handle(line: string, o: Guarded, stdin: NodeJS.WritableStream, fa
     failures.delete(id!);
     stdin.write(`${id}\n`);
   };
-  // The same rule Persona.deliver applies. Without an id there is nothing the server
+  // The same rule MarketplaceAgent.deliver applies. Without an id there is nothing the server
   // could be holding for us to ack; with one, the event can never be stored, so it is
   // dead-lettered rather than left to stall the stream.
   const problem = eventProblem(m);

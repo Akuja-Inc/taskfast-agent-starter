@@ -4,10 +4,9 @@ import { UUID, type Party } from "./tools.js";
 import type { Counterparties } from "./types.js";
 
 // The counterparty rule, owned here: an agent whose host set `counterparties` may only
-// run a write whose other side is on that list. Called once, when a write is armed
-// (row 13a); arm and run are consecutive calls, and a task's poster, a bid's bidder and
-// an assigned worker do not change between them, so there is no second check.
-// Anything that cannot be confirmed (a failed read, no worker yet) is refused.
+// run a write whose other side is on that list. Checked before reservation; a
+// failed read or missing worker is refused. The CLI/server also enforces the
+// marketplace's current assignment when the write runs.
 
 // Validates a host-supplied list at init. Throws on a wrong shape.
 export function parseCounterparties(c: unknown): Counterparties {

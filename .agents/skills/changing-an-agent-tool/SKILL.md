@@ -13,7 +13,7 @@ description: >-
 
 # Changing an agent tool
 
-Each entry in `TOOLS` (`src/core/tools.ts`) maps one tool to one `taskfast` command. `turn.ts` offers every entry to the model, for every role. Read `AGENTS.md` ("Rules the code depends on") first; this skill gives the order to apply them in.
+Each entry in `TOOLS` (`src/core/tools.ts`) maps a marketplace tool to a CLI command or a notes operation. `agent.ts` registers entries with Pi for every role; Pi owns model/tool tasks, while session-scoped `policy.ts` owns marketplace safety. Read `AGENTS.md` ("Rules the code depends on") first; this skill gives the order to apply them in.
 
 ## 1. Check the command exists
 
@@ -26,7 +26,9 @@ Run `taskfast <command> --help` with the CLI version the kit requires (0.19.0 or
 | `read` | It changes nothing on the server. Safe to repeat. | Nothing else. |
 | `write` | It changes something on the server. | `key` and `party` |
 | `money` | It commits funds. | `key`, `party` and `amount` |
-| `memory` | It changes only the agent's notes. | Its own branch in `act()` in `actors.ts` |
+| `memory` | It changes only the agent's notes. | Its own branch in `marketplacePolicy.execute` in `policy.ts` |
+
+Reads are safe to replay. Writes, money actions and notes operations are registered unsafe to replay in `agent.ts`. Keep sequential execution and root-conversation-only policy access; do not enable forks or child conversations.
 
 If in doubt between `read` and `write`, it is a `write`. If it can move funds, it is `money`.
 
@@ -35,7 +37,7 @@ If in doubt between `read` and `write`, it is a `write`. If it can move funds, i
 - `description`: one sentence the model reads to decide when to call it. Say what it does and what it costs.
 - `schema`: built with `obj(...)`, so `additionalProperties` is false. List required fields.
 - `args(input)`: check every value with the validators at the top of `tools.ts` (`uuid`, `text`, `word`, `money`, `limit`, `hours`, or a new one beside them). Pass options as `--name=value`, using `opt(...)` for optional ones. Pass ids as positionals after `"--"`. Never put a raw input value into the args array.
-- `key(input)` (write and money): names the action, such as `bid:<task>` or `escrow:<bid>`. Two calls with the same key are the same action and run once. Choose what makes two attempts "the same": usually the target id, plus a digest of the text when one task can have many (`message_send`). Nothing checks that a write has a key, so do not leave it out.
+- `key(input)` (write and money): names the action, such as `bid:<task>` or `escrow:<bid>`. Two calls with the same key are the same action and run once. Choose what makes two attempts "the same": usually the target id, plus a digest of the text when one task can have many (`message_send`). Policy refuses a write without a key; still check the new entry explicitly.
 - `party` (write and money): who is on the other side: `poster`, `bidder`, `worker`, `other`, or `null` for a post. A `bidder` tool must require both `task_id` and `bid_id`, because the bidder is found among the task's bids.
 - `amount` (money): `bidPrice` or `submissionFee`. The amount is always read from the server in `money.ts`, never taken from the model's input. A new source means a new `AmountSource` and a new branch in `amountOf`, reading the server.
 
@@ -54,12 +56,16 @@ Never loosen a check to make a new tool fit.
 
 ## 5. Check
 
+Use Node 24 and pnpm 10:
+
 ```bash
+pnpm install --frozen-lockfile   # prepare builds dist/
 pnpm typecheck
 pnpm test
-pnpm generate   # builds the actor; actors.ts imports tools.ts
 ```
+
+No Bun or generation step is needed. If policy dispatch changes, cover persistent-store restart as well as argument construction: reservation and spending must commit before the CLI, limits must be rechecked at dispatch, interrupted reservations must become uncertain, and only known refusals may retry. Keep the session-scoped action ledger and UTC-day spend records permanent and unbounded. Never delete or copy live state to test a reset; use fresh temporary stores. Local tests do not prove live staging or production behaviour.
 
 ## 6. Tell TaskFast
 
-TaskFast's persona tooling pins this repository by commit, and its `tools-contract.test.ts` checks tool enum values against TaskFast's OpenAPI spec. In the PR description, list the tools you added or changed, and any enum a tool offers, so the TaskFast pin-bump PR can be checked against them.
+TaskFast's downstream tooling pins this repository by commit, and its `tools-contract.test.ts` checks tool enum values against TaskFast's OpenAPI spec. In the PR description, list tools and enums you added or changed. Consumers must use the new `agent`, `policy` and `storage` lifecycle; `actors`, `self` and `turn` exports are removed without legacy adapters.

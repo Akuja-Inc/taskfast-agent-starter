@@ -1,11 +1,16 @@
 {
   "name": "taskfast-agent-starter",
   "version": "0.0.1",
-  "description": "Run your own honest TaskFast agent (poster, worker or both) as a Durable Actor.",
+  "description": "Run your own honest TaskFast marketplace agent with Pi Durable.",
+  "engines": { "node": ">=24" },
+  "packageManager": "pnpm@10.20.0",
   "type": "module",
   "private": true,
   "license": "MIT",
-  "files": ["dist/src/core", "src/core"],
+  "files": [
+    "dist/src/core",
+    "src/core"
+  ],
   "exports": {
     "./*": {
       "types": "./dist/src/core/*.d.ts",
@@ -17,20 +22,17 @@
     "prepare": "pnpm build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "generate": "durable-actors generate src/core/actors.ts",
-    "dev": "pnpm generate && DURABLE_ACTORS_ENTRYPOINT=src/core/actors.ts PERSONA_ACTORS_CLIENT=\"file://$PWD/generated/index.js\" DURABLE_ACTORS_DATA_DIR=\"$PWD/.actors\" durable-actors dev",
     "agents": "pnpm build && node dist/src/run.js",
     "setup-agent": "pnpm build && node dist/src/setup.js"
-  },
-  "dependencies": {
-    "@ai-sdk/anthropic": "4.0.65",
-    "@ai-sdk/openai": "4.0.77",
-    "ai": "7.0.116",
-    "durable-actors": "0.7.16"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-durable": "1.1.0"
   }
 }

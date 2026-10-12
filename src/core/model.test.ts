@@ -1,81 +1,128 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
-import { loadModel } from "./model.js";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
+import { createAgentModels, providerSource } from "./model.js";
+import { PROVIDERS } from "./providers.js";
 
-// A project holding one fake package whose index.js is `source` (ESM). A fake
-// provider's languageModel returns { provider: <label>, modelId }.
-function project(name: string, source: string): string {
-  const root = mkdtempSync(join(tmpdir(), "model-"));
-  const pkg = join(root, "node_modules", ...name.split("/"));
-  mkdirSync(pkg, { recursive: true });
-  writeFileSync(join(root, "package.json"), "{}");
-  writeFileSync(join(pkg, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
-  writeFileSync(join(pkg, "index.js"), source);
-  return root;
-}
-const fake = (label: string) => `{ languageModel: (modelId) => ({ provider: "${label}", modelId }) }`;
-const anchor = (root: string) => join(root, "package.json");
+const registered = async ({ id, provider, modelId }: { id: string; provider: string; modelId: string }) => {
+  const models = await createAgentModels(id);
+  expect(models.getProviders().map((p) => p.id)).toEqual([provider]);
+  const model = models.getModel(provider, modelId);
+  expect(model).toBeDefined();
+  return { models, model };
+};
+afterEach(() => vi.unstubAllEnvs());
 
-// A provider builds its model without a key; the key is read on the first request.
-describe("loadModel", () => {
-  const saved = process.env.PERSONA_ACTORS_CLIENT;
-  afterEach(() => {
-    if (saved === undefined) delete process.env.PERSONA_ACTORS_CLIENT;
-    else process.env.PERSONA_ACTORS_CLIENT = saved;
-  });
-
+describe("createAgentModels", () => {
   it.each([
-    ["anthropic:claude-haiku-5-5", "anthropic", "claude-haiku-5-5"],
-    ["openai:gpt-5-mini", "openai", "gpt-5-mini"],
-  ])("loads %s from the project's installed @ai-sdk package", async (id, provider, modelId) => {
-    delete process.env.PERSONA_ACTORS_CLIENT;
-    const m = (await loadModel(id)) as { provider: string; modelId: string };
-    expect(m.provider).toContain(provider);
-    expect(m.modelId).toBe(modelId);
+    ["anthropic", "claude-haiku-5-5"],
+    ["openai", "gpt-5-mini"],
+    ["google", "gemini-2.5-flash"],
+    ["amazon-bedrock", "anthropic.claude-3-5-sonnet-20240620-v1:0"],
+  ])("resolves %s chat metadata through an explicitly registered native provider", async (provider, id) => {
+    const source = providerSource(provider);
+    const native = await source.create?.();
+    const nativeModel = native?.getModels().find((model) => model.id === id);
+    // Bedrock's exact catalog IDs can change at a package pin; use a real entry.
+    const selected = nativeModel?.id ?? native?.getModels()[0]?.id;
+    expect(selected).toBeTruthy();
+    if (!selected) throw new Error("missing catalog model");
+    const { models, model } = await registered({ id: `${provider}:${selected}`, provider, modelId: selected });
+    expect(model).toEqual(native?.getModels().find((m) => m.id === selected));
+    expect(models.getModel("not-registered", selected)).toBeUndefined();
   });
 
-  // F1: the runtime's working directory is not the project; the generated client is.
-  it("resolves from the project PERSONA_ACTORS_CLIENT points into, not the working directory", async () => {
-    const root = project("@ai-sdk/elsewhere", `export const elsewhere = ${fake("elsewhere")};`);
-    process.env.PERSONA_ACTORS_CLIENT = pathToFileURL(join(root, "generated", "index.js")).href;
-    expect(await loadModel("elsewhere:m1")).toEqual({ provider: "elsewhere", modelId: "m1" });
+  it("keeps the native API, costs and capability metadata, not just a model ID", async () => {
+    const { model } = await registered({ id: "openai:gpt-5-mini", provider: "openai", modelId: "gpt-5-mini" });
+    expect(model).toEqual(getBuiltinModel("openai", "gpt-5-mini"));
+    expect(model?.api).toBe("openai-responses");
+    expect(model?.contextWindow).toBeGreaterThan(0);
+    expect(model?.cost.input).toBeGreaterThan(0);
   });
 
-  it("names the package to install for a provider that is not installed", async () => {
-    await expect(loadModel("nosuch:some-model", anchor(project("@ai-sdk/other", "export {};")))).rejects.toThrow("pnpm setup-agent`, or `pnpm add @ai-sdk/nosuch");
+  it.each(["gateway", "togetherai"])("preserves the valid %s alias in lookup and environment auth", async (alias) => {
+    const source = providerSource(alias);
+    const native = await source.create?.();
+    const first = native?.getModels()[0];
+    if (!first) throw new Error("missing alias catalog");
+    vi.stubEnv(alias === "gateway" ? "AI_GATEWAY_API_KEY" : "TOGETHER_API_KEY", "alias-test-key");
+    const { models, model } = await registered({ id: `${alias}:${first.id}`, provider: alias, modelId: first.id });
+    expect(model).toEqual({ ...first, provider: alias });
+    expect((await models.getAuth(alias))?.auth.apiKey).toBe("alias-test-key");
+    expect(source.nativeId).toBe(alias === "gateway" ? "vercel-ai-gateway" : "together");
   });
 
-  // F3: the same grammar as parseAgentSpec, which owns it (spec.ts splitModel).
-  it.each(["Anthropic:x", "../evil:x", "@scope/x:y", ":x", "no-colon", "anthropic:", "anthropic:a b"])("refuses the model id %s", async (id) => {
-    await expect(loadModel(id)).rejects.toThrow(/provider:model/);
+  it.each(["nosuch", "alibaba", "anthropic-aws", "cohere", "deepinfra", "gmicloud", "openai-codex", "typesafe", "constructor"])("refuses unsupported provider %s without package guessing", async (provider) => {
+    await expect(createAgentModels(`${provider}:some-model`)).rejects.toThrow(/unsupported model provider/);
+    expect(() => providerSource(provider)).toThrow(/docs\/providers.md/);
   });
 
-  // F2/F5: the export line of @ai-sdk/amazon-bedrock 5.0.113 (dist/index.js), verbatim:
-  // `export { VERSION, amazonBedrock, amazonBedrock as bedrock, createAmazonBedrock };`
-  // No export is named "amazon-bedrock"; providers.ts declares amazonBedrock.
-  it("loads @ai-sdk/amazon-bedrock through the export providers.ts names", async () => {
-    const root = project(
-      "@ai-sdk/amazon-bedrock",
-      `const VERSION = "5.0.113";\nconst amazonBedrock = ${fake("amazon-bedrock")};\nfunction createAmazonBedrock() { return amazonBedrock; }\nexport { VERSION, amazonBedrock, amazonBedrock as bedrock, createAmazonBedrock };`,
-    );
-    expect(await loadModel("amazon-bedrock:anthropic.claude-3-5-sonnet-20240620-v1:0", anchor(root))).toEqual({ provider: "amazon-bedrock", modelId: "anthropic.claude-3-5-sonnet-20240620-v1:0" });
+  it.each(["Anthropic:x", "../evil:x", "@scope/x:y", ":x", "no-colon", "anthropic:", "anthropic:a b"])("refuses malformed id %s", async (id) => {
+    await expect(createAgentModels(id)).rejects.toThrow(/provider:model/);
   });
 
-  it("loads a community provider from the package providers.ts names", async () => {
-    const root = project("ollama-ai-provider-v2", `export const ollama = ${fake("ollama")};\nexport function createOllama() {}`);
-    expect(await loadModel("ollama:qwen3:8b", anchor(root))).toEqual({ provider: "ollama", modelId: "qwen3:8b" });
-    await expect(loadModel("openrouter:x", anchor(root))).rejects.toThrow("pnpm add @openrouter/ai-sdk-provider");
+  it("refuses unknown native model IDs and non-chat classifier IDs", async () => {
+    await expect(createAgentModels("openai:not-in-the-pin")).rejects.toThrow(/unsupported model/);
+    await expect(createAgentModels("openrouter:typesafe/jev-1.13")).rejects.toThrow(/unsupported model/);
+    expect(() => providerSource("toString")).toThrow(/unsupported model provider/);
   });
 
-  // F5: no guessing. Without its declared export, a package is refused, even when it
-  // has exactly one provider under another name.
-  it.each([
-    ["one provider under another name", `export const elsewise = ${fake("elsewise")};`],
-    ["no provider", "export function createBare() {}"],
-  ])("refuses an @ai-sdk package with %s", async (_why, source) => {
-    await expect(loadModel("bare:x", anchor(project("@ai-sdk/bare", source)))).rejects.toThrow('@ai-sdk/bare has no provider export "bare"');
+  it("resolves arbitrary Azure deployment names conservatively", async () => {
+    const { model } = await registered({ id: "azure:my-deployment", provider: "azure", modelId: "my-deployment" });
+    expect(model).toMatchObject({ api: "azure-openai-responses", reasoning: false, input: ["text"], cost: { input: 0, output: 0 }, maxTokens: 4096 });
+  });
+
+  it("uses Gemini's native environment setting", async () => {
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "wrong-variable");
+    vi.stubEnv("GEMINI_API_KEY", "native-variable");
+    const models = await createAgentModels("google:gemini-2.5-flash");
+    expect((await models.getAuth("google"))?.auth.apiKey).toBe("native-variable");
+  });
+
+  it("all generated native factory bindings register their declared identity", async () => {
+    for (const [id, source] of Object.entries(PROVIDERS)) {
+      if (!source.create) continue;
+      const native = await source.create();
+      expect(native.id).toBe(source.nativeId);
+      const first = native.getModels()[0];
+      if (!first) throw new Error(`empty catalog: ${id}`);
+      await registered({ id: `${id}:${first.id}`, provider: id, modelId: first.id });
+    }
+  });
+
+  it.each([undefined, "proxy-test-key"])("Ollama really sends custom colon-tagged tool models through the local OpenAI API (key=%s)", async (key) => {
+    let payload: unknown;
+    let authorization: string | undefined;
+    const server = createServer(async (request, response) => {
+      authorization = request.headers.authorization;
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      expect(request.url).toBe("/v1/chat/completions");
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.end('data: {"id":"local","choices":[{"index":0,"delta":{"content":"Ready"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing server address");
+    vi.stubEnv("OLLAMA_BASE_URL", `http://127.0.0.1:${address.port}/v1`);
+    vi.stubEnv("OLLAMA_API_KEY", key ?? "");
+    try {
+      const { models, model } = await registered({ id: "ollama:qwen3:8b", provider: "ollama", modelId: "qwen3:8b" });
+      if (!model) throw new Error("missing custom model");
+      const result = await models.completeSimple(model, {
+        messages: [{ role: "user", content: "Ready?", timestamp: 1 }],
+        tools: [{ name: "look", description: "Read marketplace", parameters: { type: "object", properties: {}, additionalProperties: false } }],
+      });
+      expect(result.stopReason).toBe("stop");
+      expect(result.content).toContainEqual({ type: "text", text: "Ready" });
+      expect(payload).toMatchObject({ model: "qwen3:8b", tools: [{ type: "function", function: { name: "look" } }] });
+      expect(authorization).toBe(`Bearer ${key || "ollama"}`);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 });

@@ -1,8 +1,8 @@
 name: CI
 
-# Typecheck, test and build on every PR and on main. The tests include the money
-# rule (money.test.ts), the tool table (tools.test.ts) and the scan that keeps
-# private test-population code out of this kit (test/kit.test.ts).
+# Build, typecheck and test on Node 24 without runtime generation or Bun.
+# Tests include persistent Pi recovery/ownership, money policy, event admission,
+# the tool table and the honest-kit scan.
 
 on:
   pull_request:

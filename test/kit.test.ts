@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileS
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { PersonaActor } from "../src/core/actors.js";
+import type { AgentHandle } from "../src/run.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { runAgents } from "../src/run.js";
 
@@ -25,26 +25,26 @@ describe("runAgents", () => {
     return dir;
   }
 
-  it("inits each agent with its own config, then pings it", async () => {
+  it("opens each agent with its own config, then pings and closes it", async () => {
     const dir = agents(true);
     const calls: unknown[] = [];
     const stop = new AbortController();
-    const actor: PersonaActor = {
-      init: async (_spec, rt) => void calls.push(["init", rt]),
+    const agent: AgentHandle = {
       deliver: async () => {},
       ping: async () => (calls.push(["ping"]), stop.abort()),
+      close: async () => void calls.push(["close"]),
     };
-    await runAgents({ agentsDir: dir, env: "staging", actorFor: () => actor, signal: stop.signal, log: () => {} });
-    expect(calls).toEqual([["init", { env: "staging", configPath: join(dir, "me", ".taskfast", "config.json") }], ["ping"]]);
+    await runAgents({ agentsDir: dir, stateDir: join(dir, "state"), env: "staging", openAgent: async (_id, _spec, rt) => { calls.push(["open", rt]); return agent; }, listen: () => ({ close: async () => {} }), signal: stop.signal, log: () => {} });
+    expect(calls).toEqual([["open", { env: "staging", configPath: join(dir, "me", ".taskfast", "config.json") }], ["ping"], ["close"]]);
   });
 
   it("refuses an agent that has not run taskfast init", async () => {
-    const run = runAgents({ agentsDir: agents(false), env: "prod", actorFor: () => ({}) as PersonaActor, signal: AbortSignal.abort(), log: () => {} });
+    const run = runAgents({ agentsDir: agents(false), stateDir: "unused", env: "prod", signal: AbortSignal.abort(), log: () => {} });
     await expect(run).rejects.toThrow(/taskfast --env prod init/);
   });
 
   it("refuses an empty agents directory", async () => {
-    const run = runAgents({ agentsDir: join(tmpdir(), "no-such-agents"), env: "prod", actorFor: () => ({}) as PersonaActor, signal: AbortSignal.abort(), log: () => {} });
+    const run = runAgents({ agentsDir: join(tmpdir(), "no-such-agents"), stateDir: "unused", env: "prod", signal: AbortSignal.abort(), log: () => {} });
     await expect(run).rejects.toThrow(/no agents/);
   });
 });
@@ -55,7 +55,7 @@ describe("runAgents", () => {
 // names to derive it from, so a change that adds a private name adds it here too. An
 // ordinary word that matches fails the kit, which is the safe direction.
 const FORBIDDEN = /bdaybonus|\b(sniper|sybil|wash|extortion|griefer)\b|intendedAbuse|labels\.jsonl|runGuard|archetype|harness/i;
-const SKIP = new Set(["node_modules", "dist", "generated", ".git", ".actors", ".taskfast", "agents", ".env"]);
+const SKIP = new Set(["node_modules", "dist", ".git", ".pi-state", ".taskfast", "agents", ".env"]);
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => (SKIP.has(n) ? [] : statSync(join(dir, n)).isDirectory() ? files(join(dir, n)) : [join(dir, n)]));

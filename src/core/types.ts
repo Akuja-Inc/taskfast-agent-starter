@@ -24,7 +24,7 @@ export interface Dials {
 
 export interface AgentSpec {
   role: Role;
-  // AI SDK provider and model, "provider:model" (spec.ts splitModel, model.ts). The model decides the agent's
+  // Pi provider and model, "provider:model" (spec.ts splitModel, model.ts). The model decides the agent's
   // actions through tool calls; code enforces the once-only rule and, if set, limits.
   model: string;
   character: Character;
@@ -59,7 +59,7 @@ export interface MarketEvent {
   data?: Json;
 }
 
-// Where this actor's CLI points: its own env and its own persona config. Set at init.
+// Where this agent's CLI points: its own env and its own TaskFast config.
 // `prod` is deliberate: users run their own agents on production, like the taskfast
 // CLI (owner decision, gh#1514).
 export const ENVS = ["prod", "staging", "local"] as const;
@@ -81,34 +81,8 @@ export interface Counterparties {
   agents: string[];
 }
 
-// One entry in the current turn's record: what the model chose and what came back.
-export interface TurnEntry {
-  tool: string;
-  input: Json;
-  result: Json;
-}
-
-export interface Turn {
-  id: string;
-  startedAt: string;
-  // Inbox events this turn was shown; removed only when the turn closes.
-  inboxIds: string[];
-  transcript: TurnEntry[];
-}
-
-// The model's chosen next action. A write moves from decided to executing in its own
-// committed call before the command runs; armedBy names the one call allowed to run it.
-// Its kind and action key are not stored: prepare() derives them from the tool table.
-export interface Pending {
-  tool: string;
-  input: Json;
-  status: "decided" | "executing";
-  armedBy?: string;
-  // For a money tool: the amount it will commit, fixed by code when it is armed.
-  amount?: number;
-}
-
-// Only what the once-only rule reads; the result itself is in the turn's transcript.
+// A settled marketplace action. In-flight reservations live in policy.ts; these
+// outcomes remain the input to the pure money accounting helpers.
 export interface ActionRecord {
   status: "done" | "failed" | "uncertain";
   at: string;

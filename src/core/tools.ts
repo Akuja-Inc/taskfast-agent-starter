@@ -22,14 +22,14 @@ interface ToolBase {
   description: string;
   schema: { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[] }>; required: string[]; additionalProperties: false };
   args(input: Record<string, unknown>): string[];
-  key?(input: Record<string, unknown>): string;
+
 }
 export type ToolSpec =
-  | (ToolBase & { kind: "read" | "memory"; amount?: never; party?: never })
-  | (ToolBase & { kind: "write"; amount?: never; party: Party | null })
+  | (ToolBase & { kind: "read" | "memory"; amount?: never; party?: never; key?: never })
+  | (ToolBase & { kind: "write"; amount?: never; party: Party | null; key(input: Record<string, unknown>): string })
   // For a money tool, where its amount comes from, always read from the server: the
   // bid's price, or the platform's submission fee. Never free text from the model.
-  | (ToolBase & { kind: "money"; amount: AmountSource; party: Party | null });
+  | (ToolBase & { kind: "money"; amount: AmountSource; party: Party | null; key(input: Record<string, unknown>): string });
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PRICE = /^\d{1,9}(\.\d{1,2})?$/;
@@ -188,7 +188,12 @@ export const TOOLS: Record<string, ToolSpec> = {
 export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: string[]; key: string | null; input: Record<string, unknown> } {
   const spec = Object.hasOwn(TOOLS, tool) ? TOOLS[tool]! : bad(`no tool named ${tool}`);
   if (input === null || typeof input !== "object" || Array.isArray(input)) bad("tool input must be an object");
-  const i = input as Record<string, unknown>;
-  for (const k of Object.keys(i)) if (!Object.hasOwn(spec.schema.properties, k)) bad(`${tool} has no field ${k}`);
+  const i = { ...(input as Record<string, unknown>) };
+  for (const k of Object.keys(i)) {
+    if (!Object.hasOwn(spec.schema.properties, k)) bad(`${tool} has no field ${k}`);
+    // UUID case is not marketplace identity. Normalize before both key construction
+    // and the policy reads, so a fresh model call cannot vary casing to run twice.
+    if (k === "task_id" || k === "bid_id") i[k] = uuid(i[k], k).toLowerCase();
+  }
   return { spec, args: spec.args(i), key: spec.key ? spec.key(i) : null, input: i };
 }

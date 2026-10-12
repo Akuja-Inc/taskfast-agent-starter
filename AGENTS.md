@@ -1,57 +1,62 @@
 # AGENTS.md
 
-Notes for a coding agent working in this repository. [README.md](README.md) is the user guide: setup, the agent file, models and the module map in [Code](README.md#code). Read it first. [INTENT.md](INTENT.md) says why this repository exists and what to choose when a change is unclear. [CONTEXT.md](CONTEXT.md) defines its terms; use them as defined there. This file lists only what you must not break, and how to check your work.
+Notes for a coding agent working in this repository. Read [README.md](README.md) first for setup, agent files, models and the [module map](README.md#code). [INTENT.md](INTENT.md) says what to choose when a change is unclear; [CONTEXT.md](CONTEXT.md) defines the terms. This file lists what not to break and how to check your work.
 
-You are here for one of two reasons:
-
-- **Helping someone run their own agent:** setting it up, starting it, or changing its `agents/<name>/agent.json`.
-- **Changing the agent itself:** the code in `src/core/`, `src/run.ts`, `src/setup.ts` or `scripts/`.
+You are here to help someone run or configure their own agent, or to change code in `src/core/`, `src/run.ts`, `src/setup.ts` or `scripts/`.
 
 ## Running an agent
 
-- **Production is the default, and production is real money.** `pnpm setup-agent`, `pnpm agents` and the `taskfast` CLI all target production unless told otherwise. Pass `--env staging` (testnet, free test funds) or `--env development` (a TaskFast server on `127.0.0.1:4000`). Use production only when the user asks for it in that request.
-- Every setup question has a flag (`pnpm setup-agent --help`), so run setup without prompts. Pass keys as `--set NAME` with the value already in the environment, not `--set NAME=value`, so they stay out of shell history and your transcript.
-- `pnpm dev` (the actor runtime) and `pnpm agents` run until stopped. Start them in the background, `pnpm dev` first.
-- Never print, commit or copy `.env` or `agents/*/.taskfast/config.json`. They hold the model key and the TaskFast API key. Both are git-ignored; keep it that way.
-- Do not delete `.actors/` while an agent has state you care about. It holds each agent's record of the writes it has made, and that record is what stops a write running twice. Delete it and a bid, post or escrow funding can run again.
-- An agent file is checked strictly (`src/core/spec.ts`), so add no extra fields. Start from a file in `examples/`. `limits` is optional, but suggest it for any agent that posts: without it, nothing caps spending.
+- **Production is the default and real money.** Setup, `pnpm agents` and the CLI target production unless told otherwise. Use `--env staging` (free test funds) or `--env development` (server on `127.0.0.1:4000`). Use production only when the user explicitly asks for it in this request.
+- Every setup question has a flag (`pnpm setup-agent --help`); run without prompts. Pass keys as `--set NAME` with the value already in the environment, never `--set NAME=value` in your commands or transcript.
+- `pnpm agents --env staging` is the only long-running host needed. It opens stores, agents, streams and periodic polling in one process. Start it in the background when using tools. No separate runtime, Bun or generation command is needed.
+- Never print, commit or copy `.env` or `agents/*/.taskfast/config.json`. The host loads `.env` locally; TaskFast children retain their restricted environment. Do not forward secrets or wallet passwords to work around a refusal.
+- State lives in `.pi-state/<cli-env>/<agent>/state.sqlite` (`prod`, `staging`, `local`). Keep it on local disk, never a network filesystem. Never delete state you care about; never delete or copy a live store or companion files. The ledger prevents duplicate bids, posts and escrow funding.
+- A separate `state.sqlite.owner` SQLite database holds a lifetime `BEGIN EXCLUSIVE` lock. A second owner is refused. Process death releases the OS lock; deleting the file is not lock recovery.
+- SQLite uses WAL with `synchronous=FULL`, overriding the backend's `NORMAL` default. Power-loss durability still requires storage that honors fsync. Do not weaken synchronization or the owner lock.
+- Agent files are strict (`spec.ts`): start from `examples/`, add no extra fields. Suggest both spending limits for posting; without limits nothing caps commitments.
+- Provider support comes from pinned Pi-ai 1.1.0. Read [Providers](docs/providers.md) for auth choices and gaps. No arbitrary provider module loading, package installs during setup or automatic conversion of old settings/state.
+- Do not claim live staging or production validation from local tests. Ask permission for live work and report exactly what was exercised.
 
-## Changing the code
+## Changing code
 
 ### Check your work
 
-Node 24 and pnpm 10, as in CI (`.github/workflows/ci.yml`):
+Node 24 and pnpm 10, as in CI:
 
 ```bash
-pnpm install --frozen-lockfile   # also builds dist/ (prepare)
+pnpm install --frozen-lockfile   # prepare builds dist/
 pnpm typecheck
 pnpm test
 ```
 
-CI runs the same three on every PR. None of them builds the actor: tests import `actors.ts` only for its types. If you change `actors.ts` or anything it imports, also run `pnpm generate` (needs Bun), which builds it the way `pnpm dev` does. Keep `pnpm-lock.yaml` in step with `package.json`; `--frozen-lockfile` fails otherwise.
+`pnpm build` directly runs the TypeScript build. There is no actor build or generation step. Keep the lockfile in step with `package.json`. For policy or storage changes, include real persistent-store restart and ownership checks, not only mocked model calls. Keep live marketplace validation separate from local checks.
 
 ### Rules the code depends on
 
-- **A write runs at most once.** Every `write` or `money` tool in `src/core/tools.ts` needs a `key` that names the action (`bid:<task>`, `escrow:<bid>`). The type leaves `key` optional and no test checks that a new tool has one, so check it yourself: a write with no key shares one ledger entry with every other keyless write. Keep the ledger (`actions` in `actors.ts`) unbounded; never evict entries.
-- **Only a refusal is retried.** `cli.ts` sorts each result into `ok`, `failed` (refused before acting) or `uncertain` (may have reached the server). Never retry an `uncertain` write. Add a CLI error code to `REFUSED` only if the CLI guarantees that the server did nothing.
-- **Code sets every amount of money, never the model.** A `money` tool names its `amount` source, which `money.ts` reads from the server (`amountOf`). The money rule runs `authorize` when the write is armed, `recheck` just before it runs and `account` afterwards. Count `uncertain` as spent.
-- **Model values never become flags.** Pass tool inputs as `--name=value` options or as positionals after `--`, each one checked by a validator in `tools.ts`. Never splice raw input into the args.
-- **Every write names its `party`** (`null` only for a post). The type enforces this; `counterparty.ts` relies on it.
-- **`Persona` methods are public.** The runtime exposes every method on the class and requires each to be async, so internal steps stay module functions in `actors.ts`. Do not add `@Interleave`: `deliver()` relies on one call per actor at a time.
-- **One CLI child per command.** `runCli` gives it the agent's own config, `--env` ahead of the subcommand, and an environment with only `PATH`, `HOME` and `TASKFAST_CONFIG`. Do not pass the host environment through.
+- **Pi owns conversation, model and tool tasks.** `openMarketplaceAgent(AgentOptions)` in `agent.ts` opens persistent storage and one root conversation. No coding tools, child conversations or forks are enabled. Marketplace tools execute sequentially and policy serializes reservation through dispatch.
+- **Policy is permanent and session-scoped.** `Policy` in `policy.ts` owns `actions`, spend by UTC day and notes. Conversation reset or compaction must never erase it. Keep action and daily spending records unbounded; never evict entries.
+- **Reserve before dispatch.** Every write or money tool needs a meaningful action key. Policy commits the reservation and spending atomically before invoking the CLI. Reopening converts interrupted `reserved` actions to `uncertain`. No dispatch permission survives a restart.
+- **Only a refusal is retried.** CLI outcomes are `ok`, `failed` (known refusal before acting) and `uncertain`. Only a known failure releases spending and permits another attempt. Success and uncertain actions never repeat. Register writes as unsafe to replay in Pi. Add an error code to `REFUSED` only if the CLI guarantees the server did nothing.
+- **Code sets every amount, never the model.** A money tool declares an `amount` source read from the server by `amountOf` in `money.ts`. Policy checks limits at reservation and immediately before dispatch, including UTC-day rollover. Interrupted or uncertain reservations remain spent, even if dispatch might not have started.
+- **Model values never become flags.** Validate tool inputs in `tools.ts`; pass them as `--name=value` options or positionals after `--`. Never splice raw input into arguments.
+- **Every write names its `party`** (`null` only for a post). Counterparty checks happen before reservation; a refused check must run no write.
+- **ACK means durable admission, not model completion.** `deliver()` validates and stores the event before resolving. Preserve event-id deduplication and recovery of admitted work. The host closes streams before stores so it cannot acknowledge after ownership closes.
+- **One CLI child per command.** `runCli` uses the agent's config, `--env` before the subcommand and only `PATH`, `HOME`, `TASKFAST_CONFIG` in the child environment. Never pass through the host environment.
 
 ### Generated and captured files
 
-- `providers.json` and `src/core/providers.ts` are generated. Change `scripts/gen-providers.mjs` and run `node scripts/gen-providers.mjs` (it needs the network). The run refuses to drop a provider or setting unless you record it in `REMOVED` or `REMOVED_SETTINGS`. `test/setup.test.ts` checks the catalogue against the pins in `package.json`.
-- `test/fixtures/cli/` holds real `taskfast` CLI output. Re-capture it when the CLI version changes, as its README says. Do not hand-edit it to make a test pass.
-- `generated/`, `dist/` and `.actors/` are build and runtime output. Do not commit them.
+- `providers.json` and `src/core/providers.ts` are generated. Change `scripts/gen-providers.mjs` and run `node scripts/gen-providers.mjs` against the installed exact Pi-ai pin (offline). Record intended provider or setting removals in `REMOVED` or `REMOVED_SETTINGS`. Do not hand-edit generated outputs.
+- `test/fixtures/cli/` holds real CLI output. Re-capture when the CLI contract changes, as its README says. Never edit captures to make a test pass.
+- `dist/` and `.pi-state/` are build and runtime output. Do not commit them or credentials.
 
 ### The kit scan
 
-This kit runs honest agents only. `test/kit.test.ts` scans every file in the repository, this one included, for words that belong to private TaskFast test tooling, and fails on any match. Some patterns match inside longer words. Read the list in that test before you name things, and do not copy names, labels or strategies from the TaskFast repository. If an ordinary word trips the scan, choose another word; do not weaken the test.
+This kit runs honest agents only. `test/kit.test.ts` scans repository files, including these documents, for names from private TaskFast test tooling. Some patterns match inside longer words. Read its list before naming things. Do not copy upstream names, labels or strategies. Choose another name if a match occurs; never weaken the scan.
 
 ### Downstream: the TaskFast repository
 
-TaskFast's persona tooling pins this repository by commit and imports `taskfast-agent-starter/<module>`, which `exports` maps to `dist/src/core/<module>.js`. It also copies `src/core/` as source before `durable-actors generate`. Renaming or moving a module in `src/core/`, or changing an export it uses, breaks TaskFast at its next pin bump. On that PR, its `tools-contract.test.ts` also checks the tool table in `tools.ts` against TaskFast's OpenAPI spec, so a tool's enum values must match what the server publishes. Call out such changes in your PR description.
+TaskFast's downstream tooling pins this repository by commit and imports `taskfast-agent-starter/<module>`, mapped to `dist/src/core/<module>.js` and declarations. The new exports are `agent`, `policy` and `storage`; `actors`, `self` and `turn` are removed. Downstream consumers MUST update imports and adopt `openMarketplaceAgent` with persistent local storage and explicit stream/shutdown ownership before bumping the pin. No legacy adapters or state-migration tooling are supplied; do not imply old state is imported or safely disposable.
 
-`durable-actors` is pre-1.0 and pinned exactly, and its build needs TypeScript 5.9. Bump it on its own, never as part of another change.
+Call out this breaking package/lifecycle change in the PR description. Tool enums must still match TaskFast's OpenAPI spec and its downstream `tools-contract.test.ts`.
+
+The Pi packages are experimental and pinned exactly to 1.1.0. Do not float versions or casually combine a runtime upgrade with unrelated changes; verify persistence, replay safety and provider support at any new pin.
