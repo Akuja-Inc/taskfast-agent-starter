@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "generate": "durable-actors generate src/core/actors.ts",
     "dev": "pnpm generate && DURABLE_ACTORS_ENTRYPOINT=src/core/actors.ts PERSONA_ACTORS_CLIENT=\"file://$PWD/generated/index.js\" DURABLE_ACTORS_DATA_DIR=\"$PWD/.actors\" durable-actors dev",
-    "agents": "pnpm build && node dist/src/run.js"
+    "agents": "pnpm build && node dist/src/run.js",
+    "setup-agent": "pnpm build && node dist/src/setup.js"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.65",

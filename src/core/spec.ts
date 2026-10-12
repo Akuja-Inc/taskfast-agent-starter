@@ -43,12 +43,21 @@ function parseLimits(v: unknown): Limits {
   return out;
 }
 
+// The model id grammar, "provider:model": a provider name in [a-z0-9-] (an
+// @ai-sdk/<provider> package, see model.ts), then the provider's own model id.
+export function splitModel(id: unknown): { provider: string; modelId: string } {
+  const model = text(id, "model");
+  if (!/^[a-z0-9-]+:\S+$/.test(model)) fail(`model must be "provider:model", got ${JSON.stringify(model)}`);
+  const at = model.indexOf(":");
+  return { provider: model.slice(0, at), modelId: model.slice(at + 1) };
+}
+
 // Validates an agent file (parsed JSON) and returns a copy holding only known fields.
 export function parseAgentSpec(raw: unknown): AgentSpec {
   const o = record(raw, "agent", ["role", "model", "character", "dials", "limits"]);
   const role = oneOf(o.role, "role", MARKET);
-  const model = text(o.model, "model");
-  if (!/^[a-z0-9-]+:\S+$/.test(model)) fail(`model must be "provider:model", got ${JSON.stringify(model)}`);
+  const model = o.model as string;
+  splitModel(model);
 
   const c = record(o.character, "character", ["name", "businessName", "businessDescription", "goals", "budgetUsd"]);
   const character: Character = {

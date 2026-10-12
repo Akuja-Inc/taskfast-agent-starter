@@ -9,8 +9,8 @@ export interface SelfActor {
 
 // The generated client is loaded at run time from an absolute file URL
 // (PERSONA_ACTORS_CLIENT): the runtime bundles actor code into its own directory, so a
-// relative path does not reach the package's generated/ folder. This is the core's
-// one computed import (allowed by name in test/core-boundary.test.ts).
+// relative path does not reach the package's generated/ folder. This is one of the
+// core's two computed imports (allowed by name in test/core-boundary.test.ts).
 let loader: (id: string) => Promise<SelfActor> = async (id) => {
   const url = process.env.PERSONA_ACTORS_CLIENT;
   if (!url) throw new Error("PERSONA_ACTORS_CLIENT is not set: point it at generated/index.js as a file:// URL");

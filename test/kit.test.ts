@@ -55,7 +55,7 @@ describe("runAgents", () => {
 // names to derive it from, so a change that adds a private name adds it here too. An
 // ordinary word that matches fails the kit, which is the safe direction.
 const FORBIDDEN = /bdaybonus|\b(sniper|sybil|wash|extortion|griefer)\b|intendedAbuse|labels\.jsonl|runGuard|archetype|harness/i;
-const SKIP = new Set(["node_modules", "dist", "generated", ".git", ".actors", ".taskfast", "agents"]);
+const SKIP = new Set(["node_modules", "dist", "generated", ".git", ".actors", ".taskfast", "agents", ".env"]);
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => (SKIP.has(n) ? [] : statSync(join(dir, n)).isDirectory() ? files(join(dir, n)) : [join(dir, n)]));

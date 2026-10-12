@@ -24,7 +24,7 @@ export interface Dials {
 
 export interface AgentSpec {
   role: Role;
-  // AI SDK provider registry id, "provider:model". The model decides the agent's
+  // AI SDK provider and model, "provider:model" (spec.ts splitModel, model.ts). The model decides the agent's
   // actions through tool calls; code enforces the once-only rule and, if set, limits.
   model: string;
   character: Character;

@@ -5,7 +5,18 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { PersonaActor } from "./core/actors.js";
 import { parseAgentSpec } from "./core/spec.js";
-import { ENVS, type Env } from "./core/types.js";
+import type { Env } from "./core/types.js";
+
+// The environment names the kit's commands take, and the taskfast CLI's name for each.
+// development is a TaskFast server on this machine (127.0.0.1:4000).
+export const ENVIRONMENTS = { production: "prod", staging: "staging", development: "local" } as const satisfies Record<string, Env>;
+export type Environment = keyof typeof ENVIRONMENTS;
+
+// A kit environment name as the CLI's name for it.
+export function taskfastEnv(name: string): Env {
+  if (Object.hasOwn(ENVIRONMENTS, name)) return ENVIRONMENTS[name as Environment];
+  throw new Error(`--env must be production, staging or development, not ${JSON.stringify(name)}`);
+}
 
 export interface RunOptions {
   agentsDir: string;
@@ -38,11 +49,11 @@ export async function runAgents(o: RunOptions): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { values } = parseArgs({ options: { env: { type: "string", default: "prod" } } });
-  if (!ENVS.includes(values.env as Env)) throw new Error(`--env must be one of ${ENVS.join(", ")}`);
+  const { values } = parseArgs({ options: { env: { type: "string", default: "production" } } });
+  const env = taskfastEnv(values.env);
   // The typed client `pnpm generate` writes; built path is dist/src/run.js.
   const { actors } = (await import(new URL("../../generated/index.js", import.meta.url).href)) as { actors: { Persona: { get(id: string): PersonaActor } } };
   const stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
-  await runAgents({ agentsDir: "agents", env: values.env as Env, actorFor: (id) => actors.Persona.get(id), signal: stop.signal, log: console.log });
+  await runAgents({ agentsDir: "agents", env, actorFor: (id) => actors.Persona.get(id), signal: stop.signal, log: console.log });
 }

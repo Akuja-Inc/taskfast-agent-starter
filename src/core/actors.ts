@@ -87,7 +87,7 @@ export class Persona extends Actor {
     const turn = this.turn ?? { id: randomUUID(), startedAt: new Date().toISOString(), inboxIds: this.inbox.map((e) => e.event_id), transcript: [] };
     const events = this.inbox.filter((e) => turn.inboxIds.includes(e.event_id));
     // 4, 5, 6. A model error throws here and the whole call rolls back (I5).
-    const d = await decideNext(languageModel(spec.model), { spec, memory: this.memory, events, transcript: turn.transcript });
+    const d = await decideNext(await languageModel(spec.model), { spec, memory: this.memory, events, transcript: turn.transcript });
     if (d.type === "end") return closeTurn(this, id, turn);
     try {
       prepare(d.tool, d.input);

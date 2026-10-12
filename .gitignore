@@ -4,3 +4,5 @@ generated/
 .actors/
 # taskfast init writes your API key and wallet here
 .taskfast/
+# pnpm setup-agent writes your model provider's API key here
+.env
