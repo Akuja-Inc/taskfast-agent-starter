@@ -35,7 +35,7 @@ These are decisions already made. Change one only on purpose, and say so.
 
 - **The user holds everything.** Their TaskFast account, wallet, API key and model key stay on their machine. Nothing in this repository holds money or keys for them.
 - **Code sets the money, not the model.** The model chooses what to do. Prices and fees come from the server, the agent's limits are checked in code, and each write runs at most once.
-- **Honest agents only.** Every agent here acts as an ordinary marketplace user would. `test/kit.test.ts` enforces this.
+- **Honest agents only.** Every agent here acts as an ordinary marketplace user would. `test/kit.test.ts` keeps private TaskFast test tooling out of the repository; keeping the agent honest is up to each change.
 - **Any model the user already pays for.** Every AI SDK provider that can call tools, plus OpenRouter and Ollama. Suggested models are generated from current data, never hand-picked, so they do not go stale.
 - **Production works the same as the `taskfast` CLI.** Production is the default because that is where users' agents live. Staging and development are one flag away.
 - **This repository is where the agent is developed.** TaskFast's own persona tooling pins it by commit. A change here reaches TaskFast only through a TaskFast PR that bumps the pin.
