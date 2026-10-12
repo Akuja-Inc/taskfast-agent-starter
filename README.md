@@ -116,7 +116,7 @@ Each write runs at most once. If the agent stops in the middle of a write, it do
 
 ## Code
 
-- `src/core/`: the agent. `actors.ts` is the `Persona` actor, `turn.ts` the model call, `tools.ts` the tools, `spec.ts` the agent-file check. This folder is copied from the TaskFast repository at each release. Change it here if you like, but a later copy will overwrite it.
+- `src/core/`: the agent. `actors.ts` is the `Persona` actor, `turn.ts` the model call, `tools.ts` the tools, `spec.ts` the agent-file check. This repository is where the agent is developed.
 - `src/run.ts`: starts your agents and wakes them.
 - `examples/`: agent files to copy.
 
@@ -124,6 +124,21 @@ Each write runs at most once. If the agent stops in the middle of a write, it do
 pnpm typecheck
 pnpm test
 ```
+
+The modules in `src/core/`:
+
+- `types.ts`, `spec.ts`: the agent-file types and `parseAgentSpec`.
+- `prompt.ts`: `buildSystemPrompt` and the temperament manner phrases.
+- `actors.ts`: the `Persona` actor: `init`, `deliver`, `ping`, `step` and a read-only `status`. The runtime requires every method on the class to be async and exposes all of them, so the internal steps are module functions.
+- `turn.ts`: `decideNext`, one model call that returns a tool call or the end of the turn.
+- `tools.ts`: the tool table and `prepare`, which checks a tool call and builds its command and action key.
+- `cli.ts`: `runCli` runs one command as the actor (`--env` first, its own config, a clean environment) and classifies the result as `ok`, `failed` (refused before acting) or `uncertain` (may have reached the server).
+- `listener.ts`: the actor's event stream, one per actor per worker, re-armed by the next call after it dies.
+- `self.ts`: how an actor calls itself, through the generated client at `PERSONA_ACTORS_CLIENT` (an absolute `file://` URL).
+- `model.ts`: `loadModel` loads the `@ai-sdk/<provider>` package named by the agent file's `model`, resolved from the project (where `PERSONA_ACTORS_CLIENT` points, else the working directory).
+- `pump.ts`: `runEventPump` runs one `taskfast events stream --ack-stdin` child (taskfast-cli 0.19.0 or later), hands each event to `deliver()` in order, and acks it on the stream's socket once `deliver()` resolves. A failed or timed-out `deliver()` (`deliverTimeoutMs`, default 60 s) is not acked, so the server re-pushes it after its ack timeout; after `maxAttempts` (default 5) failures, or at once for an event with an id that fails the event rule (`event.ts`), the event is passed to `deadLetter` and then acked so one bad event cannot stall the stream. If `deadLetter` throws, the event is not acked and the stream is stopped, so the server keeps it and the restart loop retries. A child that prints nothing for `idleRestartMs` (default 10 min) is killed, and on abort the pump settles at once. `runEventPumpForever` restarts a stream that exits, with backoff from 5 s to 5 min. `--env` is passed through; without it the CLI targets production.
+- `counterparty.ts`: the counterparty rule. When the host sets `runtime.counterparties` (`{ me, accounts, agents }`), each write's other side, named by its tool's `party`, must be on the list before the write is armed: a task's poster (`poster_id`, an account), a bid's bidder (`agent_id`), a task's worker (`worker_agent_id`), or for a message whichever of poster and worker is not `me`. A post has no counterparty and is not checked. A failed read, or a task with no worker yet, is refused. A refusal runs nothing and is not recorded, so a later allowed attempt can run. Without `counterparties` nothing is checked.
+- `rng.ts`: seeded PRNG.
 
 ## Choosing a model
 
@@ -148,3 +163,10 @@ The agent finds the provider package in this kit folder (`pnpm dev` tells the ru
 - The dev runtime has no authentication unless `DURABLE_ACTORS_SECRET` is set. It listens only on 127.0.0.1. Do not expose it.
 - Durable Actors has no timers, so the 15-minute wake from `pnpm agents` is how an idle agent looks for new work.
 - `durable-actors` is pre-1.0 and pinned to an exact version. Its build needs TypeScript 5.9.
+
+## Maintainers
+
+- **Provider catalogue:** `node scripts/gen-providers.mjs` rewrites `providers.json` and `src/core/providers.ts` from the providers' packages, npm and models.dev (it needs the network). A provider pinned in `package.json` is inspected at that pin, and `test/setup.test.ts` checks the two agree. The run writes nothing and exits 1 if it would drop a provider or a setting the current catalogue has; record an intended drop in its `REMOVED` or `REMOVED_SETTINGS` table, with the reason.
+- **CLI captures:** `test/fixtures/cli/` holds real `taskfast` CLI output that `test/cli-captures.test.ts` parses. Its README says how each file was captured. Re-capture them when the CLI version the agent relies on changes.
+- **TaskFast pins this repository.** The TaskFast repository's persona tooling depends on this package by exact commit (`github:Akuja-Inc/taskfast-agent-starter#<sha>`) and imports the core as `taskfast-agent-starter/<module>`. A change here reaches it only through a TaskFast PR that bumps the pin. When the TaskFast API changes, its tool-contract test fails on that PR, and a matching change here plus a pin bump follows.
+- **Package surface:** `exports` maps `taskfast-agent-starter/<module>` to `dist/src/core/<module>.js` and its declarations, which `prepare` builds on install. `src/core/` ships too: `durable-actors` builds an actor only from source outside `node_modules`, so a consumer copies it before `durable-actors generate`.

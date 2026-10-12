@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "environment": "local",
+  "dry_run": false,
+  "data": {
+    "config": {
+      "default_pickup_window_hours": 24,
+      "max_task_duration_days": 30,
+      "submission_fee": "0.25",
+      "submission_fee_currency": "USD"
+    }
+  },
+  "security_warnings": []
+}
