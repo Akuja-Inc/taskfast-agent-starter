@@ -28,7 +28,7 @@ pnpm typecheck
 pnpm test
 ```
 
-CI runs the same three on every PR. Keep `pnpm-lock.yaml` in step with `package.json`; `--frozen-lockfile` fails otherwise.
+CI runs the same three on every PR. None of them builds the actor: tests import `actors.ts` only for its types. If you change `actors.ts` or anything it imports, also run `pnpm generate` (needs Bun), which builds it the way `pnpm dev` does. Keep `pnpm-lock.yaml` in step with `package.json`; `--frozen-lockfile` fails otherwise.
 
 ### Rules the code depends on
 
