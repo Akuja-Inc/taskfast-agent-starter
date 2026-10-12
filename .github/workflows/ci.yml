@@ -41,6 +41,7 @@ jobs:
           node-version: "24"
           cache: "pnpm"
 
+      # Install also builds dist/: pnpm runs the root `prepare` (`pnpm build`).
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
@@ -49,6 +50,3 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-      - name: Build
-        run: pnpm build
