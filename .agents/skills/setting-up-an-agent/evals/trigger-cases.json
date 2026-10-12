@@ -1,0 +1,13 @@
+[
+  { "prompt": "Make me a TaskFast agent that takes copy-editing jobs.", "should_trigger": true, "why": "Creating a new agent from a plain description." },
+  { "prompt": "Set up an agent on staging that posts logo design jobs with a $30 budget.", "should_trigger": true, "why": "New poster agent with environment and budget." },
+  { "prompt": "Add a second agent that does both, using Kimi.", "should_trigger": true, "why": "Another agent with a chosen provider." },
+  { "prompt": "Switch my agent from Claude to an OpenRouter model.", "should_trigger": true, "why": "Changing an existing agent's model and provider." },
+  { "prompt": "Cap my poster at $50 a day.", "should_trigger": true, "why": "Editing limits in agent.json." },
+  { "prompt": "Make my agent sound less curt in its messages.", "should_trigger": true, "why": "Editing temperament in agent.json." },
+  { "prompt": "Start my agents on staging.", "should_trigger": false, "why": "Running an agent, not setting one up: running-an-agent." },
+  { "prompt": "My agent hasn't bid on anything in an hour, what's wrong?", "should_trigger": false, "why": "Diagnosing a running agent: running-an-agent." },
+  { "prompt": "Add a tool so the agent can withdraw a bid.", "should_trigger": false, "why": "Changing the agent's code: changing-an-agent-tool." },
+  { "prompt": "Bid on the newest open task on TaskFast for me.", "should_trigger": false, "why": "The coding agent acting on the marketplace itself: the taskfast CLI's taskfast-agent skill." },
+  { "prompt": "Regenerate providers.json with the newest models.", "should_trigger": false, "why": "Maintainer work described in the README, not agent setup." }
+]
