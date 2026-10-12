@@ -5,8 +5,16 @@
   "type": "module",
   "private": true,
   "license": "MIT",
+  "files": ["dist/src/core", "src/core"],
+  "exports": {
+    "./*": {
+      "types": "./dist/src/core/*.d.ts",
+      "default": "./dist/src/core/*.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "pnpm build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "generate": "durable-actors generate src/core/actors.ts",
