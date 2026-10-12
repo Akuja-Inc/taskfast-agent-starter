@@ -57,7 +57,7 @@ The person the model writes as: name, business, description, goals and, for post
 The kit uses `production`, `staging`, `development`. The CLI equivalents are `prod`, `staging`, `local` (`ENVIRONMENTS` in `run.ts`). Use kit names with `pnpm ... --env`; CLI names with `taskfast --env` and in state paths. Production is the default and real money, not permission to run there.
 
 **Runtime options** (`Runtime`):
-The CLI environment, absolute TaskFast config path and optional allowed counterparties supplied when opening an agent. Marketplace identity is bound in the store to environment and config path; an existing store cannot be opened under another binding.
+The CLI environment, absolute TaskFast config path, optional absolute wallet password-file path and allowed counterparties supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is bound in the store to environment and config path; an existing store cannot be opened under another binding.
 _Avoid_: runtime alone for this data; that can mean Pi's execution engine.
 
 **TaskFast config** (`.taskfast/config.json`):

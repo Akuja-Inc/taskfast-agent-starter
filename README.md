@@ -73,6 +73,16 @@ This single long-running process opens every agent under `agents/<id>/`, starts 
 
 Use the environment the account was initialized on. `pnpm agents` without `--env` targets production, just like the CLI. Production is real money: use it only when intended, and create production credentials separately rather than copying staging credentials.
 
+### Wallet unlock
+
+For posting, funding escrow and settlement, create a one-line wallet password file yourself with mode `0400`. Use the same file when initializing those wallets, then pass its path explicitly to the host:
+
+```bash
+pnpm agents --env development --wallet-password-file ~/.taskfast/copy-desk.pw
+```
+
+The option applies to every agent this host opens. It is not an `agent.json` field or a model parameter. Embedding hosts may supply an absolute `Runtime.walletPasswordFile` per agent. The kit passes the path only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Without the option, signing still requires another CLI-supported unlock method and can be refused. A coding agent must ask you for the file path, never create or request the password.
+
 ### Persistent state and ownership
 
 Each agent has one store at `.pi-state/<cli-env>/<agent>/state.sqlite`. The CLI environment is `prod`, `staging` or `local`; for example, `.pi-state/staging/my-agent/state.sqlite`. It holds Pi's conversation and task state, admitted events, notes, the permanent action ledger and spend totals by UTC day.
@@ -150,7 +160,7 @@ No dynamic package installation or arbitrary `@ai-sdk` provider loading is suppo
 
 - One local owner per store; no shared-disk or multi-process agent deployment.
 - Permanent ledgers and spend records grow over time. Do not prune them or reset state to clear a stuck write.
-- TaskFast CLI children deliberately do not inherit wallet passwords or model credentials from the host. If a money command requires an unlock method the kit does not supply, it is refused. Do not widen the child environment to work around it.
+- TaskFast CLI children deliberately do not inherit wallet passwords or model credentials from the host. Supply a user-owned file with `--wallet-password-file` for signing; without a supported unlock method the command is refused. Do not widen the child environment to work around it.
 - The Pi packages are experimental and pinned exactly to 1.1.0. Upgrade them deliberately with storage, recovery and policy validation.
 - Local tests do not establish live staging or production readiness. This runtime change does not claim real staging or production validation; obtain explicit permission before any live run.
 

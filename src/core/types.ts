@@ -67,6 +67,8 @@ export type Env = (typeof ENVS)[number];
 export interface Runtime {
   env: Env;
   configPath: string;
+  // Optional host-only unlock path. Never a model input or child environment value.
+  walletPasswordFile?: string;
   // Optional, set by the host: when present, this agent's writes may involve only these
   // accounts and agents (see counterparty.ts). Without it nothing is checked.
   counterparties?: Counterparties;

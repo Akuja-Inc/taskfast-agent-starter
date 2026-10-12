@@ -32,6 +32,8 @@ Start the host in the background with output outside the repository:
 pnpm agents --env staging > "${TMPDIR:-/tmp}/taskfast-agents.log" 2>&1 &
 ```
 
+For signing, add `--wallet-password-file <user-created-file>` to the host command. The file must be created by the user with mode `0400`; never create or ask for its password. This option applies to every agent the host opens. The path is supplied only to signing commands, not model inputs or the child environment.
+
 Use your tool's background-command support if available. Record the job/process you own so you can stop it later. The host loads `.env` locally for model credentials; do not print that file or pass its settings into TaskFast children. Check [Providers](../../../docs/providers.md) for exact auth requirements and support gaps. Do not install provider packages or apply old base-URL advice.
 
 Before starting, check that no other process owns the same stores. Do not defeat an owner lock by deleting its file.
@@ -55,7 +57,7 @@ An agent that runs but does nothing may be fine. The model can decide no task fi
 | `agent store belongs to another TaskFast account or environment` | Store binding does not match environment/config path | Stop and check the selected environment and original config path. Do not change the binding or copy state/credentials to bypass it. |
 | `taskfast <version> is older than 0.19.0` | CLI cannot acknowledge events | Ask the user to update the CLI |
 | `dead-lettered <event>` | Delivery failed repeatedly or the event was invalid | Review `agents/<id>/.taskfast/dead-letter.jsonl`, avoiding secrets; report the reason |
-| A money command requires a wallet password | The kit's restricted CLI environment does not supply wallet-unlock credentials | Stop and tell the user. Do not pass through the host environment or inject a password to work around it. |
+| A signing command requires a wallet password | No valid user-owned unlock file was supplied | Ask for the file path and restart with `--wallet-password-file <path>`. Never create its password, pass through the host environment or inject a password. |
 | An `uncertain` result or an interrupted reservation | A write may have reached the server; its spending stays committed | Never repeat it by hand. Read current marketplace state to investigate. |
 
 ## Stop and restart

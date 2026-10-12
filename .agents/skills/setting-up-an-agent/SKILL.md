@@ -78,7 +78,7 @@ cd agents/copy-desk && TASKFAST_HUMAN_API_KEY=... taskfast --env staging init \
 
 - `agents/<name>/agent.json` exists, and `.taskfast/config.json` exists after `init`.
 - `git status` shows neither file nor `.env` (all git-ignored). Never print or copy credentials.
-- Tell the user the next step: `pnpm agents --env staging` (or the selected environment), using the running-an-agent skill. One host process owns agents, streams and polling; no separate runtime or generation step is needed.
+- Tell the user the next step: `pnpm agents --env staging` (or the selected environment), using the running-an-agent skill. For signing, add `--wallet-password-file <path>` using the user-created mode-0400 file used to initialize the wallets. One host process owns agents, streams and polling; no separate runtime or generation step is needed.
 - State will live on local disk at `.pi-state/<cli-env>/<name>/state.sqlite` (`prod`, `staging`, `local`), with one owner per store. Never delete or copy live state, and never use a network filesystem.
 - Report what was actually checked. File creation and local tests are not live staging or production validation.
 

@@ -1,6 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type, StringEnum, type Models, type TSchema } from "@earendil-works/pi-ai";
 import * as piDurable from "@earendil-works/pi-durable";
+import { parseWalletPasswordFile } from "./cli.js";
 import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { eventProblem } from "./event.js";
 import { parseCounterparties } from "./counterparty.js";
@@ -59,7 +60,7 @@ function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
 function parseRuntime(runtime: Runtime): Runtime {
   if (!runtime || !ENVS.includes(runtime.env)) throw new Error(`runtime.env must be one of ${ENVS.join(", ")}`);
   if (typeof runtime.configPath !== "string" || !runtime.configPath.startsWith("/")) throw new Error("runtime.configPath must be an absolute path");
-  return { env: runtime.env, configPath: runtime.configPath, ...(runtime.counterparties === undefined ? {} : { counterparties: parseCounterparties(runtime.counterparties) }) };
+  return { env: runtime.env, configPath: runtime.configPath, ...(runtime.walletPasswordFile === undefined ? {} : { walletPasswordFile: parseWalletPasswordFile(runtime.walletPasswordFile) }), ...(runtime.counterparties === undefined ? {} : { counterparties: parseCounterparties(runtime.counterparties) }) };
 }
 
 // One store, root conversation and authoritative policy per marketplace agent.

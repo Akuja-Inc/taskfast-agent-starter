@@ -66,6 +66,17 @@ it("runs real Pi tools, retains notes and blocks business keys after reset and r
   expect((await reopened.status()).memory).toEqual(["Keep the guide concise."]);
 });
 
+it("keeps the host unlock path available at the command boundary", async () => {
+  const file = "/tmp/user-owned-wallet.pw";
+  const kit = await open({ runtime: { env: "staging", configPath: "/tmp/host-config.json", walletPasswordFile: file }, command: async (runtime, args) => {
+    if (args[0] === "platform") return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
+    return runtime.walletPasswordFile === file ? { outcome: "ok" } : { outcome: "failed", error: "keystore: host unlock file missing" };
+  } });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
+  await run(kit.agent);
+  expect(Object.values((await kit.agent.status()).actions).map((action) => action.status)).toEqual(["done"]);
+});
+
 it("does not reserve or dispatch a money tool aborted during its server read", async () => {
   let startRead = () => {};
   let releaseRead = () => {};

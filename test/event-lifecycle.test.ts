@@ -270,6 +270,23 @@ it("the host's periodic poll survives restart and abort closes real agents and l
   await reopened.close();
 });
 
+it("the host passes its unlock path into agent runtime options", async () => {
+  const root = directory();
+  const { fixture, storeDir } = hostAgent({ root, id: "worker" });
+  process.env.TASKFAST_BIN = fixture.bin;
+  const selected = selectedModels(Array.from({ length: 20 }, () => fauxAssistantMessage("Poll complete")));
+  const stop = stopSignal();
+  const files: (string | undefined)[] = [];
+  const file = join(root, "user-owned-wallet.pw");
+  const host = runAgents({
+    agentsDir: join(root, "agents"), stateDir: join(root, "state"), env: "staging", walletPasswordFile: file, signal: stop.signal, log: () => {}, pingEveryMs: 30,
+    openAgent: async (_id, _spec, runtime) => { files.push(runtime.walletPasswordFile); return open({ dir: storeDir, selected, runtime }); },
+  });
+  runs.push(host);
+  try { await waitForRecord({ path: fixture.journal, kind: "start" }); expect(files).toEqual([file]); }
+  finally { stop.abort(); await host; }
+});
+
 it("a partial host startup failure closes previously opened stores and event children", async () => {
   const root = directory();
   const first = hostAgent({ root, id: "a-worker" });

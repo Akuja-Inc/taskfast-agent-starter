@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
 import { parseAgentSpec } from "./core/spec.js";
+import { parseWalletPasswordFile } from "./core/cli.js";
 import type { AgentSpec, Env, Runtime } from "./core/types.js";
 
 export const ENVIRONMENTS = { production: "prod", staging: "staging", development: "local" } as const satisfies Record<string, Env>;
@@ -20,6 +21,7 @@ export interface RunOptions {
   agentsDir: string;
   stateDir: string;
   env: Env;
+  walletPasswordFile?: string;
   openAgent?(id: string, spec: AgentSpec, runtime: Runtime): Promise<AgentHandle>;
   listen?: typeof startListener;
   signal: AbortSignal;
@@ -30,6 +32,7 @@ export interface RunOptions {
 // One owning process per store. Event listeners restart with backoff independently
 // of model runs. The periodic poll survives each host restart and wakes idle agents.
 export async function runAgents(o: RunOptions): Promise<void> {
+  const walletPasswordFile = o.walletPasswordFile === undefined ? undefined : parseWalletPasswordFile(o.walletPasswordFile);
   const ids = existsSync(o.agentsDir) ? readdirSync(o.agentsDir).filter((id) => existsSync(join(o.agentsDir, id, "agent.json"))) : [];
   if (!ids.length) throw new Error(`no agents: put one in ${o.agentsDir}/<id>/agent.json (copy one from examples/)`);
   // Validate all files before opening any store or starting any marketplace work.
@@ -37,7 +40,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     const spec = parseAgentSpec(JSON.parse(readFileSync(join(o.agentsDir, id, "agent.json"), "utf8")));
     const configPath = resolve(o.agentsDir, id, ".taskfast", "config.json");
     if (!existsSync(configPath)) throw new Error(`${id}: no ${configPath}; run \`taskfast --env ${o.env} init\` in ${join(o.agentsDir, id)}`);
-    return { id, spec, runtime: { env: o.env, configPath } };
+    return { id, spec, runtime: { env: o.env, configPath, ...(walletPasswordFile === undefined ? {} : { walletPasswordFile }) } };
   });
   const running: { id: string; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
   try {
@@ -64,9 +67,11 @@ export async function runAgents(o: RunOptions): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // Node loads keys only into this local model host, never a taskfast child.
   if (existsSync(".env")) process.loadEnvFile(".env");
-  const { values } = parseArgs({ options: { env: { type: "string", default: "production" } } });
+  const { values } = parseArgs({ options: { env: { type: "string", default: "production" }, "wallet-password-file": { type: "string" } } });
+  const file = values["wallet-password-file"];
+  if (file !== undefined && !file) throw new Error("--wallet-password-file needs a path");
   const stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
   process.once("SIGTERM", () => stop.abort());
-  await runAgents({ agentsDir: "agents", stateDir: ".pi-state", env: taskfastEnv(values.env), signal: stop.signal, log: (line) => process.stdout.write(`${line}\n`) });
+  await runAgents({ agentsDir: "agents", stateDir: ".pi-state", env: taskfastEnv(values.env), ...(file === undefined ? {} : { walletPasswordFile: resolve(file) }), signal: stop.signal, log: (line) => process.stdout.write(`${line}\n`) });
 }
