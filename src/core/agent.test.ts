@@ -66,6 +66,25 @@ it("runs real Pi tools, retains notes and blocks business keys after reset and r
   expect((await reopened.status()).memory).toEqual(["Keep the guide concise."]);
 });
 
+it("wakes a poster for its configured role and goals rather than worker-only discovery", async () => {
+  const requested = spec();
+  requested.character.goals = "Hire one copy editor for the two-line setup note";
+  const kit = await open({ spec: requested });
+  let prompt = "";
+  let wake = "";
+  kit.faux.setResponses([(input) => {
+    prompt = input.messages.filter((value) => value.role === "system").flatMap((value) => [typeof value.content === "string" ? value.content : value.content.map((part) => part.text).join("\n"), ...Object.values(value.sections ?? {}).filter((section) => typeof section === "string")]).join("\n");
+    const message = input.messages.filter((value) => value.role === "user").at(-1);
+    if (message?.role === "user") wake = typeof message.content === "string" ? message.content : message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
+    return fauxAssistantMessage("Done");
+  }]);
+  await run(kit.agent);
+  expect(prompt).toContain("You hire people");
+  expect(prompt).toContain(requested.character.goals);
+  expect(wake).toContain("poster");
+  expect(wake).toContain(requested.character.goals);
+});
+
 it("keeps the host unlock path available at the command boundary", async () => {
   const file = "/tmp/user-owned-wallet.pw";
   const kit = await open({ runtime: { env: "staging", configPath: "/tmp/host-config.json", walletPasswordFile: file }, command: async (runtime, args) => {

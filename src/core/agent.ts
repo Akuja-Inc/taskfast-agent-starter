@@ -162,7 +162,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       await recover();
       const work = await owner.inspect(context);
       if (work.tasks.length || work.submissions.length) return;
-      await conversation.submit({ type: "input", content: "Check your marketplace work and discover suitable new tasks. Read current state before acting; do not repeat uncertain writes." }, context);
+      await conversation.submit({ type: "input", content: `Check your marketplace work in your ${spec.role} role and pursue your current goals: ${spec.character.goals}. Read current state before acting; do not repeat uncertain writes.` }, context);
     }
     // Restore admitted events even if the process died before submitting to Pi;
     // retry failed model runs and keep queued inputs progressing without repair.
