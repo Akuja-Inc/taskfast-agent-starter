@@ -13,8 +13,8 @@ export type Role = "poster" | "worker" | "both";
 // Every temperament is honest. The prompt uses its manner phrase (prompt.ts MANNER).
 export type Temperament = "patient" | "brisk" | "exacting" | "easygoing" | "curt";
 
-// competence, diligence and priceSensitivity are 0..1. Seeded decisions read them;
-// prompts never interpolate them.
+// competence, diligence and priceSensitivity are 0..1. Nothing reads them yet, and
+// prompts never interpolate them; only temperament reaches the prompt.
 export interface Dials {
   competence: number;
   diligence: number;
