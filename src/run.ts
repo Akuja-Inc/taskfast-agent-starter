@@ -7,7 +7,7 @@ import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
 import { parseAgentSpec } from "./core/spec.js";
 import { parseWalletPasswordFile } from "./core/cli.js";
-import { PASSWORD_PATH, folderFile } from "./core/folder.js";
+import { PASSWORD_PATH, folderFile, portableFile, providerSettings } from "./core/folder.js";
 import type { AgentSpec, Env, Runtime } from "./core/types.js";
 
 export const ENVIRONMENTS = { production: "prod", staging: "staging", development: "local" } as const satisfies Record<string, Env>;
@@ -47,6 +47,10 @@ export async function runAgents(o: RunOptions): Promise<void> {
     if (previous.some((path) => ["", ".owner", "-wal", "-shm"].some((suffix) => existsSync(path + suffix)))) throw new Error(`${id}: prior shared store exists; preserve it, do not start a blank ledger`);
     const configPath = folderFile({ agentDir, path: ".taskfast/config.json", resource: "TaskFast config" });
     if (!existsSync(configPath)) throw new Error(`${id}: no ${configPath}; run \`taskfast --env ${o.env} init\` in ${join(o.agentsDir, id)}`);
+    const config: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error(`${id}: TaskFast config must be an object`);
+    if ("keystore_path" in config && config.keystore_path !== null) portableFile({ agentDir, path: config.keystore_path, resource: "wallet reference" });
+    providerSettings(agentDir); // Check persisted file references before any store opens.
     const localPassword = folderFile({ agentDir, path: PASSWORD_PATH, resource: "wallet unlock file" });
     const file = existsSync(localPassword) ? localPassword : walletPasswordFile;
     return { id, spec, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };

@@ -14,6 +14,8 @@ export function agentDirectory(runtime: Pick<Runtime, "configPath">): string {
 }
 
 export function folderFile(o: { agentDir: string; path: string; resource: string }): string {
+  // Normalization must not erase a linked component before we check it.
+  if ([o.agentDir, o.path].some((path) => path.split(/[\\/]/).includes(".."))) throw new Error(`${o.resource} must refer to a file inside the agent folder without parent traversal`);
   const root = resolve(o.agentDir);
   if (lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${o.resource} must not use a symlink agent folder`);
   const path = resolve(root, o.path.startsWith("~/") ? o.path.slice(2) : o.path);
@@ -27,6 +29,11 @@ export function folderFile(o: { agentDir: string; path: string; resource: string
   return path;
 }
 
+export function portableFile(o: { agentDir: string; path: unknown; resource: string }): string {
+  if (typeof o.path !== "string" || !o.path.trim() || o.path.includes("\0") || isAbsolute(o.path) || o.path.startsWith("~/")) throw new Error(`${o.resource} must use a nonempty folder-relative path`);
+  return folderFile({ ...o, path: o.path });
+}
+
 export function credentialSetting(o: { agentDir: string; name: string; value: string }): string {
   if (!CREDENTIAL_FILES.includes(o.name)) return o.value;
   return relative(resolve(o.agentDir), folderFile({ agentDir: o.agentDir, path: o.value, resource: o.name }));
@@ -36,7 +43,10 @@ export function providerSettings(agentDir: string): Record<string, string> {
   const path = folderFile({ agentDir, path: ".env", resource: "provider settings" });
   const settings: Record<string, string> = {};
   if (existsSync(path)) for (const [name, value] of Object.entries(parseEnv(readFileSync(path, "utf8")))) {
-    if (typeof value === "string") settings[name] = value;
+    if (typeof value === "string") {
+      if (CREDENTIAL_FILES.includes(name)) portableFile({ agentDir, path: value, resource: name });
+      settings[name] = value;
+    }
   }
   return settings;
 }

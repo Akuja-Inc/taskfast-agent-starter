@@ -101,7 +101,7 @@ For posting, funding escrow and settlement, create a one-line `.taskfast/wallet-
 pnpm agents --env development
 ```
 
-The path is not an `agent.json` field or model parameter. The kit passes it only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Every CLI command runs from the agent folder, so the config's relative wallet path continues to work after moving it. Without an unlock file, signing can be refused. A coding agent must ask you to create the file, never create or request its password.
+The path is not an `agent.json` field or model parameter. The kit passes it only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Every CLI command runs from the agent folder, so the config's relative wallet path continues to work after moving it. Stored wallet and provider-file references must be folder-relative. Startup refuses absolute references, escapes and symlinks rather than rewriting private files. Without an unlock file, signing can be refused. A coding agent must ask you to create the file, never create or request its password.
 
 Embedding hosts may supply `Runtime.walletPasswordFile` explicitly. `--wallet-password-file <path>` remains an explicit fallback for folders without their own file; the folder-local file takes precedence. An external fallback is not included when archiving the agent, so use the local file for a self-contained agent.
 

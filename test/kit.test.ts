@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { providerSettings } from "../src/core/folder.js";
 import { describe, expect, it } from "vitest";
 import type { AgentHandle } from "../src/run.js";
 import { parseAgentSpec } from "../src/core/spec.js";
@@ -87,6 +88,41 @@ describe("runAgents", () => {
     expect(opens).toBe(0);
     expect(readFileSync(prior, "utf8")).toBe("simulated permanent history");
     expect(() => statSync(join(dir, "me", ".pi-state"))).toThrow();
+  });
+
+  it.each(["external", "absolute-inside", "escaped", "linked", "cancelled-link", "empty", "invalid"])("refuses a nonportable wallet reference %s before any agent opens", async (kind) => {
+    const dir = agents(true);
+    const home = join(dir, "me");
+    const outside = join(dir, "other-wallet.json");
+    const inside = join(home, ".taskfast", "wallet.json");
+    writeFileSync(outside, "synthetic wallet outside");
+    writeFileSync(inside, "synthetic wallet inside");
+    symlinkSync(outside, join(home, "linked-wallet.json"));
+    mkdirSync(join(dir, "nested"));
+    symlinkSync(join(dir, "nested"), join(home, "parent-link"));
+    const references: Record<string, unknown> = { external: outside, "absolute-inside": inside, escaped: "../other-wallet.json", linked: "linked-wallet.json", "cancelled-link": "parent-link/../other-wallet.json", empty: "", invalid: 42 };
+    writeFileSync(join(home, ".taskfast", "config.json"), JSON.stringify({ keystore_path: references[kind] }));
+    let opens = 0;
+    await expect(runAgents({ agentsDir: dir, env: "staging", signal: AbortSignal.abort(), log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async () => {
+      opens++;
+      return { deliver: async () => {}, ping: async () => {}, close: async () => {} };
+    } })).rejects.toThrow(/relative|inside the agent folder|symlink/);
+    expect(opens).toBe(0);
+    expect(readFileSync(outside, "utf8")).toBe("synthetic wallet outside");
+    expect(() => statSync(join(home, ".pi-state"))).toThrow();
+  });
+
+  it("refuses an absolute persisted provider-file reference without rewriting private settings", () => {
+    const dir = agents(true);
+    const home = join(dir, "me");
+    const credential = join(home, "provider-key.json");
+    writeFileSync(credential, "synthetic provider credential");
+    const settings = `GOOGLE_APPLICATION_CREDENTIALS=${credential}\n`;
+    writeFileSync(join(home, ".env"), settings);
+    expect(() => providerSettings(home)).toThrow(/relative/);
+    expect(readFileSync(join(home, ".env"), "utf8")).toBe(settings);
+    writeFileSync(join(home, ".env"), "GOOGLE_APPLICATION_CREDENTIALS=provider-key.json\n");
+    expect(providerSettings(home)).toEqual({ GOOGLE_APPLICATION_CREDENTIALS: "provider-key.json" });
   });
 
   it("refuses an agent that has not run taskfast init", async () => {

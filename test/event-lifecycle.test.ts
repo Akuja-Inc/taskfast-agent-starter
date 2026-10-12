@@ -78,15 +78,15 @@ function streamFixture({ dir, configPath = join(dir, "config.json"), incoming, e
   const runtime: Runtime = { env: "staging", configPath };
   return { bin, runtime, journal };
 }
-function records(path: string): { kind: string; pid: number; id?: string; configPath?: string }[] {
+function records(path: string): { kind: string; pid: number; cwd: string; id?: string; configPath?: string }[] {
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => {
     const value: unknown = JSON.parse(line);
-    if (typeof value !== "object" || value === null || !("kind" in value) || typeof value.kind !== "string" || !("pid" in value) || typeof value.pid !== "number") throw new Error("invalid stream journal record");
+    if (typeof value !== "object" || value === null || !("kind" in value) || typeof value.kind !== "string" || !("pid" in value) || typeof value.pid !== "number" || !("cwd" in value) || typeof value.cwd !== "string") throw new Error("invalid stream journal record");
     const id = "id" in value ? value.id : undefined;
     const configPath = "configPath" in value ? value.configPath : undefined;
     if ((id !== undefined && typeof id !== "string") || (configPath !== undefined && typeof configPath !== "string")) throw new Error("invalid stream journal fields");
-    return { kind: value.kind, pid: value.pid, ...(id === undefined ? {} : { id }), ...(configPath === undefined ? {} : { configPath }) };
+    return { kind: value.kind, pid: value.pid, cwd: value.cwd, ...(id === undefined ? {} : { id }), ...(configPath === undefined ? {} : { configPath }) };
   });
 }
 async function waitForRecord({ path, kind, count = 1 }: { path: string; kind: string; count?: number }) {
@@ -274,6 +274,7 @@ it("the host's periodic poll survives restart and abort closes real agents and l
     runs.push(host);
     await waitForRecord({ path: fixture.journal, kind: "start", count: restart + 1 });
     expect(records(fixture.journal).filter((item) => item.kind === "me")).toHaveLength(restart + 1);
+    expect(records(fixture.journal).filter((item) => item.kind === "version" || item.kind === "start").map((item) => item.cwd)).toEqual(Array((restart + 1) * 2).fill(dirname(dirname(fixture.runtime.configPath))));
     await expect.poll(() => selected.faux.state.callCount, { timeout: 4000 }).toBeGreaterThanOrEqual(2);
     stop.abort();
     await host;

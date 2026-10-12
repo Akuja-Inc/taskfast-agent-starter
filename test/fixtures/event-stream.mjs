@@ -3,10 +3,11 @@ import { createInterface } from "node:readline";
 
 // All fixture instructions come from this synthetic account file, not the host.
 const config = JSON.parse(readFileSync(process.env.TASKFAST_CONFIG, "utf8"));
-const record = (kind, extra = {}) => appendFileSync(config.journal, JSON.stringify({ kind, pid: process.pid, ...extra }) + "\n");
+const record = (kind, extra = {}) => appendFileSync(config.journal, JSON.stringify({ kind, pid: process.pid, cwd: process.cwd(), ...extra }) + "\n");
 const unexpected = Object.keys(process.env).filter((key) => !["PATH", "HOME", "TASKFAST_CONFIG"].includes(key));
 if (unexpected.length) throw new Error(`unexpected child environment: ${unexpected.join(", ")}`);
 if (JSON.stringify(process.argv.slice(2)) === JSON.stringify(["--version"])) {
+  record("version");
   process.stdout.write("taskfast 0.19.0\n");
   process.exit(0);
 }
