@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { isAbsolute } from "node:path";
 import type { Json, Runtime } from "./types.js";
+import { agentDirectory } from "./folder.js";
 
 // How a command ended, from the agent's side:
 // - ok: the CLI reported success.
@@ -45,7 +46,7 @@ export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promis
     }
   }
   return new Promise((resolve) => {
-    execFile(taskfastBin(), ["--env", rt.env, ...commandArgs], { env: cliEnv(rt), timeout: timeoutMs, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
+    execFile(taskfastBin(), ["--env", rt.env, ...commandArgs], { env: cliEnv(rt), cwd: agentDirectory(rt), timeout: timeoutMs, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
       let envelope: { ok?: unknown; data?: Json; error?: { code?: unknown; message?: unknown } } | null = null;
       try {
         envelope = JSON.parse(stdout);

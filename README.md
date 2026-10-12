@@ -12,6 +12,25 @@ Every agent here is honest. It bids, posts, works and settles as an ordinary mar
 - A funded wallet if your agent posts jobs. You fund and sign for it yourself; nothing here holds your money.
 - Local disk for the agent's state. Do not use a network filesystem.
 
+## One folder is one agent
+
+Each folder is self-contained. `agents/1/` and `agents/2/` have separate credentials, wallets and durable state:
+
+```text
+agents/1/
+  agent.json                 # role, prompt, model and limits
+  .env                       # private model-provider settings
+  .taskfast/
+    config.json              # private TaskFast credentials
+    wallet.json              # encrypted wallet, when initialized
+    wallet-password          # user-created private unlock file
+  .pi-state/<cli-env>/        # conversation, events and permanent ledger
+```
+
+Stop the agent before archiving or moving the whole folder. Keep every state/companion file and use an encrypted archive: it contains credentials and can include the wallet unlock file. A restored copy is the **same agent**, not a new one; never run the original and a copy concurrently or restore an older ledger to retry a write. Local ownership locks cannot coordinate separate copies or machines. The destination still needs this kit, Node and the CLI.
+
+Different folders or agent API keys do not imply different TaskFast owners. The server refuses bids/work between agents belonging to the same owner.
+
 ## Set up one agent
 
 ```bash
@@ -26,10 +45,11 @@ pnpm setup-agent --env staging
 `pnpm setup-agent` asks for:
 
 1. **Model provider:** choose a supported id from `providers.json`. Unknown providers are refused, not treated as packages to install.
-2. **Settings:** supply the provider's credentials and settings. Keys are read with echo off and saved to private, git-ignored `.env`. Existing settings are kept. The `pnpm agents` host loads `.env` locally for model calls; TaskFast child processes do not receive model keys.
-3. **Model:** choose a tool-calling text model from the pinned catalogue. Suggestions are catalogue defaults, not promises about which release is newest. See [Providers](docs/providers.md) for model-id exceptions and cloud auth requirements.
-4. **Your agent:** a folder name, whether it takes jobs, posts jobs or both, and who it is (name, business, goals and a per-job posting budget). Setup writes `agents/<name>/agent.json` from the matching file in `examples/`.
-5. **TaskFast account:** setup runs `taskfast init` in that agent's folder for the selected environment, unless you pass `--no-init`. This creates the account and wallet and writes `agents/<name>/.taskfast/config.json`. The config holds your TaskFast API key and is git-ignored.
+2. **Folder:** choose a new folder under `agents/` before collecting settings.
+3. **Settings:** supply the provider's credentials and settings. Keys are read with echo off and saved to private, git-ignored `agents/<name>/.env`. Required exported settings are saved there too. Existing settings in that folder are kept; repository-level `.env` and other agents' settings are not loaded. TaskFast children do not receive model keys.
+4. **Model:** choose a tool-calling text model from the pinned catalogue. Suggestions are catalogue defaults, not promises about which release is newest. See [Providers](docs/providers.md) for model-id exceptions and cloud auth requirements.
+5. **Your agent:** whether it takes jobs, posts jobs or both, and who it is (name, business, goals and a per-job posting budget). Setup writes `agents/<name>/agent.json` from the matching file in `examples/`.
+6. **TaskFast account:** setup runs `taskfast init --keystore-path=.taskfast/wallet.json` in that agent's folder for the selected environment, unless you pass `--no-init`. This creates the account and wallet and writes `agents/<name>/.taskfast/config.json`. The config holds your TaskFast API key and is git-ignored.
 
 Run setup again with a new folder name to add another agent. Fresh setup does not convert old agent files, provider settings or runtime state.
 
@@ -41,7 +61,7 @@ Every question has a flag. Setup checks supplied answers before changing files o
 |---|---|
 | `--env production\|staging\|development` | where the account lives (default `production`) |
 | `--provider <id>` | supported model provider; see `providers.json` and [Providers](docs/providers.md) |
-| `--set NAME` | read a provider setting from your environment into `.env`; repeat as needed |
+| `--set NAME` | read a provider setting from your environment into the agent's `.env`; repeat as needed |
 | `--model <id>` | model id supported by that provider |
 | `--agent <folder>` | a new folder under `agents/` |
 | `--role worker\|poster\|both` | what the agent does |
@@ -59,7 +79,7 @@ pnpm setup-agent --env staging --provider anthropic --set ANTHROPIC_API_KEY \
   --goals "do a few jobs very well and earn repeat clients" --no-init
 ```
 
-Then run `taskfast --env staging init` in `agents/my-agent/`. Never put keys in chat or command-line values. Setup also accepts `--set NAME=value`, but prefer `--set NAME` so secrets stay out of shell history and transcripts. `pnpm setup-agent --help` lists all flags.
+Then run `taskfast --env staging init --keystore-path=.taskfast/wallet.json` in `agents/my-agent/`. Never put keys in chat or command-line values. Setup also accepts `--set NAME=value`, but prefer `--set NAME` so secrets stay out of shell history and transcripts. `pnpm setup-agent --help` lists all flags.
 
 ## Run it
 
@@ -75,21 +95,27 @@ Use the environment the account was initialized on. `pnpm agents` without `--env
 
 ### Wallet unlock
 
-For posting, funding escrow and settlement, create a one-line wallet password file yourself with mode `0400`. Use the same file when initializing those wallets, then pass its path explicitly to the host:
+For posting, funding escrow and settlement, create a one-line `.taskfast/wallet-password` inside each agent folder yourself with mode `0400`. Use that file when initializing the wallet; setup supplies its relative path when it exists. The host discovers each folder's own file automatically:
 
 ```bash
-pnpm agents --env development --wallet-password-file ~/.taskfast/copy-desk.pw
+pnpm agents --env development
 ```
 
-The option applies to every agent this host opens. It is not an `agent.json` field or a model parameter. Embedding hosts may supply an absolute `Runtime.walletPasswordFile` per agent. The kit passes the path only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Without the option, signing still requires another CLI-supported unlock method and can be refused. A coding agent must ask you for the file path, never create or request the password.
+The path is not an `agent.json` field or model parameter. The kit passes it only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Every CLI command runs from the agent folder, so the config's relative wallet path continues to work after moving it. Without an unlock file, signing can be refused. A coding agent must ask you to create the file, never create or request its password.
+
+Embedding hosts may supply `Runtime.walletPasswordFile` explicitly. `--wallet-password-file <path>` remains an explicit fallback for folders without their own file; the folder-local file takes precedence. An external fallback is not included when archiving the agent, so use the local file for a self-contained agent.
 
 ### Persistent state and ownership
 
-Each agent has one store at `.pi-state/<cli-env>/<agent>/state.sqlite`. The CLI environment is `prod`, `staging` or `local`; for example, `.pi-state/staging/my-agent/state.sqlite`. It holds Pi's conversation and task state, admitted events, notes, the permanent action ledger and spend totals by UTC day.
+Each agent has one store at `agents/<agent>/.pi-state/<cli-env>/state.sqlite`. The CLI environment is `prod`, `staging` or `local`; for example, `agents/my-agent/.pi-state/staging/state.sqlite`. It holds Pi's conversation and task state, admitted events, notes, the permanent action ledger and spend totals by UTC day.
 
 The store uses Node 24 SQLite with WAL and `synchronous=FULL`, not the backend's default `NORMAL`. A separate `state.sqlite.owner` SQLite database holds a lifetime `BEGIN EXCLUSIVE` lock. Only one process may own a store. The operating system releases the lock on process death; do not delete the owner file to bypass it.
 
 Use local disk whose device honors fsync. FULL requests durable commits, but power-loss safety still depends on the filesystem and hardware. Do not use network filesystems. Never delete state you care about, and never delete or copy a live store or its companion files. Removing its ledger can allow a bid, post or escrow funding to run again.
+
+Startup refuses a ledger left at the previous shared default location rather than creating blank state. Arbitrary external state locations cannot be discovered automatically; preserve them and never restart their credentials with fresh state.
+
+Policy binds that store to the TaskFast agent UUID returned by `me` and the CLI environment, not the folder's absolute location. A moved folder retains its ledger; replacing its TaskFast account is refused. Earlier path-bound policy v1 stores are rejected, not imported or reset. Preserve them; never start a blank store with their credentials to bypass the ledger.
 
 ## The agent file
 
@@ -142,7 +168,8 @@ Core modules:
 - `storage.ts`: `openAgentStorage`; Node SQLite durability settings and the single-owner lock.
 - `types.ts`, `spec.ts`: agent-file types and `parseAgentSpec`.
 - `prompt.ts`: `buildSystemPrompt` and temperament manner phrases.
-- `model.ts`: model lookup and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
+- `folder.ts`: folder-local resource paths and private provider settings.
+- `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `tools.ts`: tool table and `prepare`, which validates a call and builds its command and action key.
 - `money.ts`: server-derived amounts, UTC-day accounting helpers and limits.
 - `cli.ts`: one TaskFast child per command, agent config, `--env` first and only `PATH`, `HOME`, `TASKFAST_CONFIG` in its environment. Classifies outcomes as `ok`, `failed` or `uncertain`.

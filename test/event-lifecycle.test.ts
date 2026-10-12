@@ -1,12 +1,13 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, expect, it } from "vitest";
 import { openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
-import { cliEnv } from "../src/core/cli.js";
+import { cliEnv, runCli } from "../src/core/cli.js";
+import type { Command } from "../src/core/policy.js";
 import { runEventPump, runEventPumpForever } from "../src/core/pump.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import type { MarketEvent, Runtime } from "../src/core/types.js";
@@ -59,8 +60,12 @@ function spec() {
   });
 }
 const event = (id: string): MarketEvent => ({ event_id: id, event: "task.updated", task_id: "11111111-1111-4111-8111-111111111111" });
-async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") } }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime }) {
-  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs });
+const identityCommand: Command = async (_runtime, args) => {
+  if (JSON.stringify(args) !== JSON.stringify(["me"])) throw new Error("event lifecycle fixture permits only the identity read");
+  return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
+};
+async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime; command?: Command }) {
+  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs, command });
   agents.push(agent);
   return agent;
 }
@@ -222,6 +227,14 @@ it("reopening recovers an admitted event whose model run failed before shutdown"
   await agent.waitForIdle();
   expect(failed.faux.state.callCount).toBe(1);
   await agent.close();
+  const denied = selectedModels([fauxAssistantMessage("Must not resume without identity")]);
+  const identityReads: string[][] = [];
+  await expect(open({ dir, selected: denied, command: async (_runtime, args) => {
+    identityReads.push(args);
+    return { outcome: "failed", error: "auth: refused" };
+  } })).rejects.toThrow(/identity/);
+  expect(identityReads).toEqual([["me"]]);
+  expect(denied.faux.state.callCount).toBe(0);
   const retried = marker();
   const recovered = selectedModels([(input) => {
     expect(JSON.stringify(input.messages)).toContain("recover-after-restart");
@@ -244,7 +257,7 @@ function hostAgent({ root, id }: { root: string; id: string }) {
   mkdirSync(join(home, ".taskfast"), { recursive: true });
   writeFileSync(join(home, "agent.json"), JSON.stringify(spec()));
   const fixture = streamFixture({ dir: root, configPath: join(home, ".taskfast", "config.json") });
-  return { home, fixture, storeDir: join(root, "state", "staging", id) };
+  return { home, fixture, storeDir: join(home, ".pi-state", "staging") };
 }
 
 it("the host's periodic poll survives restart and abort closes real agents and listeners", async () => {
@@ -255,11 +268,12 @@ it("the host's periodic poll survives restart and abort closes real agents and l
     const selected = selectedModels(Array.from({ length: 20 }, () => fauxAssistantMessage("Poll complete")));
     const stop = stopSignal();
     const host = runAgents({
-      agentsDir: join(root, "agents"), stateDir: join(root, "state"), env: "staging", signal: stop.signal, log: () => {}, pingEveryMs: 30,
-      openAgent: async (_id, _spec, runtime) => open({ dir: storeDir, selected, runtime }),
+      agentsDir: join(root, "agents"), env: "staging", signal: stop.signal, log: () => {}, pingEveryMs: 30,
+      openAgent: async ({ runtime, storePath }) => open({ dir: dirname(storePath), selected, runtime, command: runCli }),
     });
     runs.push(host);
     await waitForRecord({ path: fixture.journal, kind: "start", count: restart + 1 });
+    expect(records(fixture.journal).filter((item) => item.kind === "me")).toHaveLength(restart + 1);
     await expect.poll(() => selected.faux.state.callCount, { timeout: 4000 }).toBeGreaterThanOrEqual(2);
     stop.abort();
     await host;
@@ -279,8 +293,8 @@ it("the host passes its unlock path into agent runtime options", async () => {
   const files: (string | undefined)[] = [];
   const file = join(root, "user-owned-wallet.pw");
   const host = runAgents({
-    agentsDir: join(root, "agents"), stateDir: join(root, "state"), env: "staging", walletPasswordFile: file, signal: stop.signal, log: () => {}, pingEveryMs: 30,
-    openAgent: async (_id, _spec, runtime) => { files.push(runtime.walletPasswordFile); return open({ dir: storeDir, selected, runtime }); },
+    agentsDir: join(root, "agents"), env: "staging", walletPasswordFile: file, signal: stop.signal, log: () => {}, pingEveryMs: 30,
+    openAgent: async ({ runtime, storePath }) => { files.push(runtime.walletPasswordFile); return open({ dir: dirname(storePath), selected, runtime, command: runCli }); },
   });
   runs.push(host);
   try { await waitForRecord({ path: fixture.journal, kind: "start" }); expect(files).toEqual([file]); }
@@ -296,10 +310,10 @@ it("a partial host startup failure closes previously opened stores and event chi
   const stop = stopSignal();
   const selected = selectedModels();
   const host = runAgents({
-    agentsDir: join(root, "agents"), stateDir: join(root, "state"), env: "staging", signal: stop.signal, log: () => {},
-    openAgent: async (id, _spec, runtime) => {
+    agentsDir: join(root, "agents"), env: "staging", signal: stop.signal, log: () => {},
+    openAgent: async ({ id, runtime, storePath }) => {
       if (id === "b-worker") await waitForRecord({ path: first.fixture.journal, kind: "start" });
-      return open({ dir: join(root, "state", "staging", id), selected, runtime });
+      return open({ dir: dirname(storePath), selected, runtime, command: runCli });
     },
   });
   runs.push(host);

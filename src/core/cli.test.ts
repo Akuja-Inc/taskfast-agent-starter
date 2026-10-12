@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, it, vi } from "vitest";
@@ -21,6 +21,20 @@ function commandFixture() {
   const env: Env = "local";
   return { env, configPath: join(dir, "config.json"), walletPasswordFile: join(dir, "wallet with --flags.pw") };
 }
+
+it("resolves folder-local wallet paths after the stopped agent folder moves", async () => {
+  const runtime = commandFixture();
+  const folder = join(runtime.configPath, "..");
+  mkdirSync(join(folder, ".taskfast"));
+  writeFileSync(join(folder, ".taskfast", "wallet.json"), "simulated encrypted wallet");
+  writeFileSync(join(folder, "taskfast"), `#!${process.execPath}\nimport {readFileSync} from 'node:fs';process.stdout.write(JSON.stringify({ok:true,data:{wallet:readFileSync('.taskfast/wallet.json','utf8')}}));\n`, { mode: 0o700 });
+  const moved = `${folder}-moved`;
+  renameSync(folder, moved);
+  directories.push(moved);
+  vi.stubEnv("TASKFAST_BIN", join(moved, "taskfast"));
+  const result = await runCli({ env: runtime.env, configPath: join(moved, ".taskfast", "config.json") }, ["post", "--title=Guide"]);
+  expect(result).toEqual({ outcome: "ok", data: { wallet: "simulated encrypted wallet" } });
+});
 
 it("passes the host unlock file before positionals without adding child environment values", async () => {
   const runtime = commandFixture();

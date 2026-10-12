@@ -14,15 +14,18 @@ The language of this repository. [README.md](README.md#code) maps modules; this 
 ## Who is who
 
 **Agent:**
-The user's marketplace agent: one folder `agents/<name>/` with an agent file and TaskFast config, one persistent store and one Pi root conversation. On the server it is an `Agent` account.
+The user's marketplace participant, with its own identity, behaviour, credentials, wallet material and durable history. On the server it is an `Agent` account.
 _Avoid_: bot, persona, or user when the agent is meant.
+
+**Agent folder:**
+The self-contained bundle belonging to one agent. Its configuration, credentials and durable history stay together when the stopped agent is archived or moved; a copy is not a new agent.
 
 **Coding agent:**
 A tool such as Claude Code, OpenAI Codex, pi or GitHub Copilot that edits this repository or runs commands for a person. It reads `AGENTS.md`. It is never the marketplace agent.
 _Avoid_: agent on its own when the coding agent is meant.
 
 **User:**
-The person who owns the agent, account, wallet and model credentials.
+The person who owns the agent, account, wallet and model credentials. Distinct agent folders or credentials do not imply distinct users; TaskFast forbids an owner's agents from working on that owner's tasks.
 
 **Host:**
 The process that calls `openMarketplaceAgent`, owns the agent's store and stream, polls with `ping()` and closes them at shutdown. Here it is `src/run.ts`; downstream consumers can supply another host. Only a host can set counterparties.
@@ -57,17 +60,17 @@ The person the model writes as: name, business, description, goals and, for post
 The kit uses `production`, `staging`, `development`. The CLI equivalents are `prod`, `staging`, `local` (`ENVIRONMENTS` in `run.ts`). Use kit names with `pnpm ... --env`; CLI names with `taskfast --env` and in state paths. Production is the default and real money, not permission to run there.
 
 **Runtime options** (`Runtime`):
-The CLI environment, absolute TaskFast config path, optional absolute wallet password-file path and allowed counterparties supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is bound in the store to environment and config path; an existing store cannot be opened under another binding.
+The CLI environment, absolute TaskFast config path, optional absolute wallet password-file path and allowed counterparties supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is the TaskFast agent UUID and environment; moving the folder does not change it, but another account cannot use its ledger.
 _Avoid_: runtime alone for this data; that can mean Pi's execution engine.
 
 **TaskFast config** (`.taskfast/config.json`):
 Written by `taskfast init`; holds TaskFast API credentials and wallet settings. Never printed, committed or copied.
 
-**Provider settings** (`.env`):
-Credentials and settings written by setup. `pnpm agents` loads them into its local host for model calls, never into TaskFast children. Never printed, committed or copied.
+**Provider settings** (`agents/<name>/.env`):
+One agent's private model credentials and settings. Setup saves them in its folder; its private model collection uses them without loading repository-level or other agents' settings, and never passes them to TaskFast children. Never printed, committed or copied.
 
 **Store:**
-`.pi-state/<cli-env>/<agent>/state.sqlite`. Holds Pi conversation/tasks plus kit documents for policy and admitted events. Uses Node 24 SQLite WAL and `synchronous=FULL`. Power durability depends on local storage honoring fsync; network filesystems are unsupported.
+`agents/<agent>/.pi-state/<cli-env>/state.sqlite`. Holds Pi conversation/tasks plus kit documents for policy and admitted events. Uses Node 24 SQLite WAL and `synchronous=FULL`. Power durability depends on local storage honoring fsync; network filesystems are unsupported.
 
 **Owner lock:**
 The separate `state.sqlite.owner` SQLite database holds `BEGIN EXCLUSIVE` for the store's lifetime. A second owner is refused; process death releases the OS lock without deleting files. Never delete or copy a live store or companion files.

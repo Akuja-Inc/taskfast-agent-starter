@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { parseEnv } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { createAgentModels, providerSource } from "./core/model.js";
+import { credentialSetting, folderFile, PASSWORD_PATH, WALLET_PATH } from "./core/folder.js";
 import { parseAgentSpec } from "./core/spec.js";
 import type { AgentSpec, Role } from "./core/types.js";
 import { ENVIRONMENTS, taskfastEnv, type Environment } from "./run.js";
@@ -241,18 +242,20 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   if (o.model !== undefined) await createAgentModels(`${provider.id}:${o.model}`);
   if (provider.note) io.log(`\nNote: ${provider.note}`);
 
-  // 2. Provider settings stay in .env; the local agents host loads them.
-  // A --set value is written as given; a required setting already in .env is kept;
-  // any other required setting is asked.
-  const envPath = join(io.root, ".env");
+  // Select the owning folder before collecting private settings. Nothing is
+  // written until the full agent file has been validated.
+  const id = o.agent ?? (await text(io, "\nAgent folder name (agents/<name>)", "my-agent", (v) => agentProblem(io.root, v)));
+  const dir = join(io.root, "agents", id);
+  // Each agent keeps its own provider settings; never read the repository's .env.
+  const envPath = folderFile({ agentDir: dir, path: ".env", resource: "provider settings" });
+  for (const path of ["agent.json", ".taskfast/config.json", WALLET_PATH, PASSWORD_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
   let envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   const save = (name: string, value: string) => {
-    envText = upsertEnv(envText, name, value);
-    writeFileSync(envPath, envText, { mode: 0o600 });
-    chmodSync(envPath, 0o600);
-    io.log(`Saved ${name} to .env`);
+    envText = upsertEnv(envText, name, credentialSetting({ agentDir: dir, name, value }));
+    io.log(`Collected ${name} for agents/${id}/.env`);
   };
-  // Existing shell settings are accepted but never copied without --set NAME.
+  // Required shell settings are saved to this agent's private settings so the
+  // stopped folder remains self-contained.
   const available = (name: string) => set.get(name) ?? envText.split("\n").find((line) => line.startsWith(`${name}=`))?.slice(name.length + 1) ?? io.env[name];
   const defaults = provider.settings.filter((s) => s.required).map((s) => s.name);
   const groups = [defaults, ...provider.authAlternatives];
@@ -261,20 +264,20 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   // rather than prompting for an unrelated bearer token or cloud API key.
   const required = complete ?? groups.find((group) => group.some((name) => !defaults.includes(name) && available(name))) ?? defaults;
   if (provider.nativeId === "google-vertex" && !required.includes("GOOGLE_CLOUD_API_KEY")) {
-    const home = io.env.HOME ?? homedir();
-    const path = available("GOOGLE_APPLICATION_CREDENTIALS") ?? join(home, ".config", "gcloud", "application_default_credentials.json");
-    const expanded = path.startsWith("~/") ? join(home, path.slice(2)) : path;
-    if (!existsSync(expanded)) throw new Error("Vertex ADC needs an existing credentials file: run gcloud auth application-default login, or pass --set GOOGLE_APPLICATION_CREDENTIALS with a service-account file path");
+    const path = available("GOOGLE_APPLICATION_CREDENTIALS") ?? ".config/gcloud/application_default_credentials.json";
+    const local = credentialSetting({ agentDir: dir, name: "GOOGLE_APPLICATION_CREDENTIALS", value: path });
+    if (!existsSync(resolve(dir, local))) throw new Error("Vertex ADC needs an existing credentials file inside the agent folder; place it there and pass --set GOOGLE_APPLICATION_CREDENTIALS");
+    save("GOOGLE_APPLICATION_CREDENTIALS", local);
   }
   for (const [name, value] of set) save(name, value);
-  if (existsSync(envPath)) chmodSync(envPath, 0o600);
   for (const s of provider.settings.filter((s) => required.includes(s.name) && !set.has(s.name))) {
     if (envText.split("\n").some((l) => l.startsWith(`${s.name}=`) && l.length > s.name.length + 1)) {
       io.log(`Using ${s.name} already in .env (pass --set ${s.name}=... to replace it)`);
       continue;
     }
     if (available(s.name)) {
-      io.log(`Using ${s.name} from the environment; keep it available to the agents host or save it with --set ${s.name}`);
+      const value = available(s.name);
+      if (value) save(s.name, value);
       continue;
     }
     const what = s.description ? ` (${s.description})` : "";
@@ -295,7 +298,6 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   }
 
   // 3. The agent.
-  const id = o.agent ?? (await text(io, "\nAgent folder name (agents/<name>)", "my-agent", (v) => agentProblem(io.root, v)));
   const role = (o.role as Role | undefined) ?? (await choose(io, "\nWhat will it do on TaskFast?", Object.keys(ROLES) as Role[], (r) => ROLES[r]));
   if (o.budget !== undefined && role === "worker") throw new Error("--budget: a worker has no budget; it applies to poster and both");
   const example = JSON.parse(readFileSync(join(io.root, "examples", EXAMPLE[role]), "utf8")) as AgentSpec;
@@ -309,14 +311,20 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
     character.budgetUsd = Number(o.budget ?? (await text(io, "Budget per job in USD", String(example.character.budgetUsd ?? 20), (v) => (Number(v) > 0 && Number.isFinite(Number(v)) ? null : "enter a positive number"))));
   }
   const spec = parseAgentSpec({ ...example, role, model, character });
-  const dir = join(io.root, "agents", id);
-  mkdirSync(dir, { recursive: true });
+  const settings: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parseEnv(envText))) if (typeof value === "string") settings[name] = value;
+  await createAgentModels(model, { agentDir: dir, settings });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (envText) {
+    writeFileSync(envPath, envText, { mode: 0o600 });
+    chmodSync(envPath, 0o600);
+  }
   writeFileSync(join(dir, "agent.json"), `${JSON.stringify(spec, null, 2)}\n`);
   io.log(`\nWrote agents/${id}/agent.json (dials, temperament and limits come from examples/${EXAMPLE[role]}; edit them there any time).`);
 
   // 4. The agent's TaskFast account, in the environment given by --env.
   const cliEnv = taskfastEnv(environment);
-  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init"];
+  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init", `--keystore-path=${WALLET_PATH}`, ...(existsSync(join(dir, PASSWORD_PATH)) ? [`--wallet-password-file=${PASSWORD_PATH}`] : [])];
   const initCmd = `taskfast ${initArgs.join(" ")}`;
   const ran = o.init ?? !/^n/i.test(await io.ask(`\nRun \`${initCmd}\` in agents/${id} now? It signs the agent up on ${environment} and sets up its wallet. [Y/n]: `));
   const status = ran ? io.run("taskfast", initArgs, dir) : -1;

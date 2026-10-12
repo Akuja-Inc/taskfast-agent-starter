@@ -10,6 +10,11 @@ if (JSON.stringify(process.argv.slice(2)) === JSON.stringify(["--version"])) {
   process.stdout.write("taskfast 0.19.0\n");
   process.exit(0);
 }
+if (JSON.stringify(process.argv.slice(2)) === JSON.stringify(["--env", "staging", "me"])) {
+  record("me", { configPath: process.env.TASKFAST_CONFIG });
+  process.stdout.write(JSON.stringify({ ok: true, data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } }) + "\n");
+  process.exit(0);
+}
 if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["events", "stream", "--ack-stdin", "--env", "staging"])) {
   throw new Error("fixture accepts only a staging event stream");
 }

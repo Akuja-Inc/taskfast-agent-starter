@@ -6,6 +6,7 @@ import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_C
 import { eventProblem } from "./event.js";
 import { parseCounterparties } from "./counterparty.js";
 import { createAgentModels } from "./model.js";
+import { agentDirectory, providerSettings } from "./folder.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
@@ -68,7 +69,8 @@ function parseRuntime(runtime: Runtime): Runtime {
 export async function openMarketplaceAgent(o: AgentOptions): Promise<MarketplaceAgent> {
   const spec = parseAgentSpec(o.spec);
   const runtime = parseRuntime(o.runtime);
-  const models = o.models ?? await createAgentModels(spec.model);
+  const agentDir = agentDirectory(runtime);
+  const models = o.models ?? await createAgentModels(spec.model, { agentDir, settings: providerSettings(agentDir) });
   const log = (line: string) => { try { o.log?.(line); } catch {} };
   const storage = await openAgentStorage(o.storePath);
   let pi: PiEngine | undefined;

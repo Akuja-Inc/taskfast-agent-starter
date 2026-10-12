@@ -1,8 +1,12 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createModels, createProvider, type Models, type Provider } from "@earendil-works/pi-ai/models";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, StreamOptions } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { PROVIDERS, type ProviderSource } from "./providers.js";
 import { splitModel } from "./spec.js";
+import { CREDENTIAL_FILES, folderFile } from "./folder.js";
 
 // Explicit allow-list. A provider ID is never a package name or an import path.
 export function providerSource(id: string): ProviderSource {
@@ -48,9 +52,12 @@ function ollamaProvider(modelId: string): Provider {
  * Native chat metadata comes from the pinned catalog; unknown IDs are refused
  * except pulled Ollama models and Azure deployment names.
  */
-export async function createAgentModels(id: string): Promise<Models> {
+export async function createAgentModels(id: string, scope?: { agentDir: string; settings: Readonly<Record<string, string>> }): Promise<Models> {
   const { provider: name, modelId } = splitModel(id);
   const source = providerSource(name);
+  if (scope && name === "amazon-bedrock" && !scope.settings.AWS_BEARER_TOKEN_BEDROCK) {
+    throw new Error("folder-scoped Bedrock requires AWS_BEARER_TOKEN_BEDROCK; ambient AWS credential chains are not isolated by the pinned provider");
+  }
   const native = source.create ? await source.create() : ollamaProvider(modelId);
   let deployment: Model<Api> | undefined;
   if (!native.getModels().some((model) => model.id === modelId)) {
@@ -62,6 +69,34 @@ export async function createAgentModels(id: string): Promise<Models> {
     const current = native.getModels();
     return (deployment ? [...current, deployment] : current).map((model) => ({ ...model, provider: name }));
   }
+  const settings = scope ? { ...scope.settings } : undefined;
+  if (settings) for (const name of CREDENTIAL_FILES) {
+    const value = settings[name];
+    if (value) {
+      settings[name] = folderFile({ agentDir: scope?.agentDir ?? ".", path: value, resource: name });
+    }
+  }
+  const scopedOptions = (model: Model<Api>, options?: StreamOptions): StreamOptions | undefined => {
+    if (!settings) return options;
+    // The pinned native env helper uses truthy overrides, then process.env.
+    // Refuse an undeclared ambient value rather than sending a private key to
+    // its endpoint or silently taking machine-level configuration.
+    for (const key of source.envNames) {
+      if (process.env[key] && !settings[key]) throw new Error(`folder-scoped provider refuses ambient ${key}; supply an agent-local setting or unset it in the host`);
+    }
+    // These SDK defaults bypass pi-ai's scoped env entirely; even an equal
+    // agent-local value cannot safely neutralize their machine-level lookup.
+    const sdkNames = model.api.startsWith("openai-") || model.api.startsWith("azure-")
+      ? ["OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "OPENAI_CUSTOM_HEADERS", "OPENAI_ADMIN_KEY", "OPENAI_WEBHOOK_SECRET", "OPENAI_LOG"]
+      : model.api === "google-generative-ai" || model.api === "google-vertex" ? ["GOOGLE_GEMINI_BASE_URL", "GOOGLE_VERTEX_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GENAI_USE_ENTERPRISE"]
+      : model.api === "anthropic-messages" ? ["ANTHROPIC_CUSTOM_HEADERS", "ANTHROPIC_WEBHOOK_SIGNING_KEY", "ANTHROPIC_LOG"]
+      : model.api === "bedrock-converse-stream" ? ["AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_BEDROCK_RUNTIME", "AWS_USE_FIPS_ENDPOINT", "AWS_USE_DUALSTACK_ENDPOINT", "AWS_AUTH_SCHEME_PREFERENCE", "AWS_MAX_ATTEMPTS", "AWS_RETRY_MODE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE"] : [];
+    for (const key of [...sdkNames, "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]) {
+      if (process.env[key]) throw new Error(`folder-scoped provider refuses SDK ambient ${key}; unset it in the host`);
+    }
+    if (name === "amazon-bedrock" && ["config", "credentials"].some((file) => existsSync(join(homedir(), ".aws", file)))) throw new Error("folder-scoped Bedrock refuses machine-level AWS files; use a host without ambient AWS configuration");
+    return { ...options, cacheRetention: options?.cacheRetention ?? "short", ...(name === "amazon-bedrock" ? { apiKey: settings.AWS_BEARER_TOKEN_BEDROCK } : {}), env: { ...settings } };
+  };
   // Preserve setup aliases in lookup and model IDs while dispatching with the
   // native identity, which provider-specific protocol behavior can depend on.
   const provider: Provider = {
@@ -69,10 +104,16 @@ export async function createAgentModels(id: string): Promise<Models> {
     id: name,
     getModels: chatModels,
     getAllModels: chatModels,
-    stream: (model, context, options) => native.stream({ ...model, provider: native.id }, context, options),
-    streamSimple: (model, context, options) => native.streamSimple({ ...model, provider: native.id }, context, options),
+    stream: (model, context, options) => native.stream<Api>({ ...model, provider: native.id }, context, scopedOptions(model, options)),
+    streamSimple: (model, context, options) => native.streamSimple({ ...model, provider: native.id }, context, scopedOptions(model, options)),
   };
-  const models = createModels();
+  const models = createModels(scope && settings ? { authContext: {
+    env: async (name) => settings[name],
+    fileExists: async (path) => {
+      try { return existsSync(folderFile({ agentDir: scope.agentDir, path, resource: "provider credential" })); }
+      catch { return false; }
+    },
+  } } : undefined);
   models.setProvider(provider);
   return models;
 }

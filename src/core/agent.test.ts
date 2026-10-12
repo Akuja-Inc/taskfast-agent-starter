@@ -1,14 +1,16 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { createSession, defineDoc } from "@earendil-works/pi-durable";
 import { afterEach, expect, it } from "vitest";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
+import { openAgentStorage } from "./storage.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -18,6 +20,8 @@ afterEach(async () => {
   dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }));
 });
 const task = "11111111-1111-4111-8111-111111111111";
+const agentId = "33333333-3333-4333-8333-333333333333";
+const me: CliResult = { outcome: "ok", data: { profile: { id: agentId } } };
 const post = { title: "Edit the guide", description: "Copy edit the short guide.", budget: "10.00", pickup_deadline_hours: 24 };
 function spec(): AgentSpec {
   const value: unknown = JSON.parse(readFileSync(new URL("../../examples/brisk-poster.json", import.meta.url), "utf8"));
@@ -36,7 +40,7 @@ async function open(options: Partial<Parameters<typeof openMarketplaceAgent>[0]>
   const calls: string[][] = [];
   const agent = await openMarketplaceAgent({
     storePath: join(dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(dir, "config.json") }, models: selected.models,
-    command: async (_rt, args): Promise<CliResult> => { calls.push(args); return args[0] === "platform" ? { outcome: "ok", data: { config: { submission_fee: "3.00" } } } : { outcome: "ok", data: { accepted: true } }; },
+    command: async (_rt, args): Promise<CliResult> => { calls.push(args); return args[0] === "me" ? me : args[0] === "platform" ? { outcome: "ok", data: { config: { submission_fee: "3.00" } } } : { outcome: "ok", data: { accepted: true } }; },
     ...options,
   });
   opened.push(agent);
@@ -44,8 +48,20 @@ async function open(options: Partial<Parameters<typeof openMarketplaceAgent>[0]>
 }
 async function run(agent: MarketplaceAgent) { await agent.ping(); await agent.waitForIdle(); }
 
-it("runs real Pi tools, retains notes and blocks business keys after reset and reopen", async () => {
-  const kit = await open();
+it("moves a stopped agent folder without losing notes, spend or completed business keys", async () => {
+  const root = mkdtempSync(join(tmpdir(), "marketplace-move-"));
+  dirs.push(root);
+  const home = join(root, "original");
+  mkdirSync(home);
+  const configPath = join(home, "simulated-account.json");
+  writeFileSync(configPath, JSON.stringify({ profile: { id: agentId } }));
+  const calls: string[][] = [];
+  const kit = await open({ storePath: join(home, "state.sqlite"), runtime: { env: "staging", configPath }, command: async (runtime, args) => {
+    calls.push(args);
+    if (args[0] === "me") return { outcome: "ok", data: JSON.parse(readFileSync(runtime.configPath, "utf8")) };
+    if (args[0] === "platform") return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
+    return { outcome: "ok", data: { accepted: true } };
+  } });
   kit.faux.setResponses([
     fauxAssistantMessage([fauxToolCall("remember", { note: "Keep the guide concise." }), fauxToolCall("post_task", post)], { stopReason: "toolUse" }),
     fauxAssistantMessage("Done"),
@@ -54,16 +70,94 @@ it("runs real Pi tools, retains notes and blocks business keys after reset and r
   const state = await kit.agent.status();
   expect(state.memory).toEqual(["Keep the guide concise."]);
   expect(Object.values(state.actions).map((action) => action.status)).toEqual(["done"]);
-  expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
+  expect(calls.filter((args) => args[0] === "post")).toHaveLength(1);
+  expect(Object.values(state.spend)).toEqual([3]);
   await kit.agent.conversation.reset(undefined, context);
   await kit.agent.close();
+  const moved = join(root, "relocated");
+  renameSync(home, moved);
   const fresh = testModels();
   fresh.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post, { id: "new-call-id" })], { stopReason: "toolUse" }), fauxAssistantMessage("Skipped")]);
-  const reopened = await openMarketplaceAgent({ storePath: join(kit.dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(kit.dir, "config.json") }, models: fresh.models, command: async (_rt, args) => { kit.calls.push(args); return { outcome: "ok" }; } });
+  const reopened = await openMarketplaceAgent({ storePath: join(moved, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(moved, "simulated-account.json") }, models: fresh.models, command: async (runtime, args) => {
+    calls.push(args);
+    if (args[0] === "me") return { outcome: "ok", data: JSON.parse(readFileSync(runtime.configPath, "utf8")) };
+    return { outcome: "ok" };
+  } });
   opened.push(reopened);
   await run(reopened);
-  expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
-  expect((await reopened.status()).memory).toEqual(["Keep the guide concise."]);
+  expect(fresh.faux.state.callCount).toBe(2);
+  expect(JSON.stringify((await reopened.conversation.context(context)).messages)).toContain("already done");
+  expect(calls.filter((args) => args[0] === "post")).toHaveLength(1);
+  expect(calls.filter((args) => args[0] === "me")).toEqual([["me"], ["me"]]);
+  expect(await reopened.status()).toEqual(state);
+  expect((await reopened.status()).identity).toEqual({ env: "staging", agentId });
+});
+
+const invalidIdentities: { name: string; result: CliResult }[] = [
+  { name: "absent data", result: { outcome: "ok" } },
+  { name: "null data", result: { outcome: "ok", data: null } },
+  { name: "missing profile", result: { outcome: "ok", data: { agent: { id: agentId } } } },
+  { name: "null profile", result: { outcome: "ok", data: { profile: null } } },
+  { name: "missing UUID", result: { outcome: "ok", data: { profile: {} } } },
+  { name: "non-string UUID", result: { outcome: "ok", data: { profile: { id: 123 } } } },
+  { name: "invalid UUID", result: { outcome: "ok", data: { profile: { id: "not-an-agent-id" } } } },
+  { name: "refused identity", result: { outcome: "failed", error: "auth: refused" } },
+  { name: "uncertain identity", result: { outcome: "uncertain", error: "unreadable result" } },
+];
+it.each(invalidIdentities)("fails closed on $name before starting marketplace work", async ({ result }) => {
+  const calls: string[][] = [];
+  const selected = testModels();
+  selected.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" })]);
+  await expect(open({ models: selected.models, command: async (_runtime, args) => { calls.push(args); return result; } })).rejects.toThrow(/identity|profile UUID/);
+  expect(calls).toEqual([["me"]]);
+  expect(selected.faux.state.callCount).toBe(0);
+});
+
+it.each([
+  { name: "another account at the same config path", env: "staging", id: task },
+  { name: "the same account in another environment", env: "local", id: agentId },
+] satisfies { name: string; env: "staging" | "local"; id: string }[])("refuses $name without changing the permanent policy", async ({ env, id }) => {
+  const kit = await open();
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("remember", { note: "Keep the paid guide's history." }), fauxToolCall("post_task", post)], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
+  await run(kit.agent);
+  const before = await kit.agent.status();
+  await kit.agent.close();
+  const calls: string[][] = [];
+  const selected = testModels();
+  selected.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", { ...post, title: "A different guide" })], { stopReason: "toolUse" })]);
+  const options = { storePath: join(kit.dir, "state.sqlite"), spec: spec(), runtime: { env, configPath: join(kit.dir, "config.json") }, models: selected.models };
+  await expect(openMarketplaceAgent({ ...options, command: async (_runtime, args) => { calls.push(args); return { outcome: "ok", data: { profile: { id } } }; } })).rejects.toThrow(/another TaskFast account or environment/);
+  expect(calls).toEqual([["me"]]);
+  expect(selected.faux.state.callCount).toBe(0);
+  const reopened = await openMarketplaceAgent({ ...options, runtime: { ...options.runtime, env: "staging" }, command: async (_runtime, args) => {
+    calls.push(args);
+    return me;
+  } });
+  opened.push(reopened);
+  expect(await reopened.status()).toEqual(before);
+  expect(calls).toEqual([["me"], ["me"]]);
+});
+
+it("refuses version 1 policy stores without migrating or resetting their permanent state", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "marketplace-old-policy-"));
+  dirs.push(dir);
+  const storePath = join(dir, "state.sqlite");
+  const runtime = { env: "staging", configPath: join(dir, "config.json") } satisfies Parameters<typeof openMarketplaceAgent>[0]["runtime"];
+  const state = {
+    identity: { env: runtime.env, configPath: runtime.configPath },
+    actions: { "post:legacy": { status: "done", at: "2026-06-20T12:00:00.000Z", amount: 3, day: "2026-06-20" } },
+    spend: { "2026-06-20": 3 }, memory: ["Never repeat the old post."],
+  };
+  const oldPolicy = defineDoc({ kind: "taskfast.policy", version: 1, scope: "session", initial: () => state });
+  const legacy = createSession(await openAgentStorage(storePath));
+  try { await legacy.commit(async (tx) => { await tx.doc(oldPolicy); }, context); }
+  finally { await legacy.close(context); }
+  const calls: string[][] = [];
+  await expect(openMarketplaceAgent({ storePath, spec: spec(), runtime, models: testModels().models, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/requires migration from version 1/);
+  expect(calls).toEqual([["me"]]);
+  const untouched = createSession(await openAgentStorage(storePath));
+  try { expect(await untouched.snapshot(oldPolicy, context)).toEqual(state); }
+  finally { await untouched.close(context); }
 });
 
 it("wakes a poster for its configured role and goals rather than worker-only discovery", async () => {
@@ -88,6 +182,7 @@ it("wakes a poster for its configured role and goals rather than worker-only dis
 it("keeps the host unlock path available at the command boundary", async () => {
   const file = "/tmp/user-owned-wallet.pw";
   const kit = await open({ runtime: { env: "staging", configPath: "/tmp/host-config.json", walletPasswordFile: file }, command: async (runtime, args) => {
+    if (args[0] === "me") return me;
     if (args[0] === "platform") return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
     return runtime.walletPasswordFile === file ? { outcome: "ok" } : { outcome: "failed", error: "keystore: host unlock file missing" };
   } });
@@ -103,6 +198,7 @@ it("does not reserve or dispatch a money tool aborted during its server read", a
   const gate = new Promise<void>((resolve) => { releaseRead = resolve; });
   const writes: string[][] = [];
   const kit = await open({ command: async (_rt, args) => {
+    if (args[0] === "me") return me;
     if (args[0] === "platform") {
       startRead(); await gate;
       return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
@@ -130,6 +226,7 @@ it("keeps a dispatched write committed when its Pi tool is aborted", async () =>
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let writes = 0;
   const kit = await open({ command: async (_rt, args) => {
+    if (args[0] === "me") return me;
     if (args[0] === "platform") return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
     writes++; entered(); await gate; return { outcome: "ok" };
   } });
@@ -163,6 +260,7 @@ it("refunds a proven refusal and permits a fresh attempt, but charges uncertaint
   let outcome: CliResult = { outcome: "failed", error: "validation: refused" };
   const writes: string[][] = [];
   const kit = await open({ command: async (_rt, args) => {
+    if (args[0] === "me") return me;
     if (args[0] === "platform") return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
     writes.push(args); return outcome;
   } });
@@ -194,11 +292,13 @@ it("starts a new UTC spending day without clearing completed keys", async () => 
 it("checks counterparties before reserving or dispatching a write", async () => {
   const calls: string[][] = [];
   const kit = await open({ runtime: { env: "staging", configPath: "/tmp/agent-config.json", counterparties: { me: task, accounts: ["22222222-2222-4222-8222-222222222222"], agents: [] } }, command: async (_rt, args) => {
-    calls.push(args); return { outcome: "ok", data: { task: { poster_id: "other" } } };
+    calls.push(args);
+    if (args[0] === "me") return me;
+    return { outcome: "ok", data: { task: { poster_id: "other" } } };
   } });
   kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("bid_create", { task_id: task, price: "10.00" })], { stopReason: "toolUse" }), fauxAssistantMessage("Refused")]);
   await run(kit.agent);
-  expect(calls.map((args) => args.slice(0, 2))).toEqual([["task", "get"]]);
+  expect(calls.map((args) => args.slice(0, 2))).toEqual([["me"], ["task", "get"]]);
   expect((await kit.agent.status()).actions).toEqual({});
 });
 

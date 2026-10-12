@@ -132,6 +132,7 @@ describe("marketplace process-crash boundaries", () => {
       expect(marker.boundary).toBe(boundary);
       expect(marker.postEntries).toBe(entered);
       expect(marker.feeReads).toBe(1);
+      expect(marker.meReads).toBe(1);
       assertState({ value: marker.status, status: initial });
       if (boundary === "completed") {
         const completed = await crashed.waitFor("completed-result");
@@ -145,6 +146,7 @@ describe("marketplace process-crash boundaries", () => {
       const reopened = launch({ mode: "reopen", boundary, dir, title });
       const report = await reopened.waitFor("result");
       expect(await reopened.exit()).toEqual({ code: 0, signal: null });
+      expect(report.meReads).toBe(1);
       assertState({ value: report.before, status: recovered });
       const attempts = array(report.attempts).map(record);
       expect(attempts).toHaveLength(2);
@@ -177,6 +179,7 @@ describe("marketplace process-crash boundaries", () => {
       expect(await again.exit()).toEqual({ code: 0, signal: null });
       expect(permanent.before).toEqual(report.status);
       expect(permanent.status).toEqual(report.status);
+      expect(permanent.meReads).toBe(1);
       expect(permanent.postEntries).toBe(0);
       expect(permanent.feeReads).toBe(0);
       for (const attempt of array(permanent.attempts).map(record)) {

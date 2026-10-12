@@ -16,13 +16,17 @@ const entry = (id: string) => {
   return p;
 };
 
-function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: string; runStatus?: number } = {}) {
+function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: string; agentEnv?: { id: string; text: string }; runStatus?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "kit-"));
   writeFileSync(join(root, "package.json"), readFileSync(join(ROOT, "package.json")));
   cpSync(join(ROOT, "examples"), join(root, "examples"), { recursive: true });
   cpSync(join(ROOT, "providers.json"), join(root, "providers.json"));
   symlinkSync(join(ROOT, "node_modules"), join(root, "node_modules"));
   if (opts.envFile !== undefined) writeFileSync(join(root, ".env"), opts.envFile);
+  if (opts.agentEnv) {
+    mkdirSync(join(root, "agents", opts.agentEnv.id), { recursive: true });
+    writeFileSync(join(root, "agents", opts.agentEnv.id, ".env"), opts.agentEnv.text);
+  }
   const asked: { question: string; hidden: boolean }[] = [];
   const ran: { cmd: string; args: string[]; cwd: string }[] = [];
   const logs: string[] = [];
@@ -38,34 +42,66 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
     log: (line) => void logs.push(line),
   };
   const agent = (id: string) => JSON.parse(readFileSync(join(root, "agents", id, "agent.json"), "utf8"));
-  return { root, io, asked, ran, logs, agent, run: (o: SetupOptions = {}) => setup(io, o), env: () => readFileSync(join(root, ".env"), "utf8") };
+  return { root, io, asked, ran, logs, agent, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
 }
 const ME = ["Ada Lovelace", "Ada Analytics", "Data clean-up for small charities."];
-const worker = (folder: string, init = "n") => [folder, "1", ...ME, "", init];
+const worker = (init = "n") => ["1", ...ME, "", init];
 const ALL: SetupOptions = {
   provider: "anthropic", set: ["ANTHROPIC_API_KEY=sk-ant-flag"], model: "claude-sonnet-5-5", agent: "flagged", role: "poster",
   name: ME[0], business: ME[1], description: ME[2], goals: "hire well", budget: "40", init: true,
 };
 
 describe("setup", () => {
+  it("keeps two agents' provider credentials inside their own folders without changing root settings", async () => {
+    const k = kit([], { env: { ANTHROPIC_API_KEY: "first-agent-key" }, envFile: "ROOT_SETTING=unchanged\n" });
+    await k.run({ ...ALL, agent: "1", env: "staging", set: ["ANTHROPIC_API_KEY"], init: false });
+    expect(existsSync(join(k.root, "agents", "1", ".env"))).toBe(true);
+    await setup({ ...k.io, env: { ANTHROPIC_API_KEY: "second-agent-key" } }, { ...ALL, agent: "2", env: "staging", set: ["ANTHROPIC_API_KEY"], init: false });
+    expect(readFileSync(join(k.root, "agents", "1", ".env"), "utf8")).toBe("ANTHROPIC_API_KEY=first-agent-key\n");
+    expect(readFileSync(join(k.root, "agents", "2", ".env"), "utf8")).toBe("ANTHROPIC_API_KEY=second-agent-key\n");
+    expect(readFileSync(join(k.root, ".env"), "utf8")).toBe("ROOT_SETTING=unchanged\n");
+    expect(statSync(join(k.root, "agents", "1", ".env")).mode & 0o777).toBe(0o600);
+    expect(k.logs.join("\n")).not.toContain("first-agent-key");
+    expect(k.logs.join("\n")).not.toContain("second-agent-key");
+  });
+  it("refuses linked settings before reading or overwriting another folder's file", async () => {
+    const k = kit([]);
+    const dir = join(k.root, "agents", "flagged");
+    mkdirSync(dir, { recursive: true });
+    const outside = join(k.root, "other-settings");
+    const text = "ANTHROPIC_API_KEY=synthetic-other-agent\n";
+    writeFileSync(outside, text);
+    symlinkSync(outside, join(dir, ".env"));
+    await expect(k.run({ ...ALL, env: "staging" })).rejects.toThrow(/symlink/);
+    expect(k.ran).toEqual([]);
+    expect(existsSync(join(dir, "agent.json"))).toBe(false);
+    expect(readFileSync(outside, "utf8")).toBe(text);
+  });
+
+  it("initializes the wallet at a relative path inside the owning agent folder", async () => {
+    const k = kit([]);
+    await k.run({ ...ALL, env: "staging" });
+    expect(k.ran.at(-1)).toEqual({ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "flagged") });
+  });
+
   it("asks for a hidden native key, saves privately, selects a catalog model and initializes production by default without installing", async () => {
-    const k = kit(["1", "sk-ant-test123", "", ...worker("ada", "")]);
+    const k = kit(["1", "ada", "sk-ant-test123", "", ...worker("")]);
     await k.run();
-    expect(k.env()).toBe("ANTHROPIC_API_KEY=sk-ant-test123\n");
-    expect(statSync(join(k.root, ".env")).mode & 0o777).toBe(0o600);
+    expect(k.env("ada")).toBe("ANTHROPIC_API_KEY=sk-ant-test123\n");
+    expect(statSync(join(k.root, "agents", "ada", ".env")).mode & 0o777).toBe(0o600);
     expect(k.asked.filter((a) => a.hidden).map((a) => a.question)).toEqual([expect.stringContaining("ANTHROPIC_API_KEY")]);
     expect(k.agent("ada")).toMatchObject({ model: `anthropic:${entry("anthropic").defaultModel}`, role: "worker", character: { name: ME[0], businessName: ME[1], businessDescription: ME[2] } });
-    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["init"], cwd: join(k.root, "agents", "ada") }]);
+    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "ada") }]);
     expect(k.logs).toContain("Environment: production (pass --env staging or --env development to change it)\n");
     expect(k.logs.join("\n")).not.toContain("sk-ant-test123");
   });
 
   it.each([
-    ["staging", ["--env", "staging", "init"], "pnpm agents --env staging"],
-    ["development", ["--env", "local", "init"], "pnpm agents --env development"],
-    ["production", ["init"], "pnpm agents"],
+    ["staging", ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], "pnpm agents --env staging"],
+    ["development", ["--env", "local", "init", "--keystore-path=.taskfast/wallet.json"], "pnpm agents --env development"],
+    ["production", ["init", "--keystore-path=.taskfast/wallet.json"], "pnpm agents"],
   ])("uses --env %s without asking where the agent runs", async (env, args, next) => {
-    const k = kit(["anthropic", "sk-x", "", ...worker("w", "")]);
+    const k = kit(["anthropic", "w", "sk-x", "", ...worker("")]);
     await k.run({ env });
     expect(k.asked).toHaveLength(10);
     expect(k.ran.at(-1)?.args).toEqual(args);
@@ -78,14 +114,14 @@ describe("setup", () => {
     expect(k.asked).toEqual([]);
     expect(k.env()).toBe("ANTHROPIC_API_KEY=key-from-environment\n");
     expect(k.agent("flagged")).toMatchObject({ role: "poster", model: "anthropic:claude-sonnet-5-5", character: { budgetUsd: 40 } });
-    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init"], cwd: join(k.root, "agents", "flagged") }]);
+    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "flagged") }]);
     expect(k.logs.join("\n")).not.toContain("key-from-environment");
   });
 
   it("asks only what flags leave out, with no provider install command", async () => {
     const k = kit([ME[2] ?? "description", ""], { env: { MOONSHOT_API_KEY: "mk-from-env" } });
     await k.run({ provider: "moonshotai", set: ["MOONSHOT_API_KEY"], model: "kimi-k3", agent: "half", role: "worker", name: ME[0], business: ME[1], init: false });
-    expect(k.env()).toBe("MOONSHOT_API_KEY=mk-from-env\n");
+    expect(k.env("half")).toBe("MOONSHOT_API_KEY=mk-from-env\n");
     expect(k.asked.map((a) => a.question)).toEqual([expect.stringContaining("What the business does"), expect.stringContaining("What the agent should aim for")]);
     expect(k.ran).toEqual([]);
   });
@@ -135,22 +171,22 @@ describe("setup", () => {
   it("refuses non-finite budgets before side effects and a budget for a worker", async () => {
     for (const budget of ["Infinity", "NaN", "-1"]) await expect(kit([]).run({ ...ALL, budget })).rejects.toThrow(/--budget:/);
     await expect(kit([]).run({ role: "worker", budget: "10" })).rejects.toThrow("--budget: a worker has no budget");
-    const k = kit(["anthropic", "sk-x", "", "w2", "1"]);
+    const k = kit(["anthropic", "w2", "sk-x", "", "1"]);
     await expect(k.run({ budget: "10" })).rejects.toThrow("--budget: a worker has no budget");
     expect(existsSync(join(k.root, "agents", "w2"))).toBe(false);
   });
 
   it("selects a model by number and asks a poster budget, with only TaskFast as a child command", async () => {
-    const k = kit(["moonshotai", "mk-test", "2", "shop", "2", ...ME, "", "35", ""]);
+    const k = kit(["moonshotai", "shop", "mk-test", "2", "2", ...ME, "", "35", ""]);
     await k.run({ env: "staging" });
     expect(k.agent("shop")).toMatchObject({ role: "poster", model: `moonshotai:${entry("moonshotai").models[1]}`, character: { budgetUsd: 35 } });
-    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init"], cwd: join(k.root, "agents", "shop") }]);
+    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "shop") }]);
   });
 
   it("Bedrock defaults to one bearer token instead of demanding AWS key pairs", async () => {
-    const k = kit(["amazon-bedrock", "bedrock-test-token", "", ...worker("bed")]);
+    const k = kit(["amazon-bedrock", "bed", "bedrock-test-token", "", ...worker()]);
     await k.run();
-    expect(k.env()).toBe("AWS_BEARER_TOKEN_BEDROCK=bedrock-test-token\n");
+    expect(k.env("bed")).toBe("AWS_BEARER_TOKEN_BEDROCK=bedrock-test-token\n");
     const prompts = k.asked.filter((a) => a.question.includes("AWS_"));
     expect(prompts).toEqual([{ question: expect.stringContaining("AWS_BEARER_TOKEN_BEDROCK"), hidden: true }]);
     expect(k.logs.join("\n")).toContain("AWS_PROFILE");
@@ -168,9 +204,15 @@ describe("setup", () => {
     const k = kit([]);
     const values = [...set];
     if (provider === "google-vertex" && !set.some((s) => s.startsWith("GOOGLE_CLOUD_API_KEY="))) {
-      const file = join(k.root, "service-account.json");
+      const file = join(k.root, "agents", "flagged", "service-account.json");
+      mkdirSync(join(k.root, "agents", "flagged"), { recursive: true });
       writeFileSync(file, "{}");
       values.push(`GOOGLE_APPLICATION_CREDENTIALS=${file}`);
+    }
+    if (provider === "amazon-bedrock") {
+      await expect(k.run({ ...ALL, provider, set: values, model: entry(provider).defaultModel, init: false })).rejects.toThrow("folder-scoped Bedrock requires");
+      expect(existsSync(join(k.root, "agents", "flagged", ".env"))).toBe(false);
+      return;
     }
     await k.run({ ...ALL, provider, set: values, model: entry(provider).defaultModel, init: false });
     expect(k.asked).toEqual([]);
@@ -185,7 +227,8 @@ describe("setup", () => {
     expect(existsSync(join(missing.root, ".env"))).toBe(false);
     expect(missing.ran).toEqual([]);
     const partial = kit(["region", "project"]);
-    const file = join(partial.root, "service-account.json");
+    const file = join(partial.root, "agents", "flagged", "service-account.json");
+    mkdirSync(join(partial.root, "agents", "flagged"), { recursive: true });
     writeFileSync(file, "{}");
     await partial.run({ ...ALL, provider: "google-vertex", set: [`GOOGLE_APPLICATION_CREDENTIALS=${file}`], model: entry("google-vertex").defaultModel, init: false });
     expect(partial.asked.map((p) => p.question)).toEqual([expect.stringContaining("GOOGLE_CLOUD_LOCATION"), expect.stringContaining("GOOGLE_CLOUD_PROJECT")]);
@@ -194,9 +237,9 @@ describe("setup", () => {
 
   it("a partial AWS key pair asks for only the missing secret, with echo hidden", async () => {
     const k = kit(["missing-secret"]);
-    await k.run({ ...ALL, provider: "amazon-bedrock", set: ["AWS_ACCESS_KEY_ID=access"], model: entry("amazon-bedrock").defaultModel, init: false });
+    await expect(k.run({ ...ALL, provider: "amazon-bedrock", set: ["AWS_ACCESS_KEY_ID=access"], model: entry("amazon-bedrock").defaultModel, init: false })).rejects.toThrow("folder-scoped Bedrock requires");
     expect(k.asked).toEqual([{ question: expect.stringContaining("AWS_SECRET_ACCESS_KEY"), hidden: true }]);
-    expect(k.env()).toBe("AWS_ACCESS_KEY_ID=access\nAWS_SECRET_ACCESS_KEY=missing-secret\n");
+    expect(existsSync(join(k.root, "agents", "flagged", ".env"))).toBe(false);
   });
 
   it("uses native Google key naming, and valid gateway/together aliases remain in the agent file", async () => {
@@ -211,7 +254,7 @@ describe("setup", () => {
   });
 
   it("needs a typed pulled model for Ollama, asks no key and writes no .env", async () => {
-    const k = kit(["ollama", "", "qwen3:8b", ...worker("local")]);
+    const k = kit(["ollama", "local", "", "qwen3:8b", ...worker()]);
     await k.run({ env: "development" });
     expect(k.logs).toContain("A model id is needed.");
     expect(existsSync(join(k.root, ".env"))).toBe(false);
@@ -220,29 +263,30 @@ describe("setup", () => {
   });
 
   it("keeps existing keys and other .env lines but hardens an existing file to 0600", async () => {
-    const k = kit(["openai", "", "a1", "3", ...ME, "", "", "n"], { envFile: "OTHER=1\nOPENAI_API_KEY=sk-old\n" });
+    const k = kit(["openai", "a1", "", "3", ...ME, "", "", "n"], { agentEnv: { id: "a1", text: "OTHER=1\nOPENAI_API_KEY=sk-old\n" } });
     await k.run({ env: "staging" });
-    expect(k.env()).toBe("OTHER=1\nOPENAI_API_KEY=sk-old\n");
-    expect(statSync(join(k.root, ".env")).mode & 0o777).toBe(0o600);
+    expect(k.env("a1")).toBe("OTHER=1\nOPENAI_API_KEY=sk-old\n");
+    expect(statSync(join(k.root, "agents", "a1", ".env")).mode & 0o777).toBe(0o600);
     expect(k.asked.some((a) => a.question.includes("OPENAI_API_KEY"))).toBe(false);
     expect(k.logs.join("\n")).not.toContain("sk-old");
     expect(k.agent("a1").role).toBe("both");
     expect(k.ran).toEqual([]);
   });
 
-  it("replaces an existing value with --set, and accepts shell-only keys without copying them", async () => {
-    const k = kit([], { envFile: "OPENAI_API_KEY=sk-old\n" });
+  it("replaces an existing agent value with --set, and saves required shell keys inside the folder", async () => {
+    const k = kit([], { agentEnv: { id: "flagged", text: "OPENAI_API_KEY=sk-old\n" } });
     await k.run({ ...ALL, provider: "openai", set: ["OPENAI_API_KEY=sk-new"], model: "gpt-5-mini", init: false });
     expect(k.env()).toBe("OPENAI_API_KEY=sk-new\n");
     const shell = kit([], { env: { OPENAI_API_KEY: "shell-only" } });
     await shell.run({ ...ALL, provider: "openai", set: [], model: "gpt-5-mini", init: false });
     expect(shell.asked).toEqual([]);
+    expect(shell.env()).toBe("OPENAI_API_KEY=shell-only\n");
     expect(existsSync(join(shell.root, ".env"))).toBe(false);
     expect(shell.logs.join("\n")).not.toContain("shell-only");
   });
 
   it("reprompts wrong choices, stale models, taken folders and bad keys; describes failed init", async () => {
-    const k = kit(["0", "nosuch", "anthropic", "has space", "sk-ok", "not-in-the-pin", "", "taken", "fresh", "1", ...ME, "", ""], { runStatus: 1 });
+    const k = kit(["0", "nosuch", "anthropic", "taken", "fresh", "has space", "sk-ok", "not-in-the-pin", "", "1", ...ME, "", ""], { runStatus: 1 });
     mkdirSync(join(k.root, "agents", "taken"), { recursive: true });
     writeFileSync(join(k.root, "agents", "taken", "agent.json"), "{}");
     await k.run();

@@ -29,12 +29,17 @@ const pause = () => new Promise(() => { setInterval(() => {}, 1000); });
 let agent;
 let postEntries = 0;
 let feeReads = 0;
+let meReads = 0;
 const marker = async (at) => {
-  await send({ kind: "marker", boundary: at, status: await agent.status(), postEntries, feeReads });
+  await send({ kind: "marker", boundary: at, status: await agent.status(), postEntries, feeReads, meReads });
   await pause();
 };
 async function command(runtime, args) {
   if (runtime.env !== "staging") throw new Error("fixture must not use production");
+  if (args.length === 1 && args[0] === "me") {
+    meReads++;
+    return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
+  }
   if (args.length === 2 && args[0] === "platform" && args[1] === "config") {
     feeReads++;
     if (mode === "crash" && boundary === "fee-read") await marker(boundary);
@@ -108,7 +113,7 @@ async function main() {
     const second = await attempt(`retry-${process.pid}-2`);
     const status = await agent.status();
     await agent.close();
-    await send({ kind: "result", before, attempts: [first, second], status, postEntries, feeReads });
+    await send({ kind: "result", before, attempts: [first, second], status, postEntries, feeReads, meReads });
     process.disconnect();
   } else throw new Error(`unknown fixture mode: ${mode}`);
 }

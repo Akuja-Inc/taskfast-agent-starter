@@ -1348,7 +1348,7 @@
         "zai.glm-5"
       ],
       "defaultModel": "amazon.nova-2-lite-v1:0",
-      "note": "Bearer token, AWS profile, access key pair, ECS task role, or web identity. Configure AWS_REGION/AWS_DEFAULT_REGION if needed; catalog region defaults otherwise apply. Setup does not create cloud credentials."
+      "note": "Folder-scoped setup supports a bearer token only. Native profile/access-key/role alternatives are refused because the pinned adapter can consult machine-level credentials. Configure AWS_REGION/AWS_DEFAULT_REGION explicitly if needed."
     },
     {
       "id": "ant-ling",
@@ -1817,7 +1817,7 @@
         "gemini-flash-lite-latest"
       ],
       "defaultModel": "gemini-2.5-flash",
-      "note": "Google Cloud API key, or project/location plus ADC: run gcloud auth application-default login or set GOOGLE_APPLICATION_CREDENTIALS to a service-account file. No key is needed with ADC."
+      "note": "Google Cloud API key, or project/location plus ADC: place the credential file inside the agent folder and set GOOGLE_APPLICATION_CREDENTIALS to its relative path. No key is needed with ADC."
     },
     {
       "id": "huggingface",
