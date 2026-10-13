@@ -101,7 +101,7 @@ To watch and steer your agents from a browser, add `--console`:
 pnpm agents --env staging --console            # port 7070; --console-port <n> to change it
 ```
 
-The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every request. Without `--console` no port is opened.
+If the port is taken, the console tries the next one up, one at a time (up to 100 ports), and prints the link with the port it got. The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every request. Without `--console` no port is opened.
 
 - **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text.
 - **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.

@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PAGE } from "./console-page.js";
 import type { MarketplaceAgent } from "./core/agent.js";
@@ -119,6 +119,27 @@ function sameToken(header: string | undefined, token: string): boolean {
   return given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
+// Listens on 127.0.0.1 at `port`, or the next free port above it, one at a time.
+// Port 0 lets the system pick. Any error other than a taken port is thrown.
+const PORT_TRIES = 100;
+async function listenFrom(server: Server, port: number): Promise<number> {
+  for (let at = port; ; at++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const failed = (error: Error) => { server.off("listening", listening); reject(error); };
+        const listening = () => { server.off("error", failed); resolve(); };
+        server.once("error", failed).once("listening", listening).listen(at, "127.0.0.1");
+      });
+      return (server.address() as AddressInfo).port;
+    } catch (error) {
+      const taken = (error as NodeJS.ErrnoException).code === "EADDRINUSE";
+      if (!taken || port === 0 || at >= Math.min(65535, port + PORT_TRIES - 1)) {
+        throw taken ? new Error(`console: ports ${port}-${at} are all in use; pass --console-port`, { cause: error }) : error;
+      }
+    }
+  }
+}
+
 // The local console: this machine only. A foreign Host is a rebound DNS name and a
 // foreign Origin is another site's page; both are refused, and no CORS is offered.
 export async function startConsole(o: ConsoleOptions): Promise<{ url: string; port: number; close(): Promise<void> }> {
@@ -181,8 +202,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       timeline, host: facts ? hostFacts : undefined,
     };
   }
-  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(o.port, "127.0.0.1", resolve); });
-  port = (server.address() as AddressInfo).port;
+  port = await listenFrom(server, o.port);
   return {
     url: `http://127.0.0.1:${port}/#token=${o.token}`,
     port,

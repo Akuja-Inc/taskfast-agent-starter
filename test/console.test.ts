@@ -1,4 +1,4 @@
-import { request } from "node:http";
+import { createServer, request } from "node:http";
 import type { Message } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { readFileSync } from "node:fs";
@@ -72,6 +72,18 @@ it("only answers this machine's own pages, and only with the token", async () =>
   expect(allowed.status).toBe(200);
   expect(JSON.parse(allowed.text)).toMatchObject({ env: "local", agents: [{ id: "foo" }] });
   expect(Object.keys(allowed.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
+});
+
+it("moves up one port at a time past ports already in use", async () => {
+  const first = await serve();
+  const taken = createServer();
+  await new Promise<void>((resolve) => taken.listen(first.port + 1, "127.0.0.1", resolve));
+  closers.push(() => new Promise<void>((resolve) => taken.close(() => resolve())));
+  const next = await startConsole({ port: first.port, token, env: "local", agents: () => [] });
+  closers.push(next.close);
+  expect(next.port).toBe(first.port + 2);
+  expect(next.url).toBe(`http://127.0.0.1:${first.port + 2}/#token=${token}`);
+  expect((await call(next.port, "/")).status).toBe(200);
 });
 
 it("shows one agent's turns, alerts and prompt", async () => {
