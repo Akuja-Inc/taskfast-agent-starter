@@ -143,6 +143,8 @@ async function listenFrom(server: Server, port: number): Promise<number> {
 // The local console: this machine only. A foreign Host is a rebound DNS name and a
 // foreign Origin is another site's page; both are refused, and no CORS is offered.
 export async function startConsole(o: ConsoleOptions): Promise<{ url: string; port: number; close(): Promise<void> }> {
+  // An empty token would compare equal to a missing bearer header and serve every request.
+  if (!o.token) throw new Error("console: token required");
   let port = 0;
   const own = () => [`127.0.0.1:${port}`, `localhost:${port}`];
   const server = createServer((req, res) => {
@@ -159,13 +161,20 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       return send(res, 200, { env: o.env, agents: o.agents().map(({ id, spec }) => ({ id, name: spec.character.name, role: spec.role })) });
     }
     const match = /^\/api\/agents\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(path);
-    const item = match && o.agents().find((candidate) => candidate.id === decodeURIComponent(match[1]));
-    if (!match || !item) return send(res, 404, { error: "not found" });
-    const [, , action, arg] = match;
+    // A malformed percent-escape names no agent: not found, not a server error.
+    let id: string | undefined;
+    try { id = match ? decodeURIComponent(match[1]) : undefined; } catch { id = undefined; }
+    const item = id === undefined ? undefined : o.agents().find((candidate) => candidate.id === id);
+    if (!item) return send(res, 404, { error: "not found" });
+    const [, , action, arg] = match ?? [];
     if (req.method === "GET" && !action) return send(res, 200, await view(item));
     const controls = item.agent.operator;
     if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
       if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
+      // The page sends the text it rendered, so a stale render cannot remove the wrong order.
+      const expected = field(await readJson(req), "expect");
+      if (typeof expected !== "string") return send(res, 400, { error: "expect must be the current order text" });
+      if ((await controls.state()).orders[Number(arg)] !== expected) return send(res, 409, { error: "orders changed; refresh" });
       await controls.removeOrder(Number(arg));
       return send(res, 204, "");
     }

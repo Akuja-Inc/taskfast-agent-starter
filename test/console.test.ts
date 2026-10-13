@@ -38,15 +38,18 @@ async function serve(agents: ConsoleAgent[] = [fakeAgent().agent]) {
   return consoleServer;
 }
 function call(port: number, path: string, { method = "GET", headers = {}, body }: { method?: string; headers?: Record<string, string>; body?: unknown } = {}) {
+  // A string body is sent verbatim, so tests can post non-JSON.
+  const data = body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body);
   return new Promise<{ status: number; headers: Record<string, unknown>; text: string }>((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port, path, method, headers: { host: `127.0.0.1:${port}`, ...headers } }, (res) => {
+    // Node frames a body by itself only for some methods, so always set its length.
+    const length = data === undefined ? {} : { "content-length": String(Buffer.byteLength(data)) };
+    const req = request({ host: "127.0.0.1", port, path, method, headers: { host: `127.0.0.1:${port}`, ...length, ...headers } }, (res) => {
       let text = "";
       res.on("data", (chunk: Buffer) => { text += chunk.toString(); });
       res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text }));
     });
     req.on("error", reject);
-    if (body !== undefined) req.end(JSON.stringify(body));
-    else req.end();
+    req.end(data);
   });
 }
 const auth = { authorization: `Bearer ${token}` };
@@ -110,14 +113,14 @@ it("shows one agent's turns, alerts and prompt", async () => {
 });
 
 it("turns console actions into the agent's operator controls and refuses malformed ones", async () => {
-  const { agent, asked } = fakeAgent();
+  const { agent, asked } = fakeAgent({ state: { ...initialOperator(), orders: ["Decline weekend work."] } });
   const { port } = await serve([agent]);
   const post = (path: string, body: unknown) => call(port, `/api/agents/foo/${path}`, { method: "POST", headers: { ...auth, "content-type": "application/json" }, body });
   expect((await post("paused", { value: true })).status).toBe(204);
   expect((await post("frozen", { value: true })).status).toBe(204);
   expect((await post("messages", { requestId: "r1", text: "Post one job." })).status).toBe(204);
   expect((await post("orders", { text: "Keep jobs small." })).status).toBe(204);
-  expect((await call(port, "/api/agents/foo/orders/0", { method: "DELETE", headers: auth })).status).toBe(204);
+  expect((await call(port, "/api/agents/foo/orders/0", { method: "DELETE", headers: { ...auth, "content-type": "application/json" }, body: { expect: "Decline weekend work." } })).status).toBe(204);
   expect((await post("checked", { id: "escrow:x" })).status).toBe(204);
   expect((await post("retry", { eventId: "stuck" })).status).toBe(204);
   expect(asked).toEqual([
@@ -129,4 +132,46 @@ it("turns console actions into the agent's operator controls and refuses malform
   }
   expect((await call(port, "/api/agents/foo/orders/x", { method: "DELETE", headers: auth })).status).toBe(400);
   expect(asked).toHaveLength(7);
+});
+
+it("refuses to listen without a token", async () => {
+  await expect(startConsole({ port: 0, token: "", env: "local", agents: () => [] })).rejects.toThrow("console: token required");
+});
+
+it("answers a malformed percent-escape with not found, not a server error", async () => {
+  const { port } = await serve();
+  expect((await call(port, "/api/agents/%zz", { headers: auth })).status).toBe(404);
+});
+
+it("refuses oversize or non-JSON bodies before any control runs", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  const post = (body: unknown) => call(port, "/api/agents/foo/paused", { method: "POST", headers: { ...auth, "content-type": "application/json" }, body });
+  // Exactly one byte past the 64 KiB body limit.
+  const pad = "x".repeat(65537 - JSON.stringify({ value: true, pad: "" }).length);
+  expect((await post({ value: true, pad })).status).toBe(400);
+  expect((await post("definitely not json")).status).toBe(400);
+  expect(asked).toHaveLength(0);
+});
+
+it("renders the page with text only, never a markup sink", async () => {
+  const { port } = await serve();
+  const page = await call(port, "/");
+  expect(page.status).toBe(200);
+  for (const sink of [".innerHTML", "insertAdjacentHTML", "outerHTML", "document.write", "srcdoc"]) {
+    expect(page.text).not.toContain(sink);
+  }
+});
+
+it("removes an order only when the rendered text still matches", async () => {
+  const { agent, asked } = fakeAgent({ state: { ...initialOperator(), orders: ["Keep jobs small.", "Be brief."] } });
+  const { port } = await serve([agent]);
+  const remove = (index: number, body: unknown) =>
+    call(port, `/api/agents/foo/orders/${index}`, { method: "DELETE", headers: { ...auth, "content-type": "application/json" }, body });
+  expect((await remove(1, {})).status).toBe(400);
+  const stale = await remove(1, { expect: "Keep jobs small." });
+  expect(stale.status).toBe(409);
+  expect(JSON.parse(stale.text)).toEqual({ error: "orders changed; refresh" });
+  expect((await remove(1, { expect: "Be brief." })).status).toBe(204);
+  expect(asked).toEqual([["removeOrder", 1]]);
 });
