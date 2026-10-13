@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { PAGE } from "./console-page.js";
 import type { MarketplaceAgent } from "./core/agent.js";
 import { marketplacePrompt } from "./core/prompt.js";
+import { parseAgentSpec } from "./core/spec.js";
 import { buildTimeline } from "./core/timeline.js";
 import type { AgentSpec, Env } from "./core/types.js";
 
@@ -12,6 +13,8 @@ export interface ConsoleAgent {
   id: string;
   spec: AgentSpec;
   agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript">;
+  // Writes an already-checked agent file and reopens this agent with it.
+  saveSpec?(spec: AgentSpec): Promise<void>;
 }
 export interface ConsoleOptions {
   // 0 picks a free port.
@@ -119,6 +122,13 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
       if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
       await controls.removeOrder(Number(arg));
+      return send(res, 204, "");
+    }
+    if (req.method === "PUT" && action === "spec" && item.saveSpec) {
+      let spec: AgentSpec;
+      try { spec = parseAgentSpec(await readJson(req)); }
+      catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
+      await item.saveSpec(spec);
       return send(res, 204, "");
     }
     if (req.method !== "POST") return send(res, 404, { error: "not found" });

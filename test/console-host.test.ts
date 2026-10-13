@@ -53,6 +53,10 @@ async function host(options: Partial<RunOptions> & { agentsDir: string }, body: 
   try { await body(printed ? new URL(printed.slice("console: ".length)) : undefined, calls); }
   finally { stop.abort(); await running; }
 }
+const put = (link: URL, path: string, body: unknown) => fetch(new URL(path, link), {
+  method: "PUT", body: JSON.stringify(body),
+  headers: { authorization: `Bearer ${link.hash.slice("#token=".length)}`, "content-type": "application/json" },
+});
 const get = (link: URL, path: string) => fetch(new URL(path, link), { headers: { authorization: `Bearer ${link.hash.slice("#token=".length)}` } });
 
 it("opens a console only when asked, and prints its one link", async () => {
@@ -62,5 +66,43 @@ it("opens a console only when asked, and prints its one link", async () => {
     expect(link?.hash).toMatch(/^#token=[0-9a-f]{64}$/);
     const listed = await (await get(link!, "/api/agents")).json();
     expect(listed).toMatchObject({ env: "local", agents: [{ id: "me" }, { id: "you" }] });
+  });
+});
+
+it("saves a valid agent file and reopens only that agent; an invalid one changes nothing", async () => {
+  const dir = folders("me", "you");
+  const file = join(dir, "me", "agent.json");
+  const before = readFileSync(file, "utf8");
+  await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls) => {
+    const invalid = await put(link!, "/api/agents/me/spec", { ...JSON.parse(before), extra: true });
+    expect(invalid.status).toBe(400);
+    expect(readFileSync(file, "utf8")).toBe(before);
+    expect(calls).toEqual(["open me", "open you"]);
+
+    const changed = { ...JSON.parse(before), limits: { perJobUsd: 20, dailyUsd: 80 } };
+    expect((await put(link!, "/api/agents/me/spec", changed)).status).toBe(204);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(changed);
+    expect(calls).toEqual(["open me", "open you", "close me", "open me"]);
+    const view = await (await get(link!, "/api/agents/me")).json() as { spec: { limits: unknown } };
+    expect(view.spec.limits).toEqual({ perJobUsd: 20, dailyUsd: 80 });
+  });
+});
+
+it("keeps the host running when an agent cannot reopen", async () => {
+  const dir = folders("me", "you");
+  let opens = 0;
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    openAgent: async ({ id }) => {
+      if (id === "me" && ++opens > 1) throw new Error("store is already owned");
+      return handle(id, []);
+    },
+  }, async (link) => {
+    const spec = JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8"));
+    const failed = await put(link!, "/api/agents/me/spec", spec);
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toMatchObject({ error: expect.stringContaining("store is already owned") });
+    const listed = await (await get(link!, "/api/agents")).json() as { agents: { id: string }[] };
+    expect(listed.agents.map((agent) => agent.id)).toEqual(["you"]);
   });
 });

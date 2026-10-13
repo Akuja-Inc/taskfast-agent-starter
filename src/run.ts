@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -58,23 +58,50 @@ export async function runAgents(o: RunOptions): Promise<void> {
     providerSettings(agentDir); // Check persisted file references before any store opens.
     const localPassword = folderFile({ agentDir, path: PASSWORD_PATH, resource: "wallet unlock file" });
     const file = existsSync(localPassword) ? localPassword : walletPasswordFile;
-    return { id, spec, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
+    return { id, spec, specPath, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
   });
+  type Item = typeof agents[number];
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
   let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
-  try {
-    for (const item of agents) {
-      const agent = o.openAgent
-        ? await o.openAgent(item)
-        : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, log: (line) => o.log(`${item.id}: ${line}`) });
-      const owned: typeof running[number] = { id: item.id, spec: item.spec, agent };
-      running.push(owned);
-      owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => o.log(`${item.id}: ${line}`) });
+  // Opens one agent's store, then its stream, keeping its place among the others.
+  async function start(item: Item, at = running.length): Promise<void> {
+    const agent = o.openAgent
+      ? await o.openAgent(item)
+      : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, log: (line) => o.log(`${item.id}: ${line}`) });
+    const owned: typeof running[number] = { id: item.id, spec: item.spec, agent };
+    running.splice(at, 0, owned);
+    owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => o.log(`${item.id}: ${line}`) });
+  }
+  // Saves a checked agent file, then reopens only that agent. If it cannot reopen it
+  // stays stopped and the others keep running.
+  async function reopen(item: Item, spec: AgentSpec): Promise<void> {
+    const temporary = `${item.specPath}.saving`;
+    writeFileSync(temporary, `${JSON.stringify(spec, null, 2)}\n`);
+    renameSync(temporary, item.specPath);
+    item.spec = spec;
+    const at = running.findIndex((owned) => owned.id === item.id);
+    if (at >= 0) {
+      const [owned] = running.splice(at, 1);
+      // Stream before store, as at shutdown.
+      await owned.listener?.close();
+      await owned.agent.close();
     }
+    try { await start(item, at >= 0 ? at : running.length); }
+    catch (error) {
+      o.log(`${item.id}: stopped, could not reopen: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+  try {
+    for (const item of agents) await start(item);
     if (o.console) {
       consoleServer = await startConsole({
         port: o.console.port, token: randomBytes(32).toString("hex"), env: o.env,
-        agents: () => running.flatMap(({ id, spec, agent }) => (agent.operator && agent.status && agent.transcript ? [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript } }] : [])),
+        agents: () => running.flatMap(({ id, spec, agent }) => {
+          const item = agents.find((candidate) => candidate.id === id);
+          if (!item || !agent.operator || !agent.status || !agent.transcript) return [];
+          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript }, saveSpec: (next: AgentSpec) => reopen(item, next) }];
+        }),
       });
       o.log(`console: ${consoleServer.url}`);
     }
