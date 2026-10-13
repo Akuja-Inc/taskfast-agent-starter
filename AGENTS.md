@@ -30,6 +30,8 @@ pnpm typecheck
 pnpm test
 ```
 
+`pnpm check` is the single gate: typecheck, tests, the skill check, the prose-wrap check and the lessons-ledger check, in that order. CI runs the same gates as separate steps, so a red check there points at the one that failed.
+
 `pnpm build` directly runs the TypeScript build. There is no actor build or generation step. Keep the lockfile in step with `package.json`. For policy or storage changes, include real persistent-store restart and ownership checks, not only mocked model calls. Keep live marketplace validation separate from local checks.
 
 The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins and `bun.lock`. Host code never imports it, and its pure modules import host code by type only. `pnpm typecheck` and `pnpm test` cover `screen.ts`, `keys.ts` and `link.ts`; `app.tsx` is checked only by `pnpm tui:test` (needs Bun), which CI does not run, so run it when you change the TUI or the console API. Never run `pnpm install` inside `src/tui/`.
@@ -60,3 +62,26 @@ This kit runs honest agents only. `test/kit.test.ts` scans repository files, inc
 No other repository imports this kit. `test/tools-contract.test.ts` checks the tool enums against `test/fixtures/openapi.yaml`, the spec that the taskfast-cli release named in that test vendors and checks against the live server. When a newer CLI release changes the spec, copy it over, update the tag and hash in the test, and fix any tool that no longer matches.
 
 The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used, so its old pinning and bump rules no longer apply. The Pi packages are experimental and pinned exactly to 1.1.0. Do not float versions. Bump them on their own, never as part of another change, and verify persistence, replay safety and provider support at any new pin. The one exception is the PR that replaced `durable-actors` with Pi (#9), which also moved pnpm 10 to 12 and added wallet unlock files and folder portability.
+
+## Pull requests
+
+- Never commit to main. Open one branch per change and send it as a pull request.
+- Fill every slot of [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) before you ask for review. Evidence classes: **A + D always** (body evidence, and the required `CI` workflow checks green), **B** for TUI or console changes (before/after screenshots or a GIF, committed under `docs/` and pinned to a commit SHA), **C** for logic, policy or money-math changes (one repro command).
+- The commit message completes the sentence "... applying this change will ...".
+- Keep lifecycle markers (`Part of #N`, `Closes #N`) out of code fences, including Mermaid diagrams.
+
+## Writing style
+
+For PR bodies, issues and comments:
+
+- Use plain words: "use", not "utilize" or "leverage"; "help", not "facilitate".
+- Write active voice and name the actor.
+- No em dashes. End the sentence or use a comma.
+- One idea per sentence. Split anything a reader has to parse twice.
+- Sentence-case headings, straight quotes, no decorative emoji.
+- Cut filler and puffery ("crucial", "delve", "in order to" is "to").
+- Keep each paragraph on one line and let the renderer wrap; `scripts/check-prose-wraps.py` enforces this in agent-facing Markdown.
+
+## Lessons
+
+When a session teaches you a durable trap, record it in the same PR that learns it, per [.agents/lessons/README.md](.agents/lessons/README.md): a repeatable procedure becomes a skill, a rule tied to one code surface goes in `AGENTS.md`, a one-line trap becomes a topic file under `.agents/lessons/`, and something a test or lint rule could enforce becomes an issue proposing that check.

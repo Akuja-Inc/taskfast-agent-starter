@@ -1,0 +1,92 @@
+name: Implementation Contract
+description: Use for starter-kit work that touches the agent's tools, money policy, storage, host lifecycle or agent files.
+title: "[Contract]: "
+labels: ["needs-contract"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The user-visible reason. What does an agent or its owner gain?
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision
+      description: What are we doing, and why is this option better than the alternatives?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What must land?
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What must not land in this issue/stack?
+    validations:
+      required: true
+
+  - type: textarea
+    id: canon
+    attributes:
+      label: Canon constraints
+      description: Honest agents only, enforced by the kit scan (`test/kit.test.ts`); policy permanence across conversation reset and compaction; reserve before dispatch with a meaningful action key; only known refusals are retried; code sets every amount, never the model; model values never become CLI flags; ACK means durable admission; one CLI child per command with a restricted environment; Pi packages stay exactly pinned; never print or commit secrets or live agent state. Any issue touching `src/core/tools.ts`, `policy.ts`, `money.ts`, `cli.ts`, `storage.ts`, the agent-file spec or the kit scan MUST fill this in — an empty field means the issue is NOT contract-ready.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: User-visible outcomes and agent behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: failure_cases
+    attributes:
+      label: Failure cases
+      description: Missing config, malformed config, empty strings, retryable failures (stream, CLI child), permanent failures, races, idempotency, partial writes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests required
+      description: Happy path and named negative cases, asserting persisted outcomes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: deploy
+    attributes:
+      label: Deployment / flag readiness
+      description: Env vars, flags, startup behavior, malformed optional config, what blocks a release.
+    validations:
+      required: true
+
+  - type: textarea
+    id: pr_slicing
+    attributes:
+      label: PR slicing
+      description: PR1, PR2, PR3. State which PR closes the issue. Intermediate PRs use Refs; only the final PR uses Closes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: review_traps
+    attributes:
+      label: Review traps
+      description: Specific things reviewers and agents must inspect before merge.
+    validations:
+      required: true

@@ -50,3 +50,22 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The wrap gate reads code blocks out of a real CommonMark parse rather
+      # than guessing where fences end, so it needs python3-markdown-it. Ubuntu
+      # ships it, and apt keeps the runner's python PEP 668-clean.
+      - name: Install the prose wrap gate's parser
+        run: |
+          if ! python3 -c "import markdown_it" >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends python3-markdown-it
+          fi
+
+      - name: Skill files
+        run: bash scripts/check-agent-skills.sh
+
+      - name: Prose wraps
+        run: python3 scripts/check-prose-wraps.py
+
+      - name: Lessons ledger
+        run: python3 scripts/check-lessons-ledger.py

@@ -1,0 +1,13 @@
+[
+  { "prompt": "Watch PR #7 until it merges.", "should_trigger": true, "why": "Babysitting an open PR to merged." },
+  { "prompt": "Checks are green on PR #12 and Sam approved it. Merge it.", "should_trigger": true, "why": "An explicit merge ask on an open PR with green checks." },
+  { "prompt": "PR #3 has two review comments from the maintainer. Reply in the threads and push whatever fixes they need.", "should_trigger": true, "why": "Answering review threads and pushing fix commits on an open PR." },
+  { "prompt": "The typecheck job is red on my open PR. Get it green.", "should_trigger": true, "why": "A red required check on an open PR." },
+  { "prompt": "Babysit PR #5: rebase it if it goes stale, answer comments, and merge when everything passes.", "should_trigger": true, "why": "End-to-end babysitting of an open PR through review and merge." },
+  { "prompt": "Keep PR #9 moving until it merges, and answer whatever the reviewers leave.", "should_trigger": true, "why": "Watching an open PR and handling review as it comes." },
+  { "prompt": "I just finished my tools.ts change. Open a PR for it.", "should_trigger": false, "why": "Opening a new PR: ship-pr." },
+  { "prompt": "Start a fresh branch and fix the console timeline grouping, then open a PR.", "should_trigger": false, "why": "New work to an opened PR: ship-pr." },
+  { "prompt": "Clean up the args builders in tools.ts, they repeat the same checks everywhere.", "should_trigger": false, "why": "A simplification pass, no PR in play yet: simplify." },
+  { "prompt": "Stop my agents and restart them on production.", "should_trigger": false, "why": "A running-agent request: running-an-agent." },
+  { "prompt": "Change my agent's model to Kimi.", "should_trigger": false, "why": "Editing agent.json: setting-up-an-agent." }
+]

@@ -1,0 +1,14 @@
+[
+  { "prompt": "I fixed the daily limit rollover in policy.ts on this branch. Run the checks and open a PR for it.", "should_trigger": true, "why": "Finished work taken to an opened, template-complete PR." },
+  { "prompt": "Take this branch to merge-ready: it fixes the dead-letter summary in the host log.", "should_trigger": true, "why": "The full workflow to an opened PR." },
+  { "prompt": "Start a branch from latest main, implement the console timeline grouping fix, and open a PR.", "should_trigger": true, "why": "New work on a fresh branch, through to an opened PR." },
+  { "prompt": "Open a PR for my console-page changes and fill in the whole template.", "should_trigger": true, "why": "Opening the PR with every proof slot filled." },
+  { "prompt": "Write the test first, then fix the tools.ts validator that accepts an empty UUID, and PR it.", "should_trigger": true, "why": "Test-first implementation ending in an opened PR." },
+  { "prompt": "Ship the provider catalogue regeneration as a PR.", "should_trigger": true, "why": "A generated-file change shipped through the PR workflow." },
+  { "prompt": "PR #12 has two review comments from Sam. Handle them and merge when green.", "should_trigger": false, "why": "The PR is already open: landing-a-pr." },
+  { "prompt": "Watch PR #7 until it merges.", "should_trigger": false, "why": "Watching and merging an open PR: landing-a-pr." },
+  { "prompt": "Make me a new agent that proofreads contracts on staging.", "should_trigger": false, "why": "Agent creation: setting-up-an-agent." },
+  { "prompt": "pnpm agents says the store is already owned; fix it.", "should_trigger": false, "why": "A running-agent problem: running-an-agent." },
+  { "prompt": "Add a tool so the agent can filter discover by price range.", "should_trigger": false, "why": "Changing the agent's tools: changing-an-agent-tool." },
+  { "prompt": "Clean up the args builders in tools.ts without changing behavior.", "should_trigger": false, "why": "A clarity refactor with no PR ask: simplify." }
+]
