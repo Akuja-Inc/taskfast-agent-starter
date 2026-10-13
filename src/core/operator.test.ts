@@ -52,6 +52,23 @@ it("keeps the operator's controls across closing and reopening the store", async
   expect(await reopened.agent.operator.state()).toMatchObject({ frozen: true });
 });
 
+it("admits events while paused without running the model, then runs them on resume", async () => {
+  const kit = await open();
+  await kit.agent.operator.setPaused(true);
+  await kit.agent.deliver({ event_id: "e1", event: "message_received" });
+  await kit.agent.ping();
+  await kit.agent.recover();
+  expect(kit.faux.state.callCount).toBe(0);
+  expect(await kit.agent.operator.state()).toMatchObject({ paused: true });
+  kit.faux.setResponses([fauxAssistantMessage("Answered the message.")]);
+  await kit.agent.operator.setPaused(false);
+  await kit.agent.waitForIdle();
+  expect(kit.faux.state.callCount).toBe(1);
+  const transcript = JSON.stringify((await kit.agent.conversation.context(context)).messages);
+  expect(transcript).toContain("Marketplace event:");
+  expect(transcript).not.toContain("Check your marketplace work");
+});
+
 it("refuses a money tool while spending is frozen, before reserving anything, and still runs reads", async () => {
   const kit = await open();
   await kit.agent.operator.setFrozen(true);

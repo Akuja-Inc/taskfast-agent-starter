@@ -58,6 +58,7 @@ export interface MarketplaceAgent {
 export interface OperatorControls {
   state(): Promise<OperatorState>;
   setFrozen(frozen: boolean): Promise<void>;
+  setPaused(paused: boolean): Promise<void>;
 }
 
 function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
@@ -125,6 +126,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       if (closed) return;
       if (recovering) return recovering;
       recovering = (async () => {
+        // Paused: settle finished runs, but submit nothing and start no work.
+        const paused = (await owner.snapshot(Operator, context))?.paused ?? false;
         const pending = await owner.snapshot(Events, context);
         for (const [id, work] of Object.entries(pending?.events ?? {})) {
           if (work.kind === "done" || work.kind === "abandoned") continue;
@@ -144,11 +147,12 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
             }, context);
             if (current.kind === "abandoned") log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
           }
-          if (current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
+          if (paused || current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
           // Request dedupe covers death between submit() and saving its ID here.
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
+        if (paused) return;
         owner.resume();
         const stalled = await owner.inspect(context);
         const queued = stalled.submissions.find((item) => item.status === "queued");
@@ -176,6 +180,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     }
     async function ping(): Promise<void> {
       await recover();
+      if ((await owner.snapshot(Operator, context))?.paused) return;
       const work = await owner.inspect(context);
       if (work.tasks.length || work.submissions.length) return;
       await conversation.submit({ type: "input", content: `Check your marketplace work in your ${spec.role} role and pursue your current goals: ${spec.character.goals}. Read current state before acting; do not repeat uncertain writes.` }, context);
@@ -188,6 +193,10 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     const operator: OperatorControls = {
       state: async () => (await owner.snapshot(Operator, context)) ?? initialOperator(),
       setFrozen: async (frozen) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).frozen = frozen; }, context); },
+      setPaused: async (paused) => {
+        await conversation.commit(async (tx) => { (await tx.doc(Operator)).paused = paused; }, context);
+        if (!paused) await recover();
+      },
     };
     return {
       conversation, deliver, ping, recover, status: activePolicy.snapshot, operator,
