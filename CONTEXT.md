@@ -93,7 +93,7 @@ The pump runs a stream and acknowledges an event after `deliver()` resolves (`pu
 A host wake-up: `pnpm agents` polls immediately and every 15 minutes thereafter. It submits marketplace work when idle. Events do not cover discovery of every new open task.
 
 **Recovery:**
-Resuming admitted events and queued work after interruption. Pi owns persisted model/tool tasks; the kit retains event admission records and permanent write policy. Recovery does not grant permission to repeat an uncertain write. An event whose model run fails is resubmitted after a stored, jittered exponential delay (`EVENT_RETRY` in `agent.ts`); after the last retry it is recorded as abandoned, logged, and never resubmitted.
+Resuming admitted events and queued work after interruption. Pi owns persisted model/tool tasks; the kit retains event admission records and permanent write policy. Recovery does not grant permission to repeat an uncertain write. An event whose model run fails is resubmitted after a stored, jittered exponential delay (`EVENT_RETRY` in `agent.ts`); after the last retry it is recorded as abandoned, logged, and never resubmitted. When queued work has no running task, recovery queues one resume input, and no other while that input is still queued or running.
 
 **Tool:**
 An entry in `tools.ts`:
