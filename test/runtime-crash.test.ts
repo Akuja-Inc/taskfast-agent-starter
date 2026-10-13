@@ -1,9 +1,9 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
 const FIXTURE = join(ROOT, "test", "fixtures", "runtime-crash.mjs");
@@ -106,11 +106,6 @@ function assertState({ value, status }: { value: unknown; status: "done" | "rese
   }
 }
 
-beforeAll(() => {
-  // Children import emitted JS so source .js imports resolve in plain Node. Build
-  // once here rather than relying on stale prepare output from pnpm install.
-  execFileSync("pnpm", ["build"], { cwd: ROOT, timeout: 90_000, stdio: "pipe" });
-}, 100_000);
 afterEach(async () => {
   await Promise.all(children.splice(0).map((child) => child.kill()));
   directories.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }));

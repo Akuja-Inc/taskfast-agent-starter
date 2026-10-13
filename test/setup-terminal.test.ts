@@ -2,17 +2,10 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, expect, it } from "vitest";
+import { expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
 const HAS_PTY = process.platform !== "win32" && spawnSync("python3", ["-c", "import pty"]).status === 0;
-
-beforeAll(() => {
-  if (!HAS_PTY) return;
-  const build = spawnSync(process.execPath, [join(ROOT, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.build.json"], { cwd: ROOT, encoding: "utf8" });
-  expect(build.stdout + build.stderr).toBe("");
-  expect(build.status).toBe(0);
-});
 
 function kit(): string {
   const root = mkdtempSync(join(tmpdir(), "setup-terminal-"));

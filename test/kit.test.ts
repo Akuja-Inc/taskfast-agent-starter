@@ -20,6 +20,14 @@ it("uses the manifest as the single pnpm version source in CI", () => {
   expect(options).not.toMatch(/\bversion:/);
 });
 
+it("builds plain-Node fixtures before workers, not independently inside suites", () => {
+  expect(readFileSync(join(ROOT, "vitest.config.ts"), "utf8")).toContain('globalSetup: ["test/build.ts"]');
+  for (const file of ["runtime-crash.test.ts", "setup-terminal.test.ts"]) {
+    const suite = readFileSync(join(ROOT, "test", file), "utf8");
+    expect(suite).not.toMatch(/\b(?:execFileSync|spawnSync)\([^;]*(?:tsconfig\.build\.json|["']build["'])/s);
+  }
+});
+
 describe("examples", () => {
   it.each(readdirSync(join(ROOT, "examples")))("%s is a valid agent file", (name) => {
     expect(parseAgentSpec(example(name)).character.name).toBeTruthy();
