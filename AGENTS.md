@@ -53,10 +53,6 @@ The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins an
 - `test/fixtures/cli/` holds real CLI output. Re-capture when the CLI contract changes, as its README says. Never edit captures to make a test pass.
 - `dist/` and every agent's `.pi-state/` are build and runtime output. Do not commit them or credentials.
 
-### The kit scan
-
-This kit runs honest agents only. `test/kit.test.ts` scans repository files, including these documents, for names from private TaskFast test tooling. Some patterns match inside longer words. Read its list before naming things. Do not copy upstream names, labels or strategies. Choose another name if a match occurs; never weaken the scan.
-
 ### The server contract
 
 No other repository imports this kit. `test/tools-contract.test.ts` checks the tool enums against `test/fixtures/openapi.yaml`, the spec that the taskfast-cli release named in that test vendors and checks against the live server. When a newer CLI release changes the spec, copy it over, update the tag and hash in the test, and fix any tool that no longer matches.

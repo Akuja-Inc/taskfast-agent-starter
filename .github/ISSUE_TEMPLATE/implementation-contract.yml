@@ -39,7 +39,7 @@ body:
     id: canon
     attributes:
       label: Canon constraints
-      description: Honest agents only, enforced by the kit scan (`test/kit.test.ts`); policy permanence across conversation reset and compaction; reserve before dispatch with a meaningful action key; only known refusals are retried; code sets every amount, never the model; model values never become CLI flags; ACK means durable admission; one CLI child per command with a restricted environment; Pi packages stay exactly pinned; never print or commit secrets or live agent state. Any issue touching `src/core/tools.ts`, `policy.ts`, `money.ts`, `cli.ts`, `storage.ts`, the agent-file spec or the kit scan MUST fill this in — an empty field means the issue is NOT contract-ready.
+      description: Honest agents only; policy permanence across conversation reset and compaction; reserve before dispatch with a meaningful action key; only known refusals are retried; code sets every amount, never the model; model values never become CLI flags; ACK means durable admission; one CLI child per command with a restricted environment; Pi packages stay exactly pinned; never print or commit secrets or live agent state. Any issue touching `src/core/tools.ts`, `policy.ts`, `money.ts`, `cli.ts`, `storage.ts` or the agent-file spec MUST fill this in — an empty field means the issue is NOT contract-ready.
     validations:
       required: true
 

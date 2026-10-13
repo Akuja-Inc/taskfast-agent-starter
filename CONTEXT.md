@@ -132,8 +132,5 @@ The console in a terminal: a separate Bun client of the console API, never part 
 **Provider catalogue** (`providers.json`, `src/core/providers.ts`):
 Generated offline by `scripts/gen-providers.mjs` from the installed exact Pi-ai pin. Not edited by hand.
 
-**Kit scan** (`test/kit.test.ts`):
-Rejects names from private TaskFast test tooling. Covers these documents too; never weaken it.
-
 **Pin:**
 An exact dependency version or the exact commit downstream TaskFast tooling uses. Pi packages are experimental and pinned to 1.1.0. Downstream consumers must replace removed `actors`, `self` and `turn` imports with the new `agent`, `policy` and `storage` lifecycle; no compatibility or state-migration tooling is supplied.
