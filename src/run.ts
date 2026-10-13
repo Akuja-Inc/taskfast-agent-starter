@@ -1,8 +1,10 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { startConsole, type ConsoleAgent } from "./console.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
 import { parseAgentSpec } from "./core/spec.js";
@@ -17,11 +19,14 @@ export function taskfastEnv(name: string): Env {
   if (!environment) throw new Error(`--env must be production, staging or development, not ${JSON.stringify(name)}`);
   return environment[1];
 }
-export type AgentHandle = Pick<MarketplaceAgent, "deliver" | "ping" | "close">;
+// The console shows only agents whose handle carries its controls.
+export type AgentHandle = Pick<MarketplaceAgent, "deliver" | "ping" | "close"> & Partial<ConsoleAgent["agent"]>;
 export interface RunOptions {
   agentsDir: string;
   env: Env;
   walletPasswordFile?: string;
+  // Serve the local console on 127.0.0.1 at this port (0 picks one). Off unless given.
+  console?: { port: number };
   openAgent?(agent: { id: string; spec: AgentSpec; runtime: Runtime; storePath: string }): Promise<AgentHandle>;
   listen?: typeof startListener;
   signal: AbortSignal;
@@ -55,15 +60,23 @@ export async function runAgents(o: RunOptions): Promise<void> {
     const file = existsSync(localPassword) ? localPassword : walletPasswordFile;
     return { id, spec, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
   });
-  const running: { id: string; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
+  const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
+  let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
   try {
     for (const item of agents) {
       const agent = o.openAgent
         ? await o.openAgent(item)
         : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, log: (line) => o.log(`${item.id}: ${line}`) });
-      const owned: typeof running[number] = { id: item.id, agent };
+      const owned: typeof running[number] = { id: item.id, spec: item.spec, agent };
       running.push(owned);
       owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => o.log(`${item.id}: ${line}`) });
+    }
+    if (o.console) {
+      consoleServer = await startConsole({
+        port: o.console.port, token: randomBytes(32).toString("hex"), env: o.env,
+        agents: () => running.flatMap(({ id, spec, agent }) => (agent.operator && agent.status && agent.transcript ? [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript } }] : [])),
+      });
+      o.log(`console: ${consoleServer.url}`);
     }
     o.log(`running ${ids.length} agent(s) on ${o.env}: ${ids.join(", ")}`);
     while (!o.signal.aborted) {
@@ -71,6 +84,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
       await sleep(o.pingEveryMs ?? 900_000, undefined, { signal: o.signal }).catch(() => {});
     }
   } finally {
+    await consoleServer?.close();
     // Close streams before stores so no event can be ACKed after its owner closed.
     await Promise.allSettled(running.map(async ({ listener }) => listener?.close()));
     await Promise.all(running.map(({ agent }) => agent.close()));
@@ -78,11 +92,13 @@ export async function runAgents(o: RunOptions): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { values } = parseArgs({ options: { env: { type: "string", default: "production" }, "wallet-password-file": { type: "string" } } });
+  const { values } = parseArgs({ options: { env: { type: "string", default: "production" }, "wallet-password-file": { type: "string" }, console: { type: "boolean", default: false }, "console-port": { type: "string", default: "7070" } } });
   const file = values["wallet-password-file"];
   if (file !== undefined && !file) throw new Error("--wallet-password-file needs a path");
+  const port = Number(values["console-port"]);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("--console-port must be a port number");
   const stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
   process.once("SIGTERM", () => stop.abort());
-  await runAgents({ agentsDir: "agents", env: taskfastEnv(values.env), ...(file === undefined ? {} : { walletPasswordFile: resolve(file) }), signal: stop.signal, log: (line) => process.stdout.write(`${line}\n`) });
+  await runAgents({ agentsDir: "agents", env: taskfastEnv(values.env), ...(file === undefined ? {} : { walletPasswordFile: resolve(file) }), ...(values.console ? { console: { port } } : {}), signal: stop.signal, log: (line) => process.stdout.write(`${line}\n`) });
 }
