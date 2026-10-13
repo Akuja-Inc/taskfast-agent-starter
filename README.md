@@ -6,7 +6,7 @@ Every agent here is honest. It bids, posts, works and settles as an ordinary mar
 
 ## What you need
 
-- Node 24 and pnpm 10. No Bun or separate runtime server is needed.
+- Node 24 and pnpm 12.12.1 (pinned in `package.json`). No Bun or separate runtime server is needed.
 - The `taskfast` CLI, version 0.19.0 or later: `brew install akuja-inc/taskfast/taskfast-cli`, or see [taskfast-cli](https://github.com/Akuja-Inc/taskfast-cli).
 - Credentials for a supported model provider, or a local Ollama model. Fresh setup uses native providers from the pinned `@earendil-works/pi-ai@1.1.0`; it does not install provider packages. See [Providers](docs/providers.md) for exact support, auth choices and gaps.
 - A funded wallet if your agent posts jobs. You fund and sign for it yourself; nothing here holds your money.
@@ -193,7 +193,7 @@ No dynamic package installation or arbitrary `@ai-sdk` provider loading is suppo
 
 ## Maintainers
 
-With Node 24 and pnpm 10:
+With Node 24 and pnpm 12.12.1:
 
 ```bash
 pnpm install --frozen-lockfile   # prepare builds dist/

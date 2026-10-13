@@ -56,7 +56,7 @@ Never loosen a check to make a new tool fit.
 
 ## 5. Check
 
-Use Node 24 and pnpm 10:
+Use Node 24 and pnpm 12.12.1:
 
 ```bash
 pnpm install --frozen-lockfile   # prepare builds dist/

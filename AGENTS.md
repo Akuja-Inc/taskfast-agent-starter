@@ -22,7 +22,7 @@ You are here to help someone run or configure their own agent, or to change code
 
 ### Check your work
 
-Node 24 and pnpm 10, as in CI:
+Node 24 and pnpm 12.12.1, as pinned in `package.json` and used by CI:
 
 ```bash
 pnpm install --frozen-lockfile   # prepare builds dist/

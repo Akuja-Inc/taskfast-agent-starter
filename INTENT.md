@@ -19,7 +19,7 @@ pnpm setup-agent --env staging    # provider, credentials, model, identity, task
 pnpm agents --env staging         # agents, event streams and polling in one process
 ```
 
-Node 24 and pnpm 10 are enough for the kit. No separate runtime server, Bun build or generation step belongs in this path. Every extra step, prompt, config file or manual edit has to earn its cost.
+Node 24 and pnpm 12 are enough for the kit. No separate runtime server, Bun build or generation step belongs in this path. Every extra step, prompt, config file or manual edit has to earn its cost.
 
 Running a process is not proof that credentials, wallet signing or marketplace behaviour work. Local checks and live validation are separate; do not claim staging or production validation without doing it with permission.
 

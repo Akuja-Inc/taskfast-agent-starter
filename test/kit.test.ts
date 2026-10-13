@@ -10,6 +10,16 @@ import { runAgents } from "../src/run.js";
 const ROOT = join(import.meta.dirname, "..");
 const example = (name: string): unknown => JSON.parse(readFileSync(join(ROOT, "examples", name), "utf8"));
 
+it("uses the manifest as the single pnpm version source in CI", () => {
+  const manifest: unknown = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  if (typeof manifest !== "object" || manifest === null || !("packageManager" in manifest)) throw new Error("package manager pin missing");
+  expect(manifest.packageManager).toMatch(/^pnpm@\d+\.\d+\.\d+$/);
+  const workflow = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  const options = workflow.match(/uses: pnpm\/action-setup@[^\n]+\n\s+with:\n((?:[ \t]{10}.+\n)+)/)?.[1];
+  expect(options).toBeDefined();
+  expect(options).not.toMatch(/\bversion:/);
+});
+
 describe("examples", () => {
   it.each(readdirSync(join(ROOT, "examples")))("%s is a valid agent file", (name) => {
     expect(parseAgentSpec(example(name)).character.name).toBeTruthy();
