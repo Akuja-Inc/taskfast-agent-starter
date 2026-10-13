@@ -145,7 +145,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         owner.resume();
         const stalled = await owner.inspect(context);
         const queued = stalled.submissions.find((item) => item.status === "queued");
-        // One nudge per stall: none while an earlier one is still queued or placed.
+        // One resume input per stall: none while an earlier one is still queued or placed.
         if (!stalled.tasks.length && queued && !stalled.submissions.some((item) => item.requestId?.startsWith("resume:"))) {
           await conversation.submit({ type: "input", requestId: `resume:${queued.id}`, content: "Resume your queued marketplace work after the failed run. Read current state before any write." }, context);
         }
