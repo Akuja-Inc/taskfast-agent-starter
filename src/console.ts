@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { PAGE } from "./console-page.js";
 import type { MarketplaceAgent } from "./core/agent.js";
+import { marketplacePrompt } from "./core/prompt.js";
+import { buildTimeline } from "./core/timeline.js";
 import type { AgentSpec, Env } from "./core/types.js";
 
 // What the console needs from one running agent.
@@ -18,6 +20,65 @@ export interface ConsoleOptions {
   token: string;
   env: Env;
   agents(): ConsoleAgent[];
+}
+
+// Enough recent history for the timeline without paging; older turns stay in the store.
+const TRANSCRIPT_ENTRIES = 400;
+const MAX_BODY = 64 * 1024;
+const MAX_TEXT = 4000;
+
+async function readJson(req: IncomingMessage): Promise<unknown> {
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY) return undefined;
+    chunks.push(chunk as Buffer);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return undefined; }
+}
+const field = (body: unknown, key: string): unknown => (typeof body === "object" && body !== null ? (body as Record<string, unknown>)[key] : undefined);
+const words = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= MAX_TEXT;
+
+// Validates one console action and hands it to the agent. Returns undefined when done,
+// a reason when the body is malformed, or null for an unknown action.
+async function act(controls: ConsoleAgent["agent"]["operator"], action: string | undefined, body: unknown): Promise<string | null | undefined> {
+  const value = field(body, "value");
+  switch (action) {
+    case "paused":
+    case "frozen":
+      if (typeof value !== "boolean") return "value must be true or false";
+      await (action === "paused" ? controls.setPaused(value) : controls.setFrozen(value));
+      return undefined;
+    case "messages": {
+      const requestId = field(body, "requestId");
+      const text = field(body, "text");
+      if (typeof requestId !== "string" || !/^[\w-]{1,100}$/.test(requestId)) return "requestId must be 1-100 letters, digits, - or _";
+      if (!words(text)) return `text must be 1-${MAX_TEXT} characters`;
+      await controls.message({ requestId, text });
+      return undefined;
+    }
+    case "orders": {
+      const text = field(body, "text");
+      if (!words(text)) return `text must be 1-${MAX_TEXT} characters`;
+      await controls.addOrder(text);
+      return undefined;
+    }
+    case "checked": {
+      const id = field(body, "id");
+      if (typeof id !== "string" || !id || id.length > 300) return "id is required";
+      await controls.markChecked(id);
+      return undefined;
+    }
+    case "retry": {
+      const eventId = field(body, "eventId");
+      if (typeof eventId !== "string" || !eventId || eventId.length > 300) return "eventId is required";
+      await controls.retryEvent(eventId);
+      return undefined;
+    }
+    default:
+      return null;
+  }
 }
 
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json") {
@@ -49,7 +110,36 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     if (req.method === "GET" && path === "/api/agents") {
       return send(res, 200, { env: o.env, agents: o.agents().map(({ id, spec }) => ({ id, name: spec.character.name, role: spec.role })) });
     }
-    return send(res, 404, { error: "not found" });
+    const match = /^\/api\/agents\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(path);
+    const item = match && o.agents().find((candidate) => candidate.id === decodeURIComponent(match[1]));
+    if (!match || !item) return send(res, 404, { error: "not found" });
+    const [, , action, arg] = match;
+    if (req.method === "GET" && !action) return send(res, 200, await view(item));
+    const controls = item.agent.operator;
+    if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
+      if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
+      await controls.removeOrder(Number(arg));
+      return send(res, 204, "");
+    }
+    if (req.method !== "POST") return send(res, 404, { error: "not found" });
+    const body = await readJson(req);
+    const problem = await act(controls, action, body);
+    return problem === undefined ? send(res, 204, "") : send(res, problem === null ? 404 : 400, { error: problem ?? "not found" });
+  }
+  async function view({ id, spec, agent }: ConsoleAgent) {
+    const [policy, operator, events, transcript] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES)]);
+    const attention = [
+      ...Object.entries(policy.actions).filter(([key, action]) => action.status === "uncertain" && !operator.checked[key])
+        .map(([key, action]) => ({ kind: "uncertain", id: key, at: action.at, amount: action.amount })),
+      ...Object.entries(events).filter(([key, work]) => work.kind === "abandoned" && !operator.checked[key])
+        .map(([key, work]) => ({ kind: "abandoned", id: key.slice("event:".length), attempts: work.attempt + 1, event: work.event })),
+    ];
+    return {
+      id, env: o.env, spec, operator, attention, events,
+      actions: policy.actions, spend: policy.spend, notes: policy.memory,
+      prompt: marketplacePrompt(spec, policy.memory, operator.orders),
+      timeline: buildTimeline(transcript),
+    };
   }
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(o.port, "127.0.0.1", resolve); });
   port = (server.address() as AddressInfo).port;

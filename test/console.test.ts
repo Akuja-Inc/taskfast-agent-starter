@@ -1,4 +1,6 @@
 import { request } from "node:http";
+import type { Message } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it } from "vitest";
 import { startConsole, type ConsoleAgent } from "../src/console.js";
@@ -10,18 +12,19 @@ const closers: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(closers.splice(0).map((close) => close())); });
 
 // One agent whose controls record what the console asked of them.
-function fakeAgent(id = "foo") {
+type Ledger = Awaited<ReturnType<ConsoleAgent["agent"]["status"]>>;
+type Work = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["events"]>>;
+function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], state = initialOperator() }: { id?: string; actions?: Ledger["actions"]; events?: Work; transcript?: Message[]; state?: OperatorState } = {}) {
   const asked: unknown[][] = [];
-  const state: OperatorState = initialOperator();
   const record = (name: string) => async (...args: unknown[]) => { asked.push([name, ...args]); };
   const agent: ConsoleAgent = {
     id,
     spec: parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8"))),
     agent: {
-      status: async () => ({ identity: { env: "local", agentId: "33333333-3333-4333-8333-333333333333" }, actions: {}, spend: {}, memory: [] }),
-      transcript: async () => [],
+      status: async () => ({ identity: { env: "local", agentId: "33333333-3333-4333-8333-333333333333" }, actions, spend: { "2026-10-13": 15 }, memory: ["Use US spelling."] }),
+      transcript: async () => transcript,
       operator: {
-        state: async () => state, events: async () => ({}),
+        state: async () => state, events: async () => events,
         setFrozen: record("setFrozen"), setPaused: record("setPaused"), message: record("message"),
         addOrder: record("addOrder"), removeOrder: record("removeOrder"), markChecked: record("markChecked"), retryEvent: record("retryEvent"),
       },
@@ -29,7 +32,7 @@ function fakeAgent(id = "foo") {
   };
   return { agent, asked };
 }
-async function serve(agents = [fakeAgent().agent]) {
+async function serve(agents: ConsoleAgent[] = [fakeAgent().agent]) {
   const consoleServer = await startConsole({ port: 0, token, env: "local", agents: () => agents });
   closers.push(consoleServer.close);
   return consoleServer;
@@ -67,4 +70,49 @@ it("only answers this machine's own pages, and only with the token", async () =>
   expect(allowed.status).toBe(200);
   expect(JSON.parse(allowed.text)).toMatchObject({ env: "local", agents: [{ id: "foo" }] });
   expect(Object.keys(allowed.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
+});
+
+it("shows one agent's turns, alerts and prompt", async () => {
+  const uncertain = { status: "uncertain" as const, at: "2026-10-13T06:00:00Z", amount: 15, day: "2026-10-13" };
+  const { agent } = fakeAgent({
+    actions: { "escrow:22222222-2222-4222-8222-222222222222": uncertain, "post:abc": { ...uncertain, status: "done" }, "post:old": uncertain },
+    events: { "event:stuck": { kind: "abandoned", attempt: 5, event: { event_id: "stuck", event: "payment_signature_required" }, submission: "s1" as never } },
+    transcript: [{ role: "user", content: "Check your marketplace work in your poster role.", timestamp: 1 }, fauxAssistantMessage("Nothing yet.")],
+    state: { ...initialOperator(), orders: ["Keep every job under $15."], checked: { "post:old": "2026-10-13T07:00:00Z" } },
+  });
+  const { port } = await serve([agent]);
+  const view = JSON.parse((await call(port, "/api/agents/foo", { headers: auth })).text);
+  expect(view.timeline.map((turn: { kind: string }) => turn.kind)).toEqual(["poll"]);
+  expect(view.timeline[0].replies[0].text).toBe("Nothing yet.");
+  expect(view.attention).toEqual([
+    { kind: "uncertain", id: "escrow:22222222-2222-4222-8222-222222222222", at: "2026-10-13T06:00:00Z", amount: 15 },
+    { kind: "abandoned", id: "stuck", attempts: 6, event: { event_id: "stuck", event: "payment_signature_required" } },
+  ]);
+  expect(view.prompt).toContain("Use US spelling.");
+  expect(view.prompt).toContain("Keep every job under $15.");
+  expect(view.spend).toEqual({ "2026-10-13": 15 });
+  expect(view.spec.character.name).toBe(agent.spec.character.name);
+  expect((await call(port, "/api/agents/nobody", { headers: auth })).status).toBe(404);
+});
+
+it("turns console actions into the agent's operator controls and refuses malformed ones", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  const post = (path: string, body: unknown) => call(port, `/api/agents/foo/${path}`, { method: "POST", headers: { ...auth, "content-type": "application/json" }, body });
+  expect((await post("paused", { value: true })).status).toBe(204);
+  expect((await post("frozen", { value: true })).status).toBe(204);
+  expect((await post("messages", { requestId: "r1", text: "Post one job." })).status).toBe(204);
+  expect((await post("orders", { text: "Keep jobs small." })).status).toBe(204);
+  expect((await call(port, "/api/agents/foo/orders/0", { method: "DELETE", headers: auth })).status).toBe(204);
+  expect((await post("checked", { id: "escrow:x" })).status).toBe(204);
+  expect((await post("retry", { eventId: "stuck" })).status).toBe(204);
+  expect(asked).toEqual([
+    ["setPaused", true], ["setFrozen", true], ["message", { requestId: "r1", text: "Post one job." }],
+    ["addOrder", "Keep jobs small."], ["removeOrder", 0], ["markChecked", "escrow:x"], ["retryEvent", "stuck"],
+  ]);
+  for (const [path, body] of [["paused", { value: "yes" }], ["messages", { requestId: "r2", text: "" }], ["messages", { text: "no id" }], ["orders", { text: 7 }], ["checked", {}]] as const) {
+    expect((await post(path, body)).status).toBe(400);
+  }
+  expect((await call(port, "/api/agents/foo/orders/x", { method: "DELETE", headers: auth })).status).toBe(400);
+  expect(asked).toHaveLength(7);
 });

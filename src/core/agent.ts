@@ -9,7 +9,7 @@ import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
 import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
-import { buildSystemPrompt } from "./prompt.js";
+import { marketplacePrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
 import { TOOLS } from "./tools.js";
@@ -112,10 +112,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     registry.install(defineExtension({
       name: "taskfast", tools,
       sections: [section("marketplace", async (input, ctx) => {
-        const state = await input.read.snapshot(Policy, ctx);
-        const notes = state?.memory.length ? `\nYour notes:\n${state.memory.map((note, index) => `${index}: ${note}`).join("\n")}` : "";
-        const orders = (await input.read.snapshot(Operator, ctx))?.orders ?? [];
-        return buildSystemPrompt(spec) + notes + (orders.length ? `\nYour operator's standing orders:\n${orders.map((order) => `- ${order}`).join("\n")}` : "");
+        const notes = (await input.read.snapshot(Policy, ctx))?.memory ?? [];
+        return marketplacePrompt(spec, notes, (await input.read.snapshot(Operator, ctx))?.orders ?? []);
       }, { tag: false })],
     }));
     pi = await PiRuntime.open(storage, {

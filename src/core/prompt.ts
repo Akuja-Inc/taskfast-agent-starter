@@ -14,6 +14,14 @@ export const MARKET: Record<Role, string> = {
   both: "You hire people for some jobs and take on work yourself through a freelance marketplace",
 };
 
+// The whole system prompt: the character, the agent's own notes, then the user's
+// standing orders, which the agent cannot change.
+export function marketplacePrompt(spec: AgentSpec, notes: readonly string[], orders: readonly string[]): string {
+  return buildSystemPrompt(spec)
+    + (notes.length ? `\nYour notes:\n${notes.map((note, index) => `${index}: ${note}`).join("\n")}` : "")
+    + (orders.length ? `\nYour operator's standing orders:\n${orders.map((order) => `- ${order}`).join("\n")}` : "");
+}
+
 // In-character only. Reads the character, the role and the temperament's manner
 // phrase; the numeric dials are never interpolated.
 export function buildSystemPrompt({ role, character: c, dials }: AgentSpec): string {
