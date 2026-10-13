@@ -126,7 +126,6 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
             if (!submission) throw new Error("event submission is missing from storage");
             const result = await submission.status(context);
             if (result.status === "queued" || result.status === "placed") continue;
-            const notBefore = now() + createTimeout(work.attempt, EVENT_RETRY);
             await conversation.commit(async (tx) => {
               const state = await tx.doc(Events);
               const event = state.events[id];
@@ -134,7 +133,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
                 ? { ...event, kind: "done", submission: work.submission }
                 : event.attempt >= EVENT_RETRY.retries
                   ? { ...event, kind: "abandoned", submission: work.submission }
-                  : { kind: "admitted", event: event.event, attempt: event.attempt + 1, notBefore };
+                  : { kind: "admitted", event: event.event, attempt: event.attempt + 1, notBefore: now() + createTimeout(event.attempt, EVENT_RETRY) };
             }, context);
             if (result.status === "done") continue;
           }

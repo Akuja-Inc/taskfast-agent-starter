@@ -274,7 +274,9 @@ it("resubmits a failing event run after growing, jittered delays and then abando
   for (let n = 0; n < EVENT_RETRY.retries; n++) {
     const failedAt = at;
     await agent.recover(); // Observes the failed run and schedules the next one.
-    at = failedAt + retryDelay(n, 1) - 1;
+    // Jitter scales the delay above its base, so the unjittered time is not yet due
+    // (it would be only if Math.random() rounds to within 1ms of zero).
+    at = failedAt + retryDelay(n, 1);
     await agent.recover();
     await agent.waitForIdle();
     expect(selected.faux.state.callCount).toBe(n + 1);
