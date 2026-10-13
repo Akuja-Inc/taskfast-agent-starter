@@ -10,16 +10,30 @@ const body = (chunks: string[], stay = false) => new ReadableStream<Uint8Array>(
 });
 const settle = () => new Promise((done) => setTimeout(done, 10));
 
-it("aborts a stream it stops reading, so it never holds a place on the server", async () => {
+it("isolates a viewer error, keeps the stream, and still aborts when stopped", async () => {
   const signals: AbortSignal[] = [];
+  let push: ((chunk: string) => void) | undefined;
   const fetch = async (_url: string, init: { signal: AbortSignal }) => {
     signals.push(init.signal);
-    return new Response(body(['event: view\ndata: {"n":1}\n\n'], true));
+    return new Response(new ReadableStream<Uint8Array>({ start: (controller) => { push = (chunk) => controller.enqueue(new TextEncoder().encode(chunk)); } }));
   };
   const noTimer = () => 0;
   const follow = new Function("fetch", "setTimeout", "setInterval", "clearInterval", `${LIVE}\nreturn follow;`)(fetch, noTimer, noTimer, noTimer);
-  follow("/s", "t", () => { throw new Error("render failed"); }, () => {});
+  const views: unknown[] = [];
+  let first = true;
+  const stop = follow("/s", "t", (view: unknown) => {
+    if (first) { first = false; throw new Error("render failed"); }
+    views.push(view);
+  }, () => {});
   await settle();
+  const send = (chunk: string) => push!(chunk);
+  send('event: view\ndata: {"n":1}\n\n');
+  await settle();
+  send('event: view\ndata: {"n":2}\n\n');
+  await settle();
+  // The first render threw, but the stream survived and the next view still rendered.
+  expect(views).toEqual([{ n: 2 }]);
+  stop();
   expect(signals).toHaveLength(1);
   expect(signals[0].aborted).toBe(true);
 });
@@ -46,15 +60,19 @@ it("follows the event stream, polls while it is down, and stops polling when it 
   await settle();
   expect(requests).toEqual([{ url: "/api/agents/me/stream", authorization: "Bearer t0k3n" }]);
   expect(views).toEqual([{ n: 1 }]);
-  // The stream ended: poll now, then every 3 s, and try the stream again in 5 s.
+  // The stream ended: poll now, then every 3 s, and try the stream again in 5 s. The
+  // staleness records stay behind: the test shadows no clearTimeout to retire them.
   expect(polls).toBe(1);
-  expect(timers.map(({ ms, cleared }) => ({ ms, cleared }))).toEqual([{ ms: 3000, cleared: undefined }, { ms: 5000, cleared: undefined }]);
+  expect(timers.filter((t) => t.ms !== 45_000).map(({ ms }) => ({ ms }))).toEqual([{ ms: 3000 }, { ms: 5000 }]);
 
-  timers[1].run();
+  timers.filter((t) => t.ms !== 45_000)[1].run();
   await settle();
   expect(views).toEqual([{ n: 1 }, { n: 2 }]);
-  expect(timers[0].cleared).toBe(true);
+  // The follower took the stream back: the 3 s poll was cleared.
+  expect(timers.find((t) => t.ms === 3000)?.cleared).toBe(true);
   stop();
   expect(PAGE).toContain(LIVE);
+  // The page inlines this source: a closing script tag would end the script block early.
+  expect(LIVE).not.toContain("</script>");
   expect(PAGE).not.toContain("setInterval(refresh");
 });

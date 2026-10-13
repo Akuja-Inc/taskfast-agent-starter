@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, openSync, readdirSync, readFileSync, renameSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -151,11 +151,19 @@ export async function runAgents(o: RunOptions): Promise<void> {
     reads.set(key, { at: Date.now(), value });
     return value;
   }
+  // Streams re-read dead letters per window, so cache the file per path on mtime/size.
+  const deadLetterCache = new Map<string, { stat: { mtimeMs: number; size: number }; lines: HostFacts["deadLetters"] }>();
+  function readDeadLetters(path: string): HostFacts["deadLetters"] {
+    let stat: { mtimeMs: number; size: number };
+    try { stat = statSync(path); } catch { return []; }
+    const cached = deadLetterCache.get(path);
+    if (cached && cached.stat.mtimeMs === stat.mtimeMs && cached.stat.size === stat.size) return cached.lines;
+    const lines = readFileSync(path, "utf8").split("\n").filter(Boolean).flatMap((line) => deadLetter(line) ?? []);
+    deadLetterCache.set(path, { stat: { mtimeMs: stat.mtimeMs, size: stat.size }, lines });
+    return lines;
+  }
   async function facts(item: Item, taskIds: string[]): Promise<HostFacts> {
-    const deadLetterPath = join(dirname(item.runtime.configPath), "dead-letter.jsonl");
-    const deadLetters = existsSync(deadLetterPath)
-      ? readFileSync(deadLetterPath, "utf8").split("\n").filter(Boolean).flatMap((line) => deadLetter(line) ?? [])
-      : [];
+    const deadLetters = readDeadLetters(join(dirname(item.runtime.configPath), "dead-letter.jsonl"));
     const unlock = findUnlockFile(item.agentDir);
     return {
       unlockFile: unlock !== undefined && existsSync(unlock),

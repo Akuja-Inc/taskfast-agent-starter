@@ -3,8 +3,9 @@
   "compilerOptions": {
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid",
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node", "bun"]
   },
   "include": ["*.ts", "*.tsx"],
-  "exclude": ["node_modules", "*.test.tsx"]
+  "exclude": ["node_modules"]
 }

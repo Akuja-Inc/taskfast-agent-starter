@@ -60,6 +60,9 @@ export function App(p: AppProps) {
   // after a failure queues it once. Different text is a new message with a new ID.
   let attempt: { text: string; requestId: string } | undefined;
   let stop = () => {};
+  // Retry and agent switches fire unawaited connects; each is numbered so a stale one
+  // can't assign its follow later or overwrite the newer agent's view.
+  let gen = 0;
   onCleanup(() => stop());
 
   async function api(method: string, path: string, body?: unknown): Promise<unknown> {
@@ -75,19 +78,26 @@ export function App(p: AppProps) {
   const agentPath = (id: string) => `/api/agents/${encodeURIComponent(id)}`;
   const agentId = () => list()?.agents[ui().agent]?.id;
   async function connect() {
+    const g = ++gen;
     stop();
     setDown(undefined);
     try {
       const listing = await api("GET", "/api/agents") as Listing;
+      if (g !== gen) return;
       setList(listing);
       const id = listing.agents[Math.min(ui().agent, listing.agents.length - 1)]?.id;
       if (!id) throw new Error("the host shows no agents");
       setView(await api("GET", agentPath(id)) as ConsoleView);
-      stop = follow(p.origin + agentPath(id) + "/stream", p.token, (next) => { setView(next as ConsoleView); setDown(undefined); }, () => {
+      if (g !== gen) return;
+      const end = follow(p.origin + agentPath(id) + "/stream", p.token, (next) => { setView(next as ConsoleView); setDown(undefined); }, () => {
         // The host stopped or no longer takes the token: show that, not a stale view.
         api("GET", agentPath(id)).then((next) => { setView(next as ConsoleView); setDown(undefined); }, (error: unknown) => { setView(undefined); setDown(message(error)); });
       });
+      // Superseded while connecting: stop the follower now so it can't hold a stream slot.
+      if (g !== gen) { end(); return; }
+      stop = end;
     } catch (error) {
+      if (g !== gen) return;
       setView(undefined);
       setDown(message(error));
     }
@@ -140,7 +150,7 @@ export function App(p: AppProps) {
 
   const drawn = createMemo(() => { const current = view(); return current && screen(current, dims().width); });
   const narrow = () => drawn()?.narrow ?? false;
-  const items = createMemo(() => (drawn()?.turns ?? []).flatMap((turn, t) => (turn.replies.length ? turn.replies.map((reply) => reply.key) : [`turn${t}`])));
+  const items = createMemo(() => (drawn()?.turns ?? []).flatMap((turn) => (turn.replies.length ? turn.replies.map((reply) => reply.key) : [`turn${turn.at}`])));
   const selected = () => items()[Math.max(0, Math.min(ui().reply, items().length - 1))];
   let scroll: ScrollBoxRenderable | undefined;
   createEffect(() => { const key = selected(); if (key && scroll) scroll.scrollChildIntoView(key); });
@@ -209,14 +219,14 @@ export function App(p: AppProps) {
                     </box>
                   </Show>
                   <scrollbox ref={(box: ScrollBoxRenderable) => { scroll = box; }} flexGrow={1} border borderColor={ui().panel === "timeline" ? ACCENT : MUTED} title=" Timeline " stickyScroll stickyStart="bottom">
-                    <For each={s().turns}>{(turn, t) => (
+                    <For each={s().turns}>{(turn) => (
                       <box flexDirection="column" paddingX={1} marginBottom={1}>
                         <text><Span fg={TAG[turn.tag]}><b>{turn.tag}</b></Span><Span fg={MUTED}>{`  ${time(turn.at)}  `}</Span>{turn.title}</text>
-                        <Show when={turn.raw && ui().raw.includes(`turn:${t()}`)}>
+                        <Show when={turn.raw && ui().raw.includes(`turn:${turn.at}`)}>
                           <box border borderColor={MUTED} title=" raw event · plain text " paddingX={1}><text fg={MUTED}>{turn.raw}</text></box>
                         </Show>
                         <Show when={!turn.replies.length}>
-                          <box id={`turn${t()}`} backgroundColor={selected() === `turn${t()}` ? SELECTED : undefined}><text fg={MUTED}>{`${selected() === `turn${t()}` ? "▶ " : "  "}No reply yet.`}</text></box>
+                          <box id={`turn${turn.at}`} backgroundColor={selected() === `turn${turn.at}` ? SELECTED : undefined}><text fg={MUTED}>{`${selected() === `turn${turn.at}` ? "▶ " : "  "}No reply yet.`}</text></box>
                         </Show>
                         <For each={turn.replies}>{(reply) => {
                           const open = () => ui().open.includes(reply.key);

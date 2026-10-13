@@ -145,8 +145,9 @@ async function act(method, action, body) {
   catch (error) { ui.error = error.message; if (error.status === 409) await refresh(); else render(); }
 }
 ${LIVE}
-// The stream being followed: which agent with which token, and how to stop it.
-let following = { key: null, stop: () => {} };
+// The stream being followed: which agent with which token, whether it is delivering,
+// and how to stop it.
+let following = { key: null, up: false, stop: () => {} };
 async function refresh() {
   try {
     if (token) {
@@ -157,13 +158,22 @@ async function refresh() {
       if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
       const present = ui.agent !== null && list.agents.some((a) => a.id === ui.agent);
       ui.reopening = ui.agent !== null && !present;
-      view = present ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
+      const key = token && ui.agent ? token + " " + ui.agent : null;
+      // The server never re-pushes identical data, so a view GET that resolves after a
+      // newer stream push would overwrite it. Fetch the view only when the follower key
+      // is new or the stream is known down; while it delivers, its pushes are the truth.
+      if (key !== following.key || !following.up) {
+        const next = present ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
+        if (following.key !== key || !following.up) view = next;
+      }
     }
   } catch (error) { ui.error = error.message; }
   const key = token && ui.agent ? token + " " + ui.agent : null;
   if (key !== following.key) {
     following.stop();
-    following = { key, stop: key ? follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token, (next) => { view = next; render(); }, refresh) : () => {} };
+    following = { key, up: false, stop: key ? follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token,
+      (next) => { if (following.key !== key) return; view = next; following.up = true; render(); },
+      () => { if (following.key !== key) return; following.up = false; refresh(); }) : () => {} };
   }
   render();
 }

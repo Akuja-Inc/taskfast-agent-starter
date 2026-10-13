@@ -78,7 +78,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
   }
   if (ui.help && key !== "q") return { ui: key === "?" || key === "escape" ? { ...ui, help: false } : ui };
   const drawn = screen(view, 0);
-  const items = drawn.turns.flatMap((turn, t): { t: number; reply?: typeof turn.replies[number] }[] => (turn.replies.length ? turn.replies.map((reply) => ({ t, reply })) : [{ t }]));
+  const items = drawn.turns.flatMap((turn): { turn: typeof turn; reply?: typeof turn.replies[number] }[] => (turn.replies.length ? turn.replies.map((reply) => ({ turn, reply })) : [{ turn }]));
   const selected = items[clamp(ui.reply, items.length)];
   const alert = drawn.attention[clamp(ui.alert, drawn.attention.length)];
   const move = (by: number) => (ui.tab === "briefing"
@@ -126,7 +126,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     case "R": return alert?.kind === "abandoned" ? { ui, effect: call("POST", "retry", { eventId: alert.id }) } : { ui };
     case "r":
       if (ui.panel === "attention") return { ui: alert?.raw ? { ...ui, raw: toggle(ui.raw, `alert:${alert.id}`) } : ui };
-      return { ui: selected && drawn.turns[selected.t].raw ? { ...ui, raw: toggle(ui.raw, `turn:${selected.t}`) } : ui };
+      return { ui: selected && selected.turn.raw ? { ...ui, raw: toggle(ui.raw, `turn:${selected.turn.at}`) } : ui };
     case "enter": return { ui: selected?.reply?.badge ? { ...ui, open: toggle(ui.open, selected.reply.key) } : ui };
     case "o": {
       const link = selected?.reply?.tasks.find((task) => task.link)?.link;

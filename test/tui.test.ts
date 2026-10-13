@@ -17,7 +17,7 @@ const result = (id: string, name: string, body: unknown): Message => ({ role: "t
 
 // One poster agent's view as the console sends it: a check-in with four tool calls
 // (one failed), an event whose one call is uncertain, and a message from the user.
-export function fixtureView(env: ConsoleView["env"] = "local"): ConsoleView {
+function fixtureView(env: ConsoleView["env"] = "local"): ConsoleView {
   const transcript: Message[] = [
     { role: "user", content: "Check your marketplace work in your poster role.", timestamp: Date.parse("2026-10-13T09:00:00Z") },
     fauxAssistantMessage([
@@ -90,6 +90,12 @@ it("draws a view: banner, state, alerts, badges, task cards, sidebar", () => {
   expect(drawn.sidebar.orders).toEqual(["Keep every job under $15."]);
 });
 
+it("keys replies by turn time and place, so they hold when the transcript window slides", () => {
+  const view = fixtureView();
+  const slid = screen({ ...view, timeline: view.timeline.slice(1) }, 120, NOW);
+  expect(slid.turns[0].replies[0].key).toBe(screen(view, 120, NOW).turns[1].replies[0].key);
+});
+
 // Presses keys in order against one view; returns every effect they asked for.
 function keys(view: ConsoleView, start: Ui = initialUi()) {
   let ui = start;
@@ -129,11 +135,11 @@ it("turns timeline keys into console actions, and asks y/n before freezing", () 
   k.run("tab", "tab");
   expect(k.ui.panel).toBe("timeline");
   k.run("enter");
-  expect(k.ui.open).toEqual(["t0r0"]);
+  expect(k.ui.open).toEqual([`${Date.parse("2026-10-13T09:00:00Z")}r0`]);
   expect(k.run("o")).toEqual([{ kind: "open", url: `http://localhost:4000/tasks/${TASK}` }]);
   k.run("j", "j", "r");
   expect(k.ui.reply).toBe(2);
-  expect(k.ui.raw).toContain("turn:1");
+  expect(k.ui.raw).toContain(`turn:${Date.parse("2026-10-13T10:00:00Z")}`);
   k.run("G");
   expect(k.ui.reply).toBe(3);
   k.run("g");

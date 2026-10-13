@@ -53,9 +53,11 @@ function eventIdOf(line: string): string | undefined {
 }
 const MAX_TEXT = 4000;
 // A burst of commits (a model's partial answers land every ~100 ms) becomes one view.
-const COALESCE_MS = 250;
-const PING_MS = 15_000;
-const MAX_STREAMS = 8;
+export const COALESCE_MS = 250;
+export const PING_MS = 15_000;
+export const MAX_STREAMS = 8;
+// Past this many bytes queued for one reader it has stalled: end its stream rather than buffer views forever.
+const MAX_BUFFERED_BYTES = 1024 * 1024;
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   let size = 0;
@@ -199,6 +201,8 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     const item = id === undefined ? undefined : o.agents().find((candidate) => candidate.id === id);
     if (!item) return send(res, 404, { error: "not found" });
     const [, , action, arg] = match ?? [];
+    // This one-shot read is not drained by closeStreams, so a fetch racing a spec-save
+    // reopen can transiently 500; Pi's serialized queue keeps storage safe.
     if (req.method === "GET" && !action) return send(res, 200, await view(o.env, item));
     if (req.method === "GET" && action === "stream" && arg === undefined) return watch(item, res);
     const controls = item.agent.operator;
@@ -231,13 +235,22 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     res.flushHeaders();
     let last = "";
     let timer: NodeJS.Timeout | undefined;
+    let dirty = false;
     let sending = Promise.resolve();
     const push = () => {
+      // A read is already queued or running; its loop picks this commit up.
+      if (dirty) return;
+      dirty = true;
       sending = sending.then(async () => {
-        const data = JSON.stringify(await view(o.env, item));
-        if (data === last || res.writableEnded) return;
-        last = data;
-        res.write(`event: view\ndata: ${data}\n\n`);
+        while (dirty && !res.writableEnded) {
+          dirty = false;
+          const data = JSON.stringify(await view(o.env, item));
+          // A stalled reader only fills its socket buffer: end the stream rather than buffer views forever.
+          if (res.writableLength > MAX_BUFFERED_BYTES) return end();
+          if (data === last || res.writableEnded) continue;
+          last = data;
+          res.write(`event: view\ndata: ${data}\n\n`);
+        }
       }).catch(end);
     };
     const unsubscribe = item.agent.changes(() => { timer ??= setTimeout(() => { timer = undefined; push(); }, o.coalesceMs ?? COALESCE_MS); });
@@ -256,7 +269,9 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     push();
   }
   // Ends streams at once, not on a later socket event, then waits out any view read
-  // already under way, so none reads an agent's store after it starts to close.
+  // already under way, so none reads an agent's store after it starts to close. Awaiting
+  // settled() deliberately waits out in-flight view reads, including CLI children bounded
+  // by runCli's timeout.
   async function closeStreams(id?: string): Promise<void> {
     const closing = [...open].filter((stream) => id === undefined || stream.id === id);
     for (const stream of closing) stream.end();

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const tui = fileURLToPath(new URL("../src/tui/", import.meta.url));
 const run = (command, args, env = process.env) => {
   const result = spawnSync(command, args, { cwd: tui, stdio: "inherit", env });
+  if (result.error) process.stderr.write(command + " failed to start: " + result.error.message + "\n");
   if (result.status !== 0) process.exit(result.status ?? 1);
 };
 if (spawnSync("bun", ["--version"], { stdio: "ignore" }).error) {
@@ -18,7 +19,10 @@ if (process.argv[2] === "--test") {
   run(process.execPath, [fileURLToPath(new URL("../node_modules/typescript/bin/tsc", import.meta.url)), "-p", "tsconfig.json"]);
   run("bun", ["test"]);
 } else {
-  // The link travels in the environment, not Bun's arguments, which other local users can list.
+  // Bun's arguments are hidden from other local users only while the link travels in the
+  // environment. A link given to this launcher instead sits in its argv and, as the README
+  // warns, in the process list and the shell history.
   const link = process.argv[2] ?? process.env.TASKFAST_CONSOLE_URL;
+  if (process.argv[2] !== undefined) process.stderr.write("A console link on the command line leaks through the process list and your shell history; prefer TASKFAST_CONSOLE_URL=… pnpm tui.\n");
   run("bun", ["main.tsx"], { ...process.env, ...(link === undefined ? {} : { TASKFAST_CONSOLE_URL: link }) });
 }

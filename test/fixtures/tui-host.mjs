@@ -66,13 +66,17 @@ try {
       const faux = fauxProvider({ models: [{ id: "test" }] });
       const models = createModels();
       models.setProvider(faux.provider);
-      faux.setResponses(scripts[id]);
+      const script = scripts[id];
+      if (!script) throw new Error(`no scripted model for the ${id} agent`);
+      faux.setResponses(script);
       return openMarketplaceAgent({ spec: { ...spec, model: "faux:test" }, runtime, storePath, models, command, log: (line) => process.stdout.write(`${id}: ${line}\n`) });
     },
     // The stream connects at once; the shop's one marketplace event follows its first check-in.
     listen: ({ deliver, log }) => {
       log("sentinel connected");
-      const timer = setTimeout(() => void deliver({ event_id: "e1", event: "bid.created", task_id: OTHER }), 1500);
+      // A rejection while shutting down must be logged, not kill the process before the cleanup below.
+      const timer = setTimeout(() => deliver({ event_id: "e1", event: "bid.created", task_id: OTHER })
+        .catch((error) => log(`bid.created not delivered: ${error instanceof Error ? error.message : String(error)}`)), 1500);
       return { close: async () => clearTimeout(timer) };
     },
   });

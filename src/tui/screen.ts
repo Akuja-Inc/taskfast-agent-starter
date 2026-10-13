@@ -66,13 +66,15 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
   const hasLimits = limits.perJobUsd !== undefined || limits.dailyUsd !== undefined;
   const wallet = usdc(view.host?.wallet);
   const groups = { POSTED: new Map<string, { id: string; title: string }>(), BIDDING: new Map<string, { id: string; title: string }>(), "WORKING ON": new Map<string, { id: string; title: string }>() };
-  const turns = view.timeline.map((turn, t) => ({
+  const turns = view.timeline.map((turn) => ({
     tag: TAG[turn.kind],
     at: turn.at,
     title: title(turn),
     raw: turn.kind === "event" ? json(turn.event ?? turn.text) : undefined,
     replies: turn.replies.map((reply, r) => ({
-      key: `t${t}r${r}`,
+      // Keyed by the turn's timestamp plus the reply's place in it, so selection and
+      // open lines reattach to the same content when the transcript window slides.
+      key: `${turn.at}r${r}`,
       text: clean(reply.text),
       badge: badge(reply.calls),
       calls: reply.calls.map((call) => ({ name: clean(call.name), outcome: call.outcome, arguments: clean(JSON.stringify(call.arguments)), error: call.error === undefined ? undefined : clean(call.error) })),

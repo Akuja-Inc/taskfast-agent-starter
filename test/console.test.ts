@@ -2,8 +2,8 @@ import { createServer, request } from "node:http";
 import type { Message } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { readFileSync } from "node:fs";
-import { afterEach, expect, it } from "vitest";
-import { startConsole, type ConsoleAgent } from "../src/console.js";
+import { afterEach, expect, it, vi } from "vitest";
+import { COALESCE_MS, MAX_STREAMS, PING_MS, startConsole, type ConsoleAgent } from "../src/console.js";
 import { initialOperator, type OperatorState } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 
@@ -145,6 +145,25 @@ it("sends the current view on connect, then one view per burst of commits", asyn
   expect(await live.next()).toMatchObject({ event: "view", data: { operator: { orders: ["a", "b", "c", "d", "e", "f"] } } });
 });
 
+it("sends a view within the first window even when a commit lands mid-window", async () => {
+  const state = initialOperator();
+  const { agent, commit } = fakeAgent({ state });
+  const { port } = await serve([agent], { coalesceMs: 120 });
+  const live = await stream(port);
+  await live.next();
+  const started = Date.now();
+  state.orders.push("a");
+  commit();
+  await new Promise((done) => setTimeout(done, 80));
+  state.orders.push("b");
+  commit();
+  const frame = await live.next();
+  // The window runs from the first commit: a resettable timer would not fire until a
+  // full window after the second one, past this deadline.
+  expect(Date.now() - started).toBeLessThanOrEqual(120 + 60);
+  expect(frame).toMatchObject({ event: "view", data: { operator: { orders: ["a", "b"] } } });
+});
+
 it("pings an idle stream, and resends the view when something outside the store changed", async () => {
   const state = initialOperator();
   const { agent } = fakeAgent({ state });
@@ -188,8 +207,51 @@ it("caps open streams, and frees a place when one closes", async () => {
   await one.next();
   one.close();
   await one.ended;
-  await new Promise((done) => setTimeout(done, 20));
-  expect((await stream(port)).status).toBe(200);
+  // Nothing to await for the server's close bookkeeping: poll until the place is freed.
+  await vi.waitFor(async () => expect((await stream(port)).status).toBe(200), { interval: 20, timeout: 1_000 });
+});
+
+it("uses the shipped coalescing, ping and stream cap when nothing overrides them", async () => {
+  expect(COALESCE_MS).toBe(250);
+  expect(PING_MS).toBe(15_000);
+  expect(MAX_STREAMS).toBe(8);
+  const { port } = await serve();
+  const live: Awaited<ReturnType<typeof stream>>[] = [];
+  for (let at = 0; at < MAX_STREAMS; at++) live.push(await stream(port));
+  expect(live.map((open) => open.status)).toEqual(Array(MAX_STREAMS).fill(200));
+  const ninth = await call(port, "/api/agents/foo/stream", { headers: auth });
+  expect(ninth.status).toBe(429);
+  expect(JSON.parse(ninth.text)).toEqual({ error: "too many open streams" });
+});
+
+it("a spec save ends one agent's stream under the shared cap and leaves the others alone", async () => {
+  const spec = parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8")));
+  const stateTwo = initialOperator();
+  const one = fakeAgent({ id: "one" });
+  const reopened = fakeAgent({ id: "one" });
+  const two = fakeAgent({ id: "two", state: stateTwo });
+  const list = [one.agent, two.agent];
+  const consoleServer = await serve(list, { coalesceMs: 30, maxStreams: 2 });
+  const { port } = consoleServer;
+  // As the host's saveSpec does: end this agent's streams, then serve a fresh agent.
+  one.agent.saveSpec = async () => {
+    await consoleServer.closeStreams("one");
+    list[0] = reopened.agent;
+  };
+  const saved = await stream(port, "/api/agents/one/stream");
+  const survivor = await stream(port, "/api/agents/two/stream");
+  await saved.next();
+  await survivor.next();
+  // The cap counts every agent's streams together: two open, no place left.
+  expect((await call(port, "/api/agents/two/stream", { headers: auth })).status).toBe(429);
+  expect((await call(port, "/api/agents/one/spec", { method: "PUT", headers: { ...auth, "content-type": "application/json" }, body: spec })).status).toBe(204);
+  await saved.ended;
+  const again = await stream(port, "/api/agents/one/stream");
+  expect(again.status).toBe(200);
+  await again.next();
+  stateTwo.orders.push("still going");
+  two.commit();
+  expect(await survivor.next()).toMatchObject({ event: "view", data: { operator: { orders: ["still going"] } } });
 });
 
 it("moves up one port at a time past ports already in use", async () => {

@@ -133,6 +133,12 @@ Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` n
 | ![Timeline](docs/tui/timeline.png) | ![Tool calls](docs/tui/tool-calls.png) |
 | **Freeze asks first** | **Briefing save asks first** |
 | ![Confirm freeze](docs/tui/confirm-freeze.png) | ![Confirm save](docs/tui/confirm-save.png) |
+| **Paused, spending frozen** | **Keys (`?`)** |
+| ![Paused, spending frozen](docs/tui/paused-frozen.png) | ![Keys](docs/tui/help.png) |
+| **Below 100 columns** | **Narrow, sidebar shown with `i`** |
+| ![Narrow](docs/tui/narrow.png) | ![Narrow, sidebar shown](docs/tui/narrow-sidebar.png) |
+| **Can't reach the console** | |
+| ![Can't reach the console](docs/tui/cant-reach.png) | |
 
 `pnpm tui:test` runs its smoke test against a throwaway host (temporary agent folders, real stores, scripted model, fake CLI).
 
