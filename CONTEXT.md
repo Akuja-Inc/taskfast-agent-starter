@@ -124,6 +124,9 @@ What the user has told the host to do with an agent: pause (events are admitted,
 **Console:**
 The opt-in local web page served by the host with `pnpm agents --console`. It reads through the running host, never the store or a second stream, and needs the per-start token on every API request.
 
+**Terminal UI** (`pnpm tui`):
+The console in a terminal: a separate Bun client of the console API, never part of the host. It follows the same view stream as the page and sends the same actions.
+
 ## Maintaining the kit
 
 **Provider catalogue** (`providers.json`, `src/core/providers.ts`):

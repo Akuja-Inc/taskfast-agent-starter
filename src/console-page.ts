@@ -1,37 +1,7 @@
-// Follows one agent's event stream with fetch, which, unlike EventSource, can send the
-// token in a header. While the stream is down the page polls every 3 s and tries the
-// stream again every 5 s. Calling the returned function stops both.
-export const LIVE = `function follow(path, token, onView, poll) {
-  let stopped = false, controller = null, polling = null;
-  async function connect() {
-    if (stopped) return;
-    controller = new AbortController();
-    try {
-      const res = await fetch(path, { headers: { authorization: "Bearer " + token }, signal: controller.signal });
-      if (!res.ok || !res.body) throw new Error(res.statusText);
-      clearInterval(polling);
-      polling = null;
-      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += value;
-        for (let at = buffer.indexOf("\\n\\n"); at >= 0; at = buffer.indexOf("\\n\\n")) {
-          const block = buffer.slice(0, at);
-          buffer = buffer.slice(at + 2);
-          const data = /^data: (.*)$/m.exec(block);
-          if (block.startsWith("event: view") && data) onView(JSON.parse(data[1]));
-        }
-      }
-    } catch {}
-    if (stopped) return;
-    if (polling === null) { polling = setInterval(poll, 3000); poll(); }
-    setTimeout(connect, 5000);
-  }
-  connect();
-  return () => { stopped = true; if (controller) controller.abort(); clearInterval(polling); };
-}`;
+import { follow } from "./console-live.js";
+
+// The page runs the same stream follower as the terminal UI.
+export const LIVE = follow.toString();
 
 // The console's single page. Kept as a module because the TypeScript build copies no
 // HTML. Everything from the server or the marketplace is set as text, never as markup.

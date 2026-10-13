@@ -1,0 +1,313 @@
+// The terminal UI: one console client drawn with OpenTUI. It reads and acts only through
+// the host's console API; what to draw comes from screen.ts and what keys do from keys.ts.
+import type { KeyEvent } from "@opentui/core";
+import type { ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import type { ConsoleView } from "../console.js";
+import { follow } from "../console-live.js";
+import { FIELDS, fieldValue, initialUi, press, setField, type Effect, type Field, type Ui } from "./keys.js";
+import { clean, screen, type Screen } from "./screen.js";
+
+const TONE = { development: "#1d4ed8", staging: "#b45309", production: "#b91c1c" };
+const OUTCOME = { ok: "#22c55e", failed: "#f59e0b", uncertain: "#f59e0b", pending: "#9ca3af" };
+const TAG = { POLL: "#9ca3af", EVENT: "#a78bfa", YOU: "#60a5fa", RESUME: "#9ca3af", INPUT: "#9ca3af" };
+const MUTED = "#9ca3af";
+const ACCENT = "#60a5fa";
+const WARN = "#f59e0b";
+const BAD = "#ef4444";
+const OK = "#22c55e";
+const SELECTED = "#1f2937";
+const LABEL: Record<Field, string> = { goals: "Goals", temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
+export const HELP: [string, string][] = [
+  ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, order or field"], ["g / G", "top / bottom"],
+  ["tab", "next panel"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
+  ["r", "raw event"], ["o", "open the task"], ["m", "write a message (enter sends it once)"], ["p", "pause / resume"],
+  ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "run an abandoned event again"],
+  ["a", "show alerts (Briefing: add a standing order)"], ["d", "Briefing: delete the standing order"],
+  ["ctrl+s", "Briefing: save agent.json and reopen the agent (asks y/n)"], ["esc", "discard the draft, close a line"],
+  ["i", "show the sidebar"], ["?", "this help"], ["q", "quit the TUI; the agents keep running"],
+];
+
+// A coloured span. OpenTUI applies fg and bg to the text node; its span type lists neither.
+function Span(p: { fg?: string; bg?: string; children?: JSX.Element }) {
+  return <span {...(p as object)} />;
+}
+
+// Printable keys by what they type (so shift+r is "R"), the rest by name.
+function keyName(e: KeyEvent): string {
+  if (e.ctrl) return `ctrl+${e.name}`;
+  if (e.name === "return" || e.name === "enter") return "enter";
+  if (e.sequence.length === 1 && e.sequence >= "!" && e.sequence <= "~") return e.sequence;
+  return e.name;
+}
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const time = (ms: number) => (ms ? new Date(ms).toTimeString().slice(0, 5) : "");
+const toggle = (list: string[], key: string) => (list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
+type Listing = { env: string; agents: { id: string; name: string; role: string }[] };
+
+export interface AppProps { origin: string; token: string; open(url: string): void; quit(): void }
+export function App(p: AppProps) {
+  const renderer = useRenderer();
+  const dims = useTerminalDimensions();
+  const [list, setList] = createSignal<Listing>();
+  const [view, setView] = createSignal<ConsoleView>();
+  const [down, setDown] = createSignal<string>();
+  const [notice, setNotice] = createSignal("");
+  const [ui, setUi] = createSignal<Ui>(initialUi());
+  // A message keeps its request ID until it is accepted, so resending it queues it once.
+  let requestId: string | undefined;
+  let stop = () => {};
+  onCleanup(() => stop());
+
+  async function api(method: string, path: string, body?: unknown): Promise<unknown> {
+    const res = await fetch(p.origin + path, { method, headers: { authorization: `Bearer ${p.token}`, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    if (res.status === 401) throw new Error("the console refused the token. A restarted host prints a new link.");
+    if (!res.ok) {
+      let reason = res.statusText;
+      try { reason = ((await res.json()) as { error?: string }).error ?? reason; } catch {}
+      throw new Error(reason);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+  const agentPath = (id: string) => `/api/agents/${encodeURIComponent(id)}`;
+  const agentId = () => list()?.agents[ui().agent]?.id;
+  async function connect() {
+    stop();
+    setDown(undefined);
+    try {
+      const listing = await api("GET", "/api/agents") as Listing;
+      setList(listing);
+      const id = listing.agents[Math.min(ui().agent, listing.agents.length - 1)]?.id;
+      if (!id) throw new Error("the host shows no agents");
+      setView(await api("GET", agentPath(id)) as ConsoleView);
+      stop = follow(p.origin + agentPath(id) + "/stream", p.token, (next) => { setView(next as ConsoleView); setDown(undefined); }, () => {
+        api("GET", agentPath(id)).then((next) => { setView(next as ConsoleView); setDown(undefined); }, (error: unknown) => setDown(message(error)));
+      });
+    } catch (error) {
+      setView(undefined);
+      setDown(message(error));
+    }
+  }
+  void connect();
+
+  async function run(effect: Effect) {
+    if (effect.kind === "quit") { stop(); renderer.destroy(); return p.quit(); }
+    if (effect.kind === "open") return p.open(effect.url);
+    if (effect.kind === "retry" || effect.kind === "agent") return connect();
+    const id = agentId();
+    if (!id) return;
+    try {
+      setNotice("");
+      await api(effect.method, `${agentPath(id)}/${effect.action}`, effect.body);
+      if (effect.action === "spec") setNotice("Saved. Only this agent reopened.");
+    } catch (error) { setNotice(message(error)); }
+  }
+  async function send(text: string, action: "messages" | "orders") {
+    const id = agentId();
+    if (!id || !text.trim()) return;
+    try {
+      if (action === "orders") await api("POST", `${agentPath(id)}/orders`, { text: text.trim() });
+      else {
+        requestId ??= crypto.randomUUID();
+        await api("POST", `${agentPath(id)}/messages`, { requestId, text: text.trim() });
+        requestId = undefined;
+        setNotice("Message queued; the agent reads it next.");
+      }
+    } catch (error) { setNotice(message(error)); }
+  }
+  // Leaves the line after this key event, so its enter isn't also read as a command.
+  const done = () => setTimeout(() => setUi({ ...ui(), editing: undefined }), 0);
+
+  useKeyboard((event) => {
+    const key = keyName(event);
+    if (ui().editing) {
+      if (key === "escape") setUi({ ...ui(), editing: undefined });
+      return;
+    }
+    const next = press(ui(), key, view(), list()?.agents.length ?? 0);
+    // A line opened by this key gets the keyboard after it, so the key isn't typed into it.
+    if (next.ui.editing) setTimeout(() => setUi(next.ui), 0);
+    else setUi(next.ui);
+    if (next.effect) void run(next.effect);
+  });
+
+  const drawn = createMemo(() => { const current = view(); return current && screen(current, dims().width); });
+  const narrow = () => drawn()?.narrow ?? false;
+  const items = createMemo(() => (drawn()?.turns ?? []).flatMap((turn, t) => (turn.replies.length ? turn.replies.map((reply) => reply.key) : [`turn${t}`])));
+  const selected = () => items()[Math.max(0, Math.min(ui().reply, items().length - 1))];
+  let scroll: ScrollBoxRenderable | undefined;
+  createEffect(() => { const key = selected(); if (key && scroll) scroll.scrollChildIntoView(key); });
+  const agent = () => list()?.agents[ui().agent];
+  const draft = () => ui().draft ?? view()?.spec;
+
+  return (
+    <box flexDirection="column" width="100%" height="100%">
+      <Show when={drawn()} fallback={
+        <box flexDirection="column" border borderColor={down() ? BAD : MUTED} title={down() ? " Can't reach the console " : " Connecting "} padding={1} margin={2}>
+          <text>{down() ? clean(down()!) : `Connecting to ${p.origin}…`}</text>
+          <text fg={MUTED}>{`Console: ${p.origin}. Is pnpm agents --console still running? A restarted host prints a new link with a new token.`}</text>
+          <text><b>r</b> retry · <b>q</b> quit</text>
+        </box>
+      }>
+        {(s: () => Screen) => (
+          <>
+            <box height={1} flexShrink={0} backgroundColor={TONE[s().banner.tone]} paddingX={1}><text fg="#ffffff"><b>{s().banner.text}</b></text></box>
+            <box height={1} paddingX={1}>
+              <text>
+                <Span fg={MUTED}>‹ </Span><b>{agent()?.id ?? ""}</b>{` · ${clean(agent()?.name ?? "")} (${agent()?.role ?? ""})`}<Span fg={MUTED}> ›   </Span>
+                <Span fg={ui().tab === "timeline" ? ACCENT : MUTED}>{ui().tab === "timeline" ? "[1 Timeline]" : " 1 Timeline "}</Span>
+                <Span fg={ui().tab === "briefing" ? ACCENT : MUTED}>{ui().tab === "briefing" ? "[2 Briefing]" : " 2 Briefing "}</Span>
+                <Span fg={view()?.operator.paused ? WARN : OK}>{`   ● ${s().state}`}</Span>
+                {`   spend ${s().spend.today}${s().spend.limit ? ` of ${s().spend.limit}` : ""}`}<Span fg={MUTED}>{"   ? help"}</Span>
+              </text>
+            </box>
+            <Show when={s().frozen}>
+              <box height={1} flexShrink={0} backgroundColor="#7f1d1d" paddingX={1}><text fg="#ffffff"><b>SPENDING FROZEN</b>{"  post_task and escrow_sign are refused before anything is reserved · f unfreezes"}</text></box>
+            </Show>
+            <Show when={view()?.operator.paused}>
+              <box height={1} paddingX={1}><text fg={WARN}>{`Paused: events are still received and stored. ${s().state.replace("paused · ", "")}; they run in order when you resume (p).`}</text></box>
+            </Show>
+            <Show when={ui().confirm}>
+              {(confirm: () => NonNullable<Ui["confirm"]>) => (
+                <box flexDirection="column" flexShrink={0} border borderColor={WARN} title=" Confirm " paddingX={1}>
+                  <Show when={confirm().kind === "freeze"} fallback={<text>Save agent.json and reopen only this agent? Saving mid-turn records a write in flight as uncertain.</text>}>
+                    <text>Freeze spending? post_task and escrow_sign will be refused before anything is reserved.</text>
+                  </Show>
+                  <For each={(() => { const c = confirm(); return c.kind === "save" ? c.lines : []; })()}>{(line) => <text fg={WARN}>{`Confirm spending change: ${line}`}</text>}</For>
+                  <text><b>y</b> yes · <b>n</b> no</text>
+                </box>
+              )}
+            </Show>
+            <Show when={ui().help}>
+              <box flexDirection="column" border borderColor={ACCENT} title=" Keys " paddingX={1} flexGrow={1}>
+                <For each={HELP}>{([keys, what]) => <text><Span fg={ACCENT}>{keys.padEnd(8)}</Span>{what}</text>}</For>
+                <text fg={MUTED}>The mouse toggles tool-call badges and scrolls. ? or esc closes this.</text>
+              </box>
+            </Show>
+            <Show when={!ui().help && ui().tab === "timeline"}>
+              <box flexDirection={narrow() ? "column" : "row"} flexGrow={1}>
+                <box flexDirection="column" flexGrow={1}>
+                  <Show when={s().attention.length > 0 && (!narrow() || ui().alerts)}>
+                    <box flexDirection="column" flexShrink={0} border borderColor={ui().panel === "attention" ? ACCENT : WARN} title={` Needs attention · ${s().attention.length} `} paddingX={1}>
+                      <For each={s().attention}>{(item, at) => (
+                        <box flexDirection="column">
+                          <text>
+                            {at() === Math.min(ui().alert, s().attention.length - 1) ? (ui().panel === "attention" ? "▶ " : "› ") : "  "}
+                            <Span fg={item.kind === "uncertain" ? WARN : BAD}>{item.title}</Span><Span fg={MUTED}>{`   ${item.keys}`}</Span>
+                          </text>
+                          <text fg={MUTED}>{`    ${item.detail}`}</text>
+                          <Show when={item.raw && ui().raw.includes(`alert:${item.id}`)}><text fg={MUTED}>{item.raw}</text></Show>
+                        </box>
+                      )}</For>
+                    </box>
+                  </Show>
+                  <scrollbox ref={(box: ScrollBoxRenderable) => { scroll = box; }} flexGrow={1} border borderColor={ui().panel === "timeline" ? ACCENT : MUTED} title=" Timeline " stickyScroll stickyStart="bottom">
+                    <For each={s().turns}>{(turn, t) => (
+                      <box flexDirection="column" paddingX={1} marginBottom={1}>
+                        <text><Span fg={TAG[turn.tag]}><b>{turn.tag}</b></Span><Span fg={MUTED}>{`  ${time(turn.at)}  `}</Span>{turn.title}</text>
+                        <Show when={turn.raw && ui().raw.includes(`turn:${t()}`)}>
+                          <box border borderColor={MUTED} title=" raw event · plain text " paddingX={1}><text fg={MUTED}>{turn.raw}</text></box>
+                        </Show>
+                        <Show when={!turn.replies.length}>
+                          <box id={`turn${t()}`} backgroundColor={selected() === `turn${t()}` ? SELECTED : undefined}><text fg={MUTED}>{`${selected() === `turn${t()}` ? "▶ " : "  "}No reply yet.`}</text></box>
+                        </Show>
+                        <For each={turn.replies}>{(reply) => {
+                          const open = () => ui().open.includes(reply.key);
+                          const mark = () => (selected() === reply.key ? "▶ " : "  ");
+                          return (
+                            <box id={reply.key} flexDirection="column" backgroundColor={selected() === reply.key ? SELECTED : undefined}>
+                              <text>{mark()}<Span fg={ACCENT}>{`${clean(view()?.spec.character.name ?? "Agent")} — `}</Span>{reply.text || (reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)")}</text>
+                              <Show when={reply.badge}>
+                                <box onMouseDown={() => setUi({ ...ui(), open: toggle(ui().open, reply.key) })}>
+                                  <text fg={/failed|uncertain/.test(reply.badge ?? "") ? WARN : MUTED}>{`    [${open() ? "▾" : "▸"} ${reply.badge}]`}</text>
+                                </box>
+                              </Show>
+                              <Show when={open()}>
+                                <For each={reply.calls}>{(call) => (
+                                  <text>{"      "}<Span fg={OUTCOME[call.outcome]}>{call.outcome.padEnd(10)}</Span>{`${call.name} ${call.arguments.slice(0, 80)}`}<Span fg={MUTED}>{call.error ? `  ${call.error}` : ""}</Span></text>
+                                )}</For>
+                              </Show>
+                              <For each={reply.tasks}>{(task) => (
+                                <text>{"    "}<Span fg={MUTED}>{`${task.via}  `}</Span><b>{task.title}</b><Span fg={MUTED}>{task.summary ? `  ${task.summary}  ` : "  "}</Span>
+                                  <Show when={task.link} fallback={<Span fg={MUTED}>{task.id}</Span>}><a href={task.link!}>{task.link}</a></Show>
+                                </text>
+                              )}</For>
+                            </box>
+                          );
+                        }}</For>
+                      </box>
+                    )}</For>
+                  </scrollbox>
+                  <box height={3} flexShrink={0} border borderColor={ui().editing === "message" ? ACCENT : MUTED} title=" Message " paddingX={1}>
+                    <Show when={ui().editing === "message"} fallback={<text fg={MUTED}>{`m to write to ${clean(view()?.spec.character.name ?? "the agent")}; enter sends it once`}</text>}>
+                      <input focused placeholder="Your message to the agent" onInput={() => { requestId = undefined; }} onSubmit={(text: unknown) => { void send(String(text), "messages"); done(); }} />
+                    </Show>
+                  </box>
+                </box>
+                <Show when={!narrow() || ui().sidebar}>
+                  <box flexDirection="column" flexShrink={0} width={narrow() ? "100%" : 42} border borderColor={ui().panel === "sidebar" ? ACCENT : MUTED} title=" Agent " paddingX={1}>
+                    <text><b>Ready to work? </b><Span fg={s().sidebar.readiness.some((check) => !check.ok) ? WARN : OK}>{(() => { const n = s().sidebar.readiness.filter((check) => !check.ok).length; return n ? `${n} problem${n === 1 ? "" : "s"}` : "yes"; })()}</Span></text>
+                    <For each={s().sidebar.readiness}>{(check) => <text><Span fg={check.ok ? OK : WARN}>{check.ok ? "✓ " : "✗ "}</Span>{`${check.label}: `}<Span fg={MUTED}>{check.detail}</Span></text>}</For>
+                    <text> </text>
+                    <text><b>Tasks</b></text>
+                    <For each={Object.entries(s().sidebar.tasks)}>{([group, refs]) => (
+                      <box flexDirection="column">
+                        <text fg={MUTED}>{`${group} · ${refs.length}`}</text>
+                        <For each={refs}>{(ref) => <text>{`  ${ref.title}`}</text>}</For>
+                      </box>
+                    )}</For>
+                    <text> </text>
+                    <text><b>Spend today (UTC) </b>{`${s().spend.today}${s().spend.limit ? ` of ${s().spend.limit}` : ""}`}</text>
+                    <Show when={s().spend.uncertain !== "$0.00"}><text fg={WARN}>{`includes ${s().spend.uncertain} uncertain`}</text></Show>
+                    <text> </text>
+                    <text><b>{`Standing orders · ${s().sidebar.orders.length}`}</b></text>
+                    <For each={s().sidebar.orders}>{(order) => <text fg={MUTED}>{`• ${order}`}</text>}</For>
+                  </box>
+                </Show>
+              </box>
+            </Show>
+            <Show when={!ui().help && ui().tab === "briefing"}>
+              <box flexDirection={narrow() ? "column" : "row"} flexGrow={1}>
+                <box flexDirection="column" flexGrow={1}>
+                  <box flexDirection="column" border borderColor={ui().panel === "orders" ? ACCENT : MUTED} title=" Standing orders · a add · d delete " paddingX={1}>
+                    <For each={s().sidebar.orders} fallback={<text fg={MUTED}>None yet. The agent reads these on every turn and can't remove them.</text>}>
+                      {(order, at) => <text>{`${ui().panel === "orders" && at() === ui().order ? "▶ " : "  "}${at() + 1}. ${order}`}</text>}
+                    </For>
+                    <Show when={ui().editing === "order"}>
+                      <input focused placeholder="New standing order; enter adds it" onSubmit={(text: unknown) => { void send(String(text), "orders"); done(); }} />
+                    </Show>
+                  </box>
+                  <box flexDirection="column" border borderColor={ui().panel === "fields" ? ACCENT : MUTED} title=" agent.json · enter edit · ctrl+s save & reopen · esc discard " paddingX={1}>
+                    <For each={[...FIELDS]}>{(field, at) => (
+                      <box flexDirection="row" height={1}>
+                        <text>{`${ui().panel === "fields" && at() === ui().field ? "▶ " : "  "}${LABEL[field].padEnd(20)}`}</text>
+                        <Show when={ui().editing === field} fallback={
+                          <text fg={view() && draft() && fieldValue(draft()!, field) !== fieldValue(view()!.spec, field) ? WARN : undefined}>{clean(draft() ? fieldValue(draft()!, field) || "none" : "")}</text>
+                        }>
+                          <input focused flexGrow={1} value={draft() ? fieldValue(draft()!, field) : ""} onSubmit={(value: unknown) => { const current = view(); if (current) setUi(setField(ui(), current, field, String(value))); done(); }} />
+                        </Show>
+                      </box>
+                    )}</For>
+                    <Show when={ui().draft}><text fg={WARN}>Unsaved changes · ctrl+s saves and reopens only this agent · esc discards</text></Show>
+                    <text fg={MUTED}>Checked against the strict agent schema first; nothing is written if it fails.</text>
+                  </box>
+                </box>
+                <scrollbox border borderColor={MUTED} title=" What the agent reads every turn " width={narrow() ? "100%" : "45%"} flexGrow={narrow() ? 1 : 0}>
+                  <text fg={MUTED}>{clean(view()?.prompt ?? "")}</text>
+                </scrollbox>
+              </box>
+            </Show>
+            <box height={1} paddingX={1}>
+              <text fg={notice() ? WARN : MUTED}>{notice() || (ui().tab === "briefing"
+                ? "tab orders/fields · j/k move · a add · d delete · enter edit · ctrl+s save · esc discard · 1 timeline · ? help · q quit"
+                : narrow()
+                ? `i sidebar · a alerts (${s().attention.length}) · j/k move · enter calls · m message · p pause · f freeze · ? help · q quit`
+                : "j/k move · enter tool calls · r raw · o open · m message · p pause · f freeze · c checked · tab panel · ? help · q quit")}</text>
+            </box>
+          </>
+        )}
+      </Show>
+    </box>
+  );
+}

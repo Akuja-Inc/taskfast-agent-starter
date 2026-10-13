@@ -126,12 +126,11 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
       .map(([key, work]) => ({ kind: "abandoned" as const, id: key.slice("event:".length), attempts: work.attempt + 1, event: work.event })),
     ...deadLetters.filter((letter) => !operator.checked[letter.id]),
   ];
-  const { deadLetters: _, ...hostFacts } = facts ?? { deadLetters: [] };
   return {
     id, env, spec, operator, attention, events,
     actions: policy.actions, spend: policy.spend, notes: policy.memory,
     prompt: marketplacePrompt(spec, policy.memory, operator.orders),
-    timeline, host: facts ? hostFacts : undefined,
+    timeline, host: facts && { unlockFile: facts.unlockFile, stream: facts.stream, wallet: facts.wallet, tasks: facts.tasks },
   };
 }
 

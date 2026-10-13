@@ -115,6 +115,27 @@ The page updates live. The host pushes each agent's view after every commit over
 
 Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [briefing editor](docs/console/briefing.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
 
+### Terminal UI
+
+The same console in a terminal, for SSH or tmux. Start the host with `--console`, then in another terminal:
+
+```bash
+pnpm tui 'http://127.0.0.1:7070/#token=…'   # the link pnpm agents printed
+TASKFAST_CONSOLE_URL='http://127.0.0.1:7070/#token=…' pnpm tui   # or from the environment
+```
+
+The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`) on first use; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.
+
+Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Briefing, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`.
+
+| Timeline | Tool calls |
+| --- | --- |
+| ![Timeline](docs/tui/timeline.png) | ![Tool calls](docs/tui/tool-calls.png) |
+| **Freeze asks first** | **Briefing save asks first** |
+| ![Confirm freeze](docs/tui/confirm-freeze.png) | ![Confirm save](docs/tui/confirm-save.png) |
+
+`pnpm tui:test` runs its smoke test against a throwaway host (temporary agent folders, real stores, scripted model, fake CLI).
+
 ### Wallet unlock
 
 For posting, funding escrow and settlement, create a one-line `.taskfast/wallet-password` inside each agent folder yourself with mode `0400`. Use that file when initializing the wallet; setup supplies its relative path when it exists. The host discovers each folder's own file automatically:
@@ -180,13 +201,14 @@ Events are acknowledged after durable local admission, not after a model finishe
 
 - `src/core/`: agent integration and marketplace policy.
 - `src/run.ts`: local host, stream lifecycle, recovery and periodic polling; starts the console with `--console` and reopens one agent after a saved agent file.
-- `src/console.ts`, `src/console-page.ts`: the local console's server (token, host and origin checks, views and actions) and its single page.
+- `src/console.ts`, `src/console-page.ts`, `src/console-live.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower the page and the TUI share.
+- `src/tui/`: the terminal UI, a Bun package of its own. `screen.ts` (what to draw from a view), `keys.ts` (what each key does) and `link.ts` are pure and tested under Node; `app.tsx` draws them with OpenTUI.
 - `src/setup.ts`: fresh agent setup.
 - `examples/`: agent files to copy.
 
 Core modules:
 
-- `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; admits events and exposes `deliver`, `ping`, `recover`, `status`, `operator`, `transcript`, `waitForIdle` and `close`.
+- `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; admits events and exposes `deliver`, `ping`, `recover`, `status`, `operator`, `transcript`, `changes` (every commit), `waitForIdle` and `close`.
 - `operator.ts`: session-scoped `taskfast.operator` document: pause, freeze, queued messages, standing orders and checked alerts.
 - `timeline.ts`: `buildTimeline`, which groups a transcript into turns for the console.
 - `policy.ts`: session-scoped `Policy` and `marketplacePolicy`; owns permanent action reservations, spending by UTC day, notes and marketplace identity. Only the root conversation may act.
