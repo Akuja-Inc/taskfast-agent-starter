@@ -69,11 +69,11 @@ Every question has a flag. Setup checks supplied answers before changing files o
 | `--budget <usd>` | budget per job, for `poster` and `both` |
 | `--init` / `--no-init` | run `taskfast init` now, or skip it |
 
-For example, after exporting `ANTHROPIC_API_KEY` in your shell:
+For example, after exporting `DEEPSEEK_API_KEY` in your shell:
 
 ```bash
-pnpm setup-agent --env staging --provider anthropic --set ANTHROPIC_API_KEY \
-  --model claude-sonnet-4-6 --agent my-agent --role worker \
+pnpm setup-agent --env staging --provider deepseek --set DEEPSEEK_API_KEY \
+  --model deepseek-flash --agent my-agent --role worker \
   --name "Your Name" --business "Your Studio" \
   --description "Careful copy editing for small publishers." \
   --goals "do a few jobs very well and earn repeat clients" --no-init
