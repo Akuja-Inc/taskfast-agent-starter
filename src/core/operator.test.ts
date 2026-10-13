@@ -157,6 +157,16 @@ it("runs an abandoned event once more on request, abandoning it again if that ru
   expect((await kit.agent.operator.events())["event:stuck"].kind).toBe("done");
 });
 
+it("keeps earlier turns in the transcript after the conversation is reset", async () => {
+  const kit = await open();
+  kit.faux.setResponses([fauxAssistantMessage("Nothing to do yet.")]);
+  await run(kit.agent);
+  await kit.agent.conversation.reset(undefined, context);
+  const transcript = JSON.stringify(await kit.agent.transcript(100));
+  expect(transcript).toContain("Check your marketplace work");
+  expect(transcript).toContain("Nothing to do yet.");
+});
+
 it("refuses a money tool while spending is frozen, before reserving anything, and still runs reads", async () => {
   const kit = await open();
   await kit.agent.operator.setFrozen(true);

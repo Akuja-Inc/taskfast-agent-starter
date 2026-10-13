@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { Type, StringEnum, type Models, type TSchema } from "@earendil-works/pi-ai";
+import { Type, StringEnum, type Message, type Models, type TSchema } from "@earendil-works/pi-ai";
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
 import { createTimeout } from "retry";
@@ -51,6 +51,8 @@ export interface MarketplaceAgent {
   recover(): Promise<void>;
   status(): ReturnType<MarketplacePolicy["snapshot"]>;
   operator: OperatorControls;
+  // The newest `limit` stored entries' messages, oldest first.
+  transcript(limit: number): Promise<Message[]>;
   waitForIdle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -242,8 +244,13 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       },
       markChecked: async (id) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).checked[id] = new Date(now()).toISOString(); }, context); },
     };
+    // Stored entries, not the model's context, so turns from before a reset still show.
+    async function transcript(limit: number): Promise<Message[]> {
+      const page = await conversation.entries({ order: "descending" }, limit, undefined, context);
+      return [...page.items].reverse().flatMap((entry) => entry.model ?? []);
+    }
     return {
-      conversation, deliver, ping, recover, status: activePolicy.snapshot, operator,
+      conversation, deliver, ping, recover, status: activePolicy.snapshot, operator, transcript,
       waitForIdle: () => conversation.waitForIdle(context),
       close: async () => {
         if (closed) return;
