@@ -1,12 +1,6 @@
 ---
 name: landing-a-pr
-description: >-
-  Watch, fix and merge a pull request that is already open in this repo: follow
-  `gh pr checks`, read and answer review comments, push fix commits, and run
-  `gh pr merge` only when every required check is green and the user asked for the
-  merge in this request. Use when asked to watch a PR until it merges, babysit it
-  through CI and review comments, or merge it once the checks pass.
-  NOT for opening the PR (use ship-pr).
+description: "Watch, fix and merge a pull request that is already open in this repo: follow `gh pr checks`, read and answer review comments, push fix commits, and run `gh pr merge` only when every required check is green and the user asked for the merge in this request. Use when asked to watch a PR until it merges, babysit it through CI and review comments, or merge it once the checks pass. NOT for opening the PR (use ship-pr)."
 ---
 
 # Land a PR

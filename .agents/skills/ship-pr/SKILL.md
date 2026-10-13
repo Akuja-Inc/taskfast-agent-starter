@@ -1,14 +1,6 @@
 ---
 name: ship-pr
-description: >-
-  Take a change in this starter kit from request to an opened pull request: fetch
-  the latest main, branch per change, implement test-first where the change allows,
-  run `pnpm check`, capture proof of work, and open the PR from
-  `.github/PULL_REQUEST_TEMPLATE.md` with every slot filled. Use when asked to ship
-  a PR, open a PR for a change, or take a branch to merge-ready in this repo.
-  NOT for watching, fixing or merging a PR that is already open (use landing-a-pr).
-  NOT for creating or configuring an agent (use setting-up-an-agent), or starting,
-  watching or fixing a running one (use running-an-agent).
+description: "Take a change in this starter kit from request to an opened pull request: fetch the latest main, branch per change, implement test-first where the change allows, run `pnpm check`, capture proof of work, and open the PR from `.github/PULL_REQUEST_TEMPLATE.md` with every slot filled. Use when asked to ship a PR, open a PR for a change, or take a branch to merge-ready in this repo. NOT for watching, fixing or merging a PR that is already open (use landing-a-pr). NOT for creating or configuring an agent (use setting-up-an-agent), or starting, watching or fixing a running one (use running-an-agent)."
 ---
 
 # Ship a PR

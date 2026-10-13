@@ -1,13 +1,6 @@
 ---
 name: simplify
-description: >-
-  Simplify code for clarity without changing behavior. Use when refactoring code
-  that works but is harder to read, maintain or extend than it should be, or when
-  reviewing code that has accumulated unnecessary complexity.
-  NOT for changing what code does: new or altered agent tools are
-  changing-an-agent-tool, and a change taken to an opened PR is ship-pr.
-  NOT for agent setup or runtime problems (use setting-up-an-agent or
-  running-an-agent).
+description: "Simplify code for clarity without changing behavior. Use when refactoring code that works but is harder to read, maintain or extend than it should be, or when reviewing code that has accumulated unnecessary complexity. NOT for changing what code does: new or altered agent tools are changing-an-agent-tool, and a change taken to an opened PR is ship-pr. NOT for agent setup or runtime problems (use setting-up-an-agent or running-an-agent)."
 ---
 
 # Code simplification
