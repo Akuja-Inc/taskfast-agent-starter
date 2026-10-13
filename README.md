@@ -105,9 +105,9 @@ The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it i
 
 - **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text.
 - **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.
-- **Pause:** events are still received and stored; no new model work starts until you resume. **Freeze spending:** `post_task` and `escrow_sign` are refused before anything is reserved; reads and messages continue, and an action already reserved finishes.
+- **Pause:** events are still received and stored; nothing new is handed to the model until you resume. Work the model already had finishes. **Freeze spending:** `post_task` and `escrow_sign` are refused before anything is reserved; reads and messages continue, and an action already reserved finishes.
 - **Messages and standing orders:** a message is the agent's next input, sent once however often you press Send. Standing orders join the system prompt on every turn and only you can change them.
-- **Briefing:** edit goals, temperament, dials and limits. Saving checks the agent file strictly, writes it, and reopens only that agent; the others keep running.
+- **Briefing:** edit goals, temperament, dials and limits. Saving checks the agent file strictly, writes it, and reopens only that agent; the others keep running. Saving mid-turn interrupts the agent: a write in flight is recorded as uncertain, as after a restart.
 
 The console reads through the running host. It never opens a store or a second event stream: one store has one owner, and the server allows one stream per agent.
 

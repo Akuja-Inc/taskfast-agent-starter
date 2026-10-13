@@ -118,7 +118,10 @@ function taskSummary(id) {
   const read = view.host && view.host.tasks[id];
   const task = read && (read.task || read);
   if (!task || read.error) return { title: id, summary: read && read.error ? "Could not read: " + read.error : "" };
-  const parts = [task.status, task.budget_max ? "budget " + money(task.budget_max) : null, task.bid_count !== undefined ? task.bid_count + " bids" : null, task.assignee_name || task.assigned_agent_name ? "assigned to " + (task.assignee_name || task.assigned_agent_name) : null, task.deadline || task.due_at ? "due " + (task.deadline || task.due_at) : null];
+  // TaskDetail fields in the CLI's vendored OpenAPI spec.
+  const day = (iso) => new Date(iso).toLocaleString();
+  const parts = [task.status, task.budget_max ? "budget " + money(task.budget_max) : null, task.worker_agent_id ? "worker assigned" : null,
+    task.execution_deadline ? "due " + day(task.execution_deadline) : null, !task.worker_agent_id && task.pickup_deadline ? "pickup by " + day(task.pickup_deadline) : null];
   return { title: task.title || id, summary: parts.filter(Boolean).join(" · ") };
 }
 function taskCard(ref) {
@@ -302,7 +305,7 @@ function briefingTab() {
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
           el("button", { class: "primary", onclick: () => { if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits; act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; }); }, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
-        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails." }))),
+        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." }))),
     el("aside", {}, el("section", { class: "card" }, el("h2", { text: "What the agent reads every turn" }), el("pre", { text: view.prompt }))));
 }
 
