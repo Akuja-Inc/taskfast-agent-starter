@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 
-// The tools a persona's model can call. Each one maps to a taskfast command (or, for
-// memory, to the actor's own notes). The model only fills in values: every value is
+// The tools an agent's model can call. Each one maps to a taskfast command (or, for
+// memory, to the agent's own notes). The model only fills in values: every value is
 // checked here, options are passed as --name=value and positionals after --, so a
 // value can never become a flag such as --env.
 //
 // kind: read (safe to repeat), write (runs at most once per actionKey), money (a
 // write that commits funds; its amount is fixed by code and counted against the
-// agent's limits), memory (changes only the actor's notes).
+// agent's limits), memory (changes only the agent's notes).
 export type ToolKind = "read" | "write" | "money" | "memory";
 // A money tool must name where its amount comes from: the type will not compile without
 // one, so a charged command cannot be added without being counted.

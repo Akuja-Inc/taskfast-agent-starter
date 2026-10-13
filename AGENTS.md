@@ -60,4 +60,4 @@ TaskFast's downstream tooling pins this repository by commit and imports `taskfa
 
 Call out this breaking package/lifecycle change in the PR description. Tool enums must still match TaskFast's OpenAPI spec and its downstream `tools-contract.test.ts`.
 
-The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used, so its old pinning and bump rules no longer apply. The Pi packages are experimental and pinned exactly to 1.1.0. Do not float versions or casually combine a runtime upgrade with unrelated changes; verify persistence, replay safety and provider support at any new pin.
+The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used, so its old pinning and bump rules no longer apply. The Pi packages are experimental and pinned exactly to 1.1.0. Do not float versions. Bump them on their own, never as part of another change, and verify persistence, replay safety and provider support at any new pin. The one exception is the PR that replaced `durable-actors` with Pi (#9), which also moved pnpm 10 to 12 and added wallet unlock files and folder portability.
