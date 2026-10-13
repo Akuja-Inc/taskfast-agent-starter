@@ -52,10 +52,10 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .task { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border: 1px solid #C9D6EC; border-radius: 8px; background: #F4F7FC; color: var(--ink); text-decoration: none; }
 pre { margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--ink); color: #D7DADF; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .check { display: flex; gap: 10px; align-items: flex-start; }
-.check .mark { font-weight: 700; min-width: 3.5em; } .check .mark.ok { color: var(--ok); } .check .mark.bad { color: var(--bad); }
+.check .mark { font-weight: 700; min-width: 5em; } .check .mark.ok { color: var(--ok); } .check .mark.bad { color: var(--bad); }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 640px) { .grid { grid-template-columns: minmax(0, 1fr); } }
-form.inline { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+form.inline { display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 form.inline label { flex: 1 1 280px; }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
@@ -191,13 +191,15 @@ function turnCard(turn, index) {
     el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, key + "r" + r)) : el("div", { class: "small", text: "No reply yet." })));
 }
 function replyBlock(reply, key) {
-  const failed = reply.calls.filter((c) => c.outcome === "failed" || c.outcome === "uncertain").length;
+  const failed = reply.calls.filter((c) => c.outcome === "failed").length;
+  const uncertain = reply.calls.filter((c) => c.outcome === "uncertain").length;
   return el("div", { style: "display:flex;flex-direction:column;gap:8px" },
     el("div", { style: "display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start" },
-      reply.text ? el("p", { style: "flex:1 1 360px;margin:0" }, el("strong", { text: (view.spec.character.name || "Agent") + " — " }), reply.text) : el("span", { style: "flex:1 1 360px", class: "small", text: "(tool calls only)" }),
+      reply.text ? el("p", { style: "flex:1 1 360px;margin:0" }, el("strong", { text: (view.spec.character.name || "Agent") + " — " }), reply.text) : el("span", { style: "flex:1 1 360px", class: "small", text: reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)" }),
       reply.calls.length ? el("button", { class: "chip", "aria-expanded": String(ui.open.has(key)), onclick: () => toggle(ui.open, key) },
         reply.calls.length + (reply.calls.length === 1 ? " tool call" : " tool calls"),
-        failed ? el("span", { class: "badge-fail", text: failed + " failed" }) : null) : null),
+        failed ? el("span", { class: "badge-fail", text: failed + " failed" }) : null,
+        uncertain ? el("span", { class: "badge-fail", text: uncertain + " uncertain" }) : null) : null),
     ui.open.has(key) ? el("div", { class: "calls" }, reply.calls.map((call) => el("div", { class: "call " + call.outcome },
       el("span", { class: "name", text: call.name + " " + JSON.stringify(call.arguments) }),
       el("span", { style: "color:" + (call.outcome === "ok" ? "var(--ok)" : "var(--warn)"), text: call.outcome }),
