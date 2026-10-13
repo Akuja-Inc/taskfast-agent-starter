@@ -3,9 +3,10 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { createInterface } from "node:readline/promises";
-import { Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import input from "@inquirer/input";
+import password from "@inquirer/password";
 import { createAgentModels, providerSource } from "./core/model.js";
 import { credentialSetting, folderFile, PASSWORD_PATH, WALLET_PATH } from "./core/folder.js";
 import { parseAgentSpec } from "./core/spec.js";
@@ -135,7 +136,7 @@ export function installedVersion(root: string, pkg: string): string | null {
   return isRecord(value) && value.name === pkg && typeof value.version === "string" ? value.version : null;
 }
 
-// A setting whose value is a credential is read with echo off.
+// A setting whose value is a credential is masked while typing.
 const secret = (name: string) => /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL/.test(name);
 
 const agentProblem = (root: string, v: string) =>
@@ -281,7 +282,7 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
       continue;
     }
     const what = s.description ? ` (${s.description})` : "";
-    save(s.name, await text(io, `\n${secret(s.name) ? "Paste" : "Enter"} your ${s.name}${what}${secret(s.name) ? ", input is hidden" : ""}`, "", (v) => (VALUE.test(v) ? null : "that value has spaces, quotes, backslashes or #"), secret(s.name)));
+    save(s.name, await text(io, `\n${secret(s.name) ? "Paste" : "Enter"} your ${s.name}${what}${secret(s.name) ? ", input is masked; press Enter to continue" : ""}`, "", (v) => (VALUE.test(v) ? null : "that value has spaces, quotes, backslashes or #"), secret(s.name)));
   }
   const optional = provider.settings.filter((s) => !s.required && !set.has(s.name)).map((s) => s.name);
   if (optional.length) io.log(`\nOptional settings, if you need them, go in .env too (or pass --set): ${optional.join(", ")}`);
@@ -361,51 +362,45 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(USAGE);
     process.exit(0);
   }
-  // Typed characters are not echoed while a hidden answer is read.
-  let muted = false;
-  const output = new Writable({
-    write(chunk, encoding, done) {
-      if (!muted) process.stdout.write(chunk, encoding);
-      done();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output, terminal: process.stdin.isTTY });
+  // Interactive prompts release the terminal after each answer. Only pipes keep
+  // a readline open, so taskfast init never inherits a prompt's raw mode.
+  const rl = process.stdin.isTTY ? undefined : createInterface({ input: process.stdin, terminal: false });
   // The line iterator buffers lines until they are asked for; rl.question() drops lines
   // that arrive while no question is open, which loses piped answers.
-  const lines = rl[Symbol.asyncIterator]();
+  const lines = rl?.[Symbol.asyncIterator]();
   const io: SetupIO = {
     root: process.cwd(),
     env: process.env,
     log: (line) => console.log(line),
     ask: async (question, hidden = false) => {
-      process.stdout.write(question);
-      muted = hidden;
-      try {
-        const next = await lines.next();
-        if (next.done) throw new Error("input ended before setup finished; pass the remaining answers as flags (see --help)");
-        return next.value.trim();
-      } finally {
-        muted = false;
-        if (hidden) process.stdout.write("\n");
+      if (!lines) {
+        const message = question.trim();
+        return (await (hidden ? password({ message, mask: "*", toggleMask: false }) : input({ message }))).trim();
       }
+      process.stdout.write(question);
+      const next = await lines.next();
+      if (next.done) throw new Error("input ended before setup finished; pass the remaining answers as flags (see --help)");
+      return next.value.trim();
     },
     run: (cmd, args, cwd) => {
-      rl.pause();
+      rl?.pause();
+      process.stdin.pause();
       try {
         const r = spawnSync(cmd, args, { cwd, stdio: "inherit" });
         if (r.error) console.error(`${cmd}: ${r.error.message}`);
         return r.status ?? 1;
       } finally {
-        rl.resume();
+        rl?.resume();
       }
     },
   };
   try {
     await setup(io, opts);
   } catch (e) {
-    console.error(`\nSetup stopped: ${e instanceof Error ? e.message : String(e)}`);
-    process.exitCode = 1;
+    const cancelled = e instanceof Error && e.name === "ExitPromptError";
+    console.error(cancelled ? "\nSetup cancelled." : `\nSetup stopped: ${e instanceof Error ? e.message : String(e)}`);
+    process.exitCode = cancelled ? 130 : 1;
   } finally {
-    rl.close();
+    rl?.close();
   }
 }
