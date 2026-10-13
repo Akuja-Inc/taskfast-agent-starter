@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENT_RETRY, openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
 import { cliEnv, runCli } from "../src/core/cli.js";
@@ -318,6 +318,35 @@ it("keeps an event's retry delay across a restart", async () => {
   expect(recovered.faux.state.callCount).toBe(0);
   at += retryDelay(0, 1) + 1;
   await expect.poll(() => recovered.faux.state.callCount, { timeout: 4000 }).toBe(1);
+});
+
+it("queues one resume input however many recovery passes see the same stall", async () => {
+  const dir = directory();
+  const started = marker();
+  const release = marker();
+  const selected = selectedModels([
+    async () => { started.resolve(); await release.promise; return modelFailure(); },
+    ...Array.from({ length: 20 }, () => modelFailure),
+  ]);
+  const at = Date.parse("2026-06-20T12:00:00Z");
+  const agent = await open({ dir, selected, now: () => new Date(at) }); // Frozen time: no event retry comes due.
+  const nudges = new Set();
+  const submit = agent.conversation.submit.bind(agent.conversation);
+  vi.spyOn(agent.conversation, "submit").mockImplementation(async (draft, ctx) => {
+    const submission = await submit(draft, ctx);
+    if (draft.type === "input" && typeof draft.content === "string" && draft.content.startsWith("Resume your queued")) nudges.add(submission.id);
+    return submission;
+  });
+  await agent.ping();
+  await started.promise;
+  for (const id of ["stalled-one", "stalled-two", "stalled-three"]) await agent.deliver(event(id));
+  await agent.recover(); // Persist the queued submissions while the first run is blocked.
+  release.resolve();
+  for (let tick = 0; tick < 5; tick++) {
+    await sleep(100); // Several recovery timer ticks while every run fails.
+    await agent.waitForIdle();
+  }
+  expect(nudges.size).toBe(1);
 });
 
 function hostAgent({ root, id }: { root: string; id: string }) {
