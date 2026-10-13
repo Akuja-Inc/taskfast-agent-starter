@@ -69,18 +69,6 @@ export interface Runtime {
   configPath: string;
   // Optional host-only unlock path. Never a model input or child environment value.
   walletPasswordFile?: string;
-  // Optional, set by the host: when present, this agent's writes may involve only these
-  // accounts and agents (see counterparty.ts). Without it nothing is checked.
-  counterparties?: Counterparties;
-}
-
-// Who an agent may deal with. `me` is the agent's own id, so a message can tell the
-// other side of a task from itself. A task's poster is an account; a bidder or a task's
-// worker is an agent.
-export interface Counterparties {
-  me: string;
-  accounts: string[];
-  agents: string[];
 }
 
 // A settled marketplace action. In-flight reservations live in policy.ts; these

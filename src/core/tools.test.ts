@@ -58,18 +58,6 @@ describe("prepare", () => {
     expect(Object.keys(TOOLS.escrow_sign!.schema.properties)).toEqual(["task_id", "bid_id"]);
   });
 
-  it("names the other side of every write except a post, which has none yet (containment)", () => {
-    const writes = Object.entries(TOOLS).filter(([, t]) => t.kind === "write" || t.kind === "money");
-    expect(Object.fromEntries(writes.map(([n, t]) => [n, t.party]))).toEqual({
-      bid_create: "poster", task_claim: "poster", task_submit: "poster", message_send: "other",
-      post_task: null, bid_accept: "bidder", bid_reject: "bidder", escrow_sign: "bidder",
-      task_approve: "worker", task_dispute: "worker", settle: "worker",
-    });
-    expect(Object.values(TOOLS).filter((t) => t.kind === "read" || t.kind === "memory").every((t) => t.party === undefined)).toBe(true);
-    // The bidder is found among the task's bids, so every bidder tool takes the task.
-    for (const [n, t] of writes) if (t.party === "bidder") expect(TOOLS[n]!.schema.required).toEqual(["task_id", "bid_id"]);
-  });
-
   it("builds the poster commands", () => {
     const B = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
     expect(prepare("post_task", { title: "Logo", description: "A logo for a bakery", budget: "40.00", pickup_deadline_hours: 24 }).args).toEqual(["post", "--title=Logo", "--description=A logo for a bakery", "--budget=40.00", "--pickup-deadline-hours=24", "--yes"]);

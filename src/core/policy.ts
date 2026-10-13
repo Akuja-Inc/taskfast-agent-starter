@@ -1,7 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader, type Tx } from "@earendil-works/pi-durable";
 import { runCli, type CliResult } from "./cli.js";
-import { counterpartyRefusal } from "./counterparty.js";
 import { amountOf, overLimit, today } from "./money.js";
 import { prepare, UUID } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
@@ -116,10 +115,6 @@ export function marketplacePolicy(o: PolicyOptions) {
       const prior = (await snapshot()).actions[key];
       if (prior && prior.status !== "failed") return skipped(prior);
       const read = (args: string[]) => command(o.runtime, args);
-      if (o.runtime.counterparties && spec.party) {
-        const refused = await counterpartyRefusal(spec.party, input, o.runtime.counterparties, read);
-        if (refused) return { refused };
-      }
       const amount = spec.kind === "money" ? await amountOf(spec.amount, input, read) : 0;
       if (typeof amount === "string") return { refused: amount };
       const refusal = await commit(async (tx): Promise<Json> => {

@@ -289,19 +289,6 @@ it("starts a new UTC spending day without clearing completed keys", async () => 
   expect(Object.keys((await kit.agent.status()).actions)).toHaveLength(2);
 });
 
-it("checks counterparties before reserving or dispatching a write", async () => {
-  const calls: string[][] = [];
-  const kit = await open({ runtime: { env: "staging", configPath: "/tmp/agent-config.json", counterparties: { me: task, accounts: ["22222222-2222-4222-8222-222222222222"], agents: [] } }, command: async (_rt, args) => {
-    calls.push(args);
-    if (args[0] === "me") return me;
-    return { outcome: "ok", data: { task: { poster_id: "other" } } };
-  } });
-  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("bid_create", { task_id: task, price: "10.00" })], { stopReason: "toolUse" }), fauxAssistantMessage("Refused")]);
-  await run(kit.agent);
-  expect(calls.map((args) => args.slice(0, 2))).toEqual([["me"], ["task", "get"]]);
-  expect((await kit.agent.status()).actions).toEqual({});
-});
-
 it("admits and deduplicates events while a model run is blocked", async () => {
   const kit = await open();
   let release: (() => void) | undefined;

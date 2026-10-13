@@ -12,23 +12,17 @@ export type ToolKind = "read" | "write" | "money" | "memory";
 // A money tool must name where its amount comes from: the type will not compile without
 // one, so a charged command cannot be added without being counted.
 export type AmountSource = "bidPrice" | "submissionFee";
-// Who is on the other side of a write, for an agent whose host limits its
-// counterparties (counterparty.ts): the task's poster, the bid's bidder, the task's
-// worker, or for a message, whichever of poster and worker is not this agent. Every
-// write names one (null only for a write with no counterparty yet, a post), so a new
-// write cannot compile without deciding it.
-export type Party = "poster" | "bidder" | "worker" | "other";
 interface ToolBase {
   description: string;
   schema: { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[] }>; required: string[]; additionalProperties: false };
   args(input: Record<string, unknown>): string[];
 }
 export type ToolSpec =
-  | (ToolBase & { kind: "read" | "memory"; amount?: never; party?: never; key?: never })
-  | (ToolBase & { kind: "write"; amount?: never; party: Party | null; key(input: Record<string, unknown>): string })
+  | (ToolBase & { kind: "read" | "memory"; amount?: never; key?: never })
+  | (ToolBase & { kind: "write"; amount?: never; key(input: Record<string, unknown>): string })
   // For a money tool, where its amount comes from, always read from the server: the
   // bid's price, or the platform's submission fee. Never free text from the model.
-  | (ToolBase & { kind: "money"; amount: AmountSource; party: Party | null; key(input: Record<string, unknown>): string });
+  | (ToolBase & { kind: "money"; amount: AmountSource; key(input: Record<string, unknown>): string });
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PRICE = /^\d{1,9}(\.\d{1,2})?$/;
@@ -81,7 +75,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID"), price: s('your price, e.g. "40.00"'), pitch: s("why you fit, in your own words") }, ["task_id", "price"]),
     args: (i) => ["bid", "create", `--price=${money(i.price, "price")}`, ...opt("pitch", i.pitch, (v, n) => text(v, n, 2000)), "--", uuid(i.task_id, "task_id")],
     key: (i) => `bid:${uuid(i.task_id, "task_id")}`,
-    party: "poster",
   },
   task_claim: {
     kind: "write",
@@ -89,7 +82,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "claim", "--", uuid(i.task_id, "task_id")],
     key: (i) => `claim:${uuid(i.task_id, "task_id")}`,
-    party: "poster",
   },
   task_submit: {
     kind: "write",
@@ -97,7 +89,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID"), summary: s("what you delivered") }, ["task_id", "summary"]),
     args: (i) => ["task", "submit", `--summary=${text(i.summary, "summary")}`, "--", uuid(i.task_id, "task_id")],
     key: (i) => `submit:${uuid(i.task_id, "task_id")}`,
-    party: "poster",
   },
   message_send: {
     kind: "write",
@@ -105,7 +96,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID"), content: s("the message") }, ["task_id", "content"]),
     args: (i) => ["message", "send", `--content=${text(i.content, "content")}`, "--", uuid(i.task_id, "task_id")],
     key: (i) => `message:${uuid(i.task_id, "task_id")}:${digest(text(i.content, "content"))}`,
-    party: "other",
   },
 
   task_bids: {
@@ -124,17 +114,15 @@ export const TOOLS: Record<string, ToolSpec> = {
     args: (i) => ["post", `--title=${text(i.title, "title", 200)}`, `--description=${text(i.description, "description")}`, `--budget=${money(i.budget, "budget")}`, `--pickup-deadline-hours=${hours(i.pickup_deadline_hours, "pickup_deadline_hours")}`, "--yes"],
     key: (i) => `post:${digest(`${text(i.title, "title", 200)}\n${text(i.description, "description")}`)}`,
     amount: "submissionFee",
-    party: null,
   },
-  // bid_accept and bid_reject take the task as well as the bid: the CLI cannot read a bid
-  // by its id, so the bidder (party) is found among the task's bids.
+  // bid_accept and bid_reject run on the bid alone but keep task_id in their schema:
+  // stored conversations hold calls with it, and recovery must still accept them.
   bid_accept: {
     kind: "write",
     description: "Accept a bid on your task. You fund its escrow afterwards with escrow_sign.",
     schema: obj({ task_id: s("task UUID"), bid_id: s("bid UUID") }, ["task_id", "bid_id"]),
     args: (i) => ["bid", "accept", "--", uuid(i.bid_id, "bid_id")],
     key: (i) => `accept:${uuid(i.bid_id, "bid_id")}`,
-    party: "bidder",
   },
   bid_reject: {
     kind: "write",
@@ -142,7 +130,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID"), bid_id: s("bid UUID"), reason: s("optional reason") }, ["task_id", "bid_id"]),
     args: (i) => ["bid", "reject", ...opt("reason", i.reason, (v, n) => text(v, n, 500)), "--", uuid(i.bid_id, "bid_id")],
     key: (i) => `reject:${uuid(i.bid_id, "bid_id")}`,
-    party: "bidder",
   },
   escrow_sign: {
     kind: "money",
@@ -150,7 +137,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID"), bid_id: s("bid UUID") }, ["task_id", "bid_id"]),
     args: (i) => ["escrow", "sign", "--", uuid(i.bid_id, "bid_id")],
     key: (i) => `escrow:${uuid(i.bid_id, "bid_id")}`,
-    party: "bidder",
     amount: "bidPrice",
   },
   task_approve: {
@@ -159,7 +145,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "approve", "--", uuid(i.task_id, "task_id")],
     key: (i) => `approve:${uuid(i.task_id, "task_id")}`,
-    party: "worker",
   },
   task_dispute: {
     kind: "write",
@@ -167,7 +152,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID"), reason: s("why the work falls short") }, ["task_id", "reason"]),
     args: (i) => ["task", "dispute", `--reason=${text(i.reason, "reason", 2000)}`, "--", uuid(i.task_id, "task_id")],
     key: (i) => `dispute:${uuid(i.task_id, "task_id")}`,
-    party: "worker",
   },
   settle: {
     kind: "write",
@@ -175,7 +159,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["settle", "--yes", "--", uuid(i.task_id, "task_id")],
     key: (i) => `settle:${uuid(i.task_id, "task_id")}`,
-    party: "worker",
   },
 
   remember: { kind: "memory", description: "Keep a note for later turns.", schema: obj({ note: s("the note") }, ["note"]), args: (i) => (text(i.note, "note"), []) },
