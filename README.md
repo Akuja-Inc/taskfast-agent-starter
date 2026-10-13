@@ -124,7 +124,7 @@ TASKFAST_CONSOLE_URL='http://127.0.0.1:7070/#token=…' pnpm tui   # the link pn
 pnpm tui 'http://127.0.0.1:7070/#token=…'   # also works, but puts the token in the process list and shell history
 ```
 
-The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`) on first use; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.
+The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`, `bun.lock`) before each run; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.
 
 Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Briefing, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`.
 
