@@ -5,7 +5,8 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, expect, it } from "vitest";
-import { openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
+import { setTimeout as sleep } from "node:timers/promises";
+import { EVENT_RETRY, openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
 import { cliEnv, runCli } from "../src/core/cli.js";
 import type { Command } from "../src/core/policy.js";
 import { runEventPump, runEventPumpForever } from "../src/core/pump.js";
@@ -64,8 +65,8 @@ const identityCommand: Command = async (_runtime, args) => {
   if (JSON.stringify(args) !== JSON.stringify(["me"])) throw new Error("event lifecycle fixture permits only the identity read");
   return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
 };
-async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime; command?: Command }) {
-  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs, command });
+async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand, now, log }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime; command?: Command; now?: () => Date; log?: (line: string) => void }) {
+  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs, command, now, log });
   agents.push(agent);
   return agent;
 }
@@ -241,7 +242,11 @@ it("reopening recovers an admitted event whose model run failed before shutdown"
     retried.resolve();
     return fauxAssistantMessage("Recovered event complete");
   }]);
-  const reopened = await open({ dir, selected: recovered });
+  let skew = 0;
+  const reopened = await open({ dir, selected: recovered, now: () => new Date(Date.now() + skew) });
+  await reopened.waitForIdle();
+  expect(recovered.faux.state.callCount).toBe(0); // Opening observed the failure and scheduled its retry.
+  skew = 2 * EVENT_RETRY.minTimeout;
   await expect.poll(() => recovered.faux.state.callCount, { timeout: 4000 }).toBe(1);
   await retried.promise;
   await reopened.waitForIdle();
@@ -250,6 +255,69 @@ it("reopening recovers an admitted event whose model run failed before shutdown"
   await reopened.recover();
   await reopened.waitForIdle();
   expect(recovered.faux.state.callCount).toBe(1);
+});
+
+const modelFailure = () => fauxAssistantMessage("", { stopReason: "error", errorMessage: "scripted model failure" });
+// The retry delay after the nth failed run of an event, scaled by its jitter factor (1 to 2).
+const retryDelay = (n: number, jitter: number) => Math.min(jitter * EVENT_RETRY.minTimeout * EVENT_RETRY.factor ** n, EVENT_RETRY.maxTimeout);
+
+it("resubmits a failing event run after growing, jittered delays and then abandons it for good", async () => {
+  const dir = directory();
+  let at = Date.parse("2026-06-20T12:00:00Z");
+  const now = () => new Date(at);
+  const logs: string[] = [];
+  const selected = selectedModels(Array.from({ length: EVENT_RETRY.retries + 1 }, () => modelFailure));
+  const agent = await open({ dir, selected, recoverEveryMs: 60_000, now, log: (line) => logs.push(line) });
+  await agent.deliver(event("keeps-failing"));
+  await agent.recover();
+  await agent.waitForIdle();
+  for (let n = 0; n < EVENT_RETRY.retries; n++) {
+    const failedAt = at;
+    await agent.recover(); // Observes the failed run and schedules the next one.
+    // Jitter scales the delay above its base, so the unjittered time is not yet due
+    // (it would be only if Math.random() rounds to within 1ms of zero).
+    at = failedAt + retryDelay(n, 1);
+    await agent.recover();
+    await agent.waitForIdle();
+    expect(selected.faux.state.callCount).toBe(n + 1);
+    at = failedAt + retryDelay(n, 2);
+    await agent.recover();
+    await agent.waitForIdle();
+    expect(selected.faux.state.callCount).toBe(n + 2);
+  }
+  await agent.recover();
+  at += 24 * 3_600_000;
+  await agent.recover();
+  expect(selected.faux.state.callCount).toBe(EVENT_RETRY.retries + 1);
+  expect(logs.filter((line) => line.includes("event:keeps-failing abandoned"))).toHaveLength(1);
+  await agent.close();
+  const fresh = selectedModels([fauxAssistantMessage("Must not run an abandoned event")]);
+  const reopened = await open({ dir, selected: fresh, recoverEveryMs: 60_000, now });
+  await reopened.deliver(event("keeps-failing"));
+  await reopened.recover();
+  await reopened.waitForIdle();
+  expect(fresh.faux.state.callCount).toBe(0);
+});
+
+it("keeps an event's retry delay across a restart", async () => {
+  const dir = directory();
+  let at = Date.parse("2026-06-20T12:00:00Z");
+  const now = () => new Date(at);
+  const failed = selectedModels([modelFailure]);
+  const agent = await open({ dir, selected: failed, recoverEveryMs: 60_000, now });
+  await agent.deliver(event("mid-backoff"));
+  await agent.recover();
+  await agent.waitForIdle();
+  await agent.recover(); // Stores the retry time of the failed run.
+  await agent.close();
+  const recovered = selectedModels([fauxAssistantMessage("Recovered event complete")]);
+  const reopened = await open({ dir, selected: recovered, now });
+  at += retryDelay(0, 1) - 1;
+  await sleep(200); // Several recovery timer ticks while the retry is not due.
+  await reopened.recover();
+  expect(recovered.faux.state.callCount).toBe(0);
+  at += retryDelay(0, 1) + 1;
+  await expect.poll(() => recovered.faux.state.callCount, { timeout: 4000 }).toBe(1);
 });
 
 function hostAgent({ root, id }: { root: string; id: string }) {
