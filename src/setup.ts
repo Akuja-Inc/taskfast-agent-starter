@@ -151,9 +151,6 @@ function checkOptions({ options: o, io, catalogue }: { options: SetupOptions; io
   if (o.provider !== undefined) {
     if (!/^[a-z0-9-]+$/.test(o.provider)) bad("provider", "use the provider id, lowercase letters, digits and dashes");
     else if (!catalogue.some((p) => p.id === o.provider)) bad("provider", `unsupported provider ${JSON.stringify(o.provider)}; see docs/providers.md`);
-    else {
-      try { providerSource(o.provider); } catch { bad("provider", "not supported by the installed kit"); }
-    }
   }
   const set = new Map<string, string>();
   for (const s of o.set ?? []) {
@@ -238,7 +235,6 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   // settings are saved; construction uses native catalogs without network calls.
   const provider = o.provider ? catalogue.find((p) => p.id === o.provider) : await choose(io, "Which model provider will your agent use?", catalogue, (p) => p.label, 0, (p) => p.id);
   if (!provider) throw new Error("unsupported provider; see docs/providers.md");
-  providerSource(provider.id);
   for (const name of set.keys()) if (!provider.settings.some((s) => s.name === name)) throw new Error(`--set: ${name} is not a setting for ${provider.id}; see docs/providers.md`);
   if (o.model !== undefined) await createAgentModels(`${provider.id}:${o.model}`);
   if (provider.note) io.log(`\nNote: ${provider.note}`);
@@ -276,9 +272,9 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
       io.log(`Using ${s.name} already in .env (pass --set ${s.name}=... to replace it)`);
       continue;
     }
-    if (available(s.name)) {
-      const value = available(s.name);
-      if (value) save(s.name, value);
+    const value = available(s.name);
+    if (value) {
+      save(s.name, value);
       continue;
     }
     const what = s.description ? ` (${s.description})` : "";

@@ -22,7 +22,6 @@ interface ToolBase {
   description: string;
   schema: { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[] }>; required: string[]; additionalProperties: false };
   args(input: Record<string, unknown>): string[];
-
 }
 export type ToolSpec =
   | (ToolBase & { kind: "read" | "memory"; amount?: never; party?: never; key?: never })
@@ -179,8 +178,8 @@ export const TOOLS: Record<string, ToolSpec> = {
     party: "worker",
   },
 
-  remember: { kind: "memory", description: "Keep a note for later turns.", schema: obj({ note: s("the note") }, ["note"]), args: () => [] },
-  forget: { kind: "memory", description: "Drop one of your notes by its number.", schema: obj({ index: { type: "number", description: "note number" } }, ["index"]), args: () => [] },
+  remember: { kind: "memory", description: "Keep a note for later turns.", schema: obj({ note: s("the note") }, ["note"]), args: (i) => (text(i.note, "note"), []) },
+  forget: { kind: "memory", description: "Drop one of your notes by its number.", schema: obj({ index: { type: "number", description: "note number" } }, ["index"]), args: (i) => (Number.isInteger(i.index) && (i.index as number) >= 0 ? [] : bad("index must be a non-negative integer")) },
 };
 
 // Validates a tool call from the model. Returns the command args and action key, or

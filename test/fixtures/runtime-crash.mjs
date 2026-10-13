@@ -1,8 +1,8 @@
-import { closeSync, fsyncSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { openMarketplaceAgent } from "../../dist/src/core/agent.js";
+import { appendJsonl } from "../../dist/src/core/jsonl.js";
 
 const [mode, boundary, directory, title] = process.argv.slice(2);
 const input = {
@@ -52,11 +52,7 @@ async function command(runtime, args) {
   if (mode === "crash" && boundary === "command-entered") await marker(boundary);
   // This file represents the remote service, not the agent's storage. Acceptance
   // is durable even if this process dies before returning the command result.
-  const fd = openSync(join(directory, "receipts.jsonl"), "a", 0o600);
-  try {
-    writeSync(fd, JSON.stringify({ title: input.title, description: input.description }) + "\n");
-    fsyncSync(fd);
-  } finally { closeSync(fd); }
+  appendJsonl(join(directory, "receipts.jsonl"), { title: input.title, description: input.description });
   if (mode === "crash" && boundary === "accepted") await marker(boundary);
   return { outcome: "ok", data: { task: { id: "00000000-0000-4000-8000-000000000001" } } };
 }

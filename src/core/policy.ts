@@ -48,6 +48,10 @@ function agentIdentity(data: unknown): string {
   return profile.id.toLowerCase();
 }
 
+function skipped(prior: Action): Json {
+  return { skipped: prior.status === "done" ? "already done" : "outcome unknown; read the current state", at: prior.at };
+}
+
 export function marketplacePolicy(o: PolicyOptions) {
   const command = o.command ?? runCli;
   const now = o.now ?? (() => new Date());
@@ -97,10 +101,8 @@ export function marketplacePolicy(o: PolicyOptions) {
         return commit(async (tx): Promise<Json> => {
           const state = await tx.doc(Policy);
           if (tool === "remember") {
-            if (typeof input.note !== "string" || !input.note.trim() || input.note.length > 4000) return { refused: "note must be non-empty text up to 4000 characters" };
-            state.memory.push(input.note);
+            state.memory.push(input.note as string);
           } else {
-            if (typeof input.index !== "number" || !Number.isInteger(input.index) || input.index < 0) return { refused: "index must be a non-negative integer" };
             state.memory = state.memory.filter((_, index) => index !== input.index);
           }
           return { ok: true };
@@ -112,7 +114,7 @@ export function marketplacePolicy(o: PolicyOptions) {
       }
       if (!key) throw new Error(`write ${tool} has no action key`);
       const prior = (await snapshot()).actions[key];
-      if (prior && prior.status !== "failed") return { skipped: prior.status === "done" ? "already done" : "outcome unknown; read the current state", at: prior.at };
+      if (prior && prior.status !== "failed") return skipped(prior);
       const read = (args: string[]) => command(o.runtime, args);
       if (o.runtime.counterparties && spec.party) {
         const refused = await counterpartyRefusal(spec.party, input, o.runtime.counterparties, read);
@@ -123,7 +125,7 @@ export function marketplacePolicy(o: PolicyOptions) {
       const refusal = await commit(async (tx): Promise<Json> => {
         const state = await tx.doc(Policy);
         const prior = state.actions[key];
-        if (prior && prior.status !== "failed") return { skipped: prior.status === "done" ? "already done" : "outcome unknown; read the current state", at: prior.at };
+        if (prior && prior.status !== "failed") return skipped(prior);
         const day = today(now());
         const over = overLimit(o.spec.limits, state.spend[day] ?? 0, amount);
         if (over && spec.kind === "money") return { refused: over };
