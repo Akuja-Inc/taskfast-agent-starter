@@ -7,8 +7,17 @@ export type OperatorState = {
   frozen: boolean;
   // Events are still admitted and acknowledged; no new model work starts.
   paused: boolean;
+  // Messages not yet handed to the conversation, oldest first.
+  messages: { requestId: string; text: string }[];
+  // Standing orders, read into every system prompt. Only the user changes them.
+  orders: string[];
+  // Alerts the user has looked into, by action key or event id, with when. Never
+  // changes the ledger: an uncertain action stays uncertain.
+  checked: Record<string, string>;
 };
-export const initialOperator = (): OperatorState => ({ frozen: false, paused: false });
+export const initialOperator = (): OperatorState => ({ frozen: false, paused: false, messages: [], orders: [], checked: {} });
+// How the conversation tells the user's words from the host's own inputs.
+export const MESSAGE_PREFIX = "Message from your operator:\n";
 export const Operator = defineDoc<OperatorState>({
   kind: "taskfast.operator", version: 1, scope: "session", initial: initialOperator,
 });

@@ -7,7 +7,7 @@ import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_C
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
-import { initialOperator, Operator, type OperatorState } from "./operator.js";
+import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
@@ -59,6 +59,11 @@ export interface OperatorControls {
   state(): Promise<OperatorState>;
   setFrozen(frozen: boolean): Promise<void>;
   setPaused(paused: boolean): Promise<void>;
+  // Queues the user's words as the next input; the same requestId is delivered once.
+  message(message: { requestId: string; text: string }): Promise<void>;
+  addOrder(order: string): Promise<void>;
+  removeOrder(index: number): Promise<void>;
+  markChecked(id: string): Promise<void>;
 }
 
 function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
@@ -103,7 +108,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       sections: [section("marketplace", async (input, ctx) => {
         const state = await input.read.snapshot(Policy, ctx);
         const notes = state?.memory.length ? `\nYour notes:\n${state.memory.map((note, index) => `${index}: ${note}`).join("\n")}` : "";
-        return buildSystemPrompt(spec) + notes;
+        const orders = (await input.read.snapshot(Operator, ctx))?.orders ?? [];
+        return buildSystemPrompt(spec) + notes + (orders.length ? `\nYour operator's standing orders:\n${orders.map((order) => `- ${order}`).join("\n")}` : "");
       }, { tag: false })],
     }));
     pi = await PiRuntime.open(storage, {
@@ -153,6 +159,14 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
         if (paused) return;
+        // The request ID makes a resend, or a crash before the removal commits, one input.
+        for (const { requestId, text } of (await owner.snapshot(Operator, context))?.messages ?? []) {
+          await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text }, context);
+          await conversation.commit(async (tx) => {
+            const state = await tx.doc(Operator);
+            state.messages = state.messages.filter((item) => item.requestId !== requestId);
+          }, context);
+        }
         owner.resume();
         const stalled = await owner.inspect(context);
         const queued = stalled.submissions.find((item) => item.status === "queued");
@@ -197,6 +211,21 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         await conversation.commit(async (tx) => { (await tx.doc(Operator)).paused = paused; }, context);
         if (!paused) await recover();
       },
+      message: async ({ requestId, text }) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Operator);
+          if (!state.messages.some((item) => item.requestId === requestId)) state.messages.push({ requestId, text });
+        }, context);
+        await recover();
+      },
+      addOrder: async (order) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).orders.push(order); }, context); },
+      removeOrder: async (index) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Operator);
+          state.orders = state.orders.filter((_, at) => at !== index);
+        }, context);
+      },
+      markChecked: async (id) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).checked[id] = new Date(now()).toISOString(); }, context); },
     };
     return {
       conversation, deliver, ping, recover, status: activePolicy.snapshot, operator,
