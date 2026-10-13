@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { Type, StringEnum, type Models, type TSchema } from "@earendil-works/pi-ai";
+import { Type, StringEnum, type Message, type Models, type TSchema } from "@earendil-works/pi-ai";
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
 import { createTimeout } from "retry";
@@ -7,8 +7,9 @@ import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_C
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
+import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
-import { buildSystemPrompt } from "./prompt.js";
+import { marketplacePrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
 import { TOOLS } from "./tools.js";
@@ -23,7 +24,7 @@ if (factories.length !== 1) throw new Error("unsupported Pi runtime factory expo
 const PiRuntime = factories[0];
 type PiEngine = Awaited<ReturnType<typeof PiRuntime.open>>;
 const context = BACKGROUND_CONTEXT;
-type EventWork = { event: Json; attempt: number } & (
+export type EventWork = { event: Json; attempt: number } & (
   | { kind: "admitted"; notBefore?: number }
   | { kind: "submitted" | "done" | "abandoned"; submission: SubmissionId }
 );
@@ -49,8 +50,26 @@ export interface MarketplaceAgent {
   ping(): Promise<void>;
   recover(): Promise<void>;
   status(): ReturnType<MarketplacePolicy["snapshot"]>;
+  operator: OperatorControls;
+  // The newest `limit` stored entries' messages, oldest first.
+  transcript(limit: number): Promise<Message[]>;
   waitForIdle(): Promise<void>;
   close(): Promise<void>;
+}
+// The user's controls, committed to the store before they take effect.
+export interface OperatorControls {
+  state(): Promise<OperatorState>;
+  setFrozen(frozen: boolean): Promise<void>;
+  setPaused(paused: boolean): Promise<void>;
+  // Queues the user's words as the next input; the same requestId is delivered once.
+  message(message: { requestId: string; text: string }): Promise<void>;
+  addOrder(order: string): Promise<void>;
+  removeOrder(index: number): Promise<void>;
+  markChecked(id: string): Promise<void>;
+  // Admitted marketplace events by `event:<event_id>`, with their run state.
+  events(): Promise<Record<string, EventWork>>;
+  // One fresh run for an abandoned event; a failure abandons it again.
+  retryEvent(eventId: string): Promise<void>;
 }
 
 function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
@@ -93,9 +112,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     registry.install(defineExtension({
       name: "taskfast", tools,
       sections: [section("marketplace", async (input, ctx) => {
-        const state = await input.read.snapshot(Policy, ctx);
-        const notes = state?.memory.length ? `\nYour notes:\n${state.memory.map((note, index) => `${index}: ${note}`).join("\n")}` : "";
-        return buildSystemPrompt(spec) + notes;
+        const notes = (await input.read.snapshot(Policy, ctx))?.memory ?? [];
+        return marketplacePrompt(spec, notes, (await input.read.snapshot(Operator, ctx))?.orders ?? []);
       }, { tag: false })],
     }));
     pi = await PiRuntime.open(storage, {
@@ -138,9 +156,23 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
             if (current.kind === "abandoned") log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
           }
           if (current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
+          // Re-read the pause state per event: a pause committed while this pass was
+          // working on earlier events still stops the submissions that follow it.
+          if ((await owner.snapshot(Operator, context))?.paused) continue;
           // Request dedupe covers death between submit() and saving its ID here.
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
+        }
+        // Paused: settle finished runs, but submit nothing and start no work. Read it
+        // again after the loop so a pause committed mid-pass also stops the drain.
+        if ((await owner.snapshot(Operator, context))?.paused) return;
+        // The request ID makes a resend, or a crash before the removal commits, one input.
+        for (const { requestId, text } of (await owner.snapshot(Operator, context))?.messages ?? []) {
+          await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text }, context);
+          await conversation.commit(async (tx) => {
+            const state = await tx.doc(Operator);
+            state.messages = state.messages.filter((item) => item.requestId !== requestId);
+          }, context);
         }
         owner.resume();
         const stalled = await owner.inspect(context);
@@ -169,6 +201,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     }
     async function ping(): Promise<void> {
       await recover();
+      if ((await owner.snapshot(Operator, context))?.paused) return;
       const work = await owner.inspect(context);
       if (work.tasks.length || work.submissions.length) return;
       await conversation.submit({ type: "input", content: `Check your marketplace work in your ${spec.role} role and pursue your current goals: ${spec.character.goals}. Read current state before acting; do not repeat uncertain writes.` }, context);
@@ -178,8 +211,61 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     await recover();
     const timer = setInterval(() => { void recover().catch((error: unknown) => log(`recovery: ${String(error)}`)); }, o.recoverEveryMs ?? 5000);
     timer.unref();
+    // An operator action's own commit is durable before recovery runs, so — as with
+    // deliver() — a recovery failure is logged, never reported as the action's result.
+    const recoverLogged = async (): Promise<void> => {
+      try { await recover(); }
+      catch (error) { log(`recovery: ${String(error)}`); }
+    };
+    const operator: OperatorControls = {
+      state: async () => (await owner.snapshot(Operator, context)) ?? initialOperator(),
+      setFrozen: async (frozen) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).frozen = frozen; }, context); },
+      setPaused: async (paused) => {
+        await conversation.commit(async (tx) => { (await tx.doc(Operator)).paused = paused; }, context);
+        if (paused) return;
+        // A pass that started while paused may still be in flight; joining it is not
+        // enough. The second call guarantees one fresh pass sees the resumed state.
+        await recoverLogged();
+        await recoverLogged();
+      },
+      message: async ({ requestId, text }) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Operator);
+          if (!state.messages.some((item) => item.requestId === requestId)) state.messages.push({ requestId, text });
+        }, context);
+        await recoverLogged();
+      },
+      addOrder: async (order) => {
+        // Each order renders as one bullet line in the system prompt; collapsing line
+        // breaks keeps a multi-line order from forging extra prompt lines.
+        await conversation.commit(async (tx) => { (await tx.doc(Operator)).orders.push(order.replace(/[\r\n]+/g, " ")); }, context);
+      },
+      removeOrder: async (index) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Operator);
+          state.orders = state.orders.filter((_, at) => at !== index);
+        }, context);
+      },
+      events: async () => (await owner.snapshot(Events, context))?.events ?? {},
+      retryEvent: async (eventId) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Events);
+          const work = state.events[`event:${eventId}`];
+          if (work?.kind !== "abandoned") throw new Error(`event ${eventId} is not abandoned`);
+          // A new attempt number is a new request ID; reusing the last would dedupe into the failed run.
+          state.events[`event:${eventId}`] = { kind: "admitted", event: work.event, attempt: work.attempt + 1 };
+        }, context);
+        await recoverLogged();
+      },
+      markChecked: async (id) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).checked[id] = new Date(now()).toISOString(); }, context); },
+    };
+    // Stored entries, not the model's context, so turns from before a reset still show.
+    async function transcript(limit: number): Promise<Message[]> {
+      const page = await conversation.entries({ order: "descending" }, limit, undefined, context);
+      return [...page.items].reverse().flatMap((entry) => entry.model ?? []);
+    }
     return {
-      conversation, deliver, ping, recover, status: activePolicy.snapshot,
+      conversation, deliver, ping, recover, status: activePolicy.snapshot, operator, transcript,
       waitForIdle: () => conversation.waitForIdle(context),
       close: async () => {
         if (closed) return;

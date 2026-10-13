@@ -2,7 +2,7 @@
 
 Notes for a coding agent working in this repository. Read [README.md](README.md) first for setup, agent files, models and the [module map](README.md#code). [INTENT.md](INTENT.md) says what to choose when a change is unclear; [CONTEXT.md](CONTEXT.md) defines the terms. This file lists what not to break and how to check your work.
 
-You are here to help someone run or configure their own agent, or to change code in `src/core/`, `src/run.ts`, `src/setup.ts` or `scripts/`.
+You are here to help someone run or configure their own agent, or to change code in `src/core/`, `src/run.ts`, `src/console.ts`, `src/console-page.ts`, `src/setup.ts` or `scripts/`.
 
 ## Running an agent
 
