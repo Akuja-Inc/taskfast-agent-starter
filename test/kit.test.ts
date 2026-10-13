@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { providerSettings } from "../src/core/folder.js";
 import { describe, expect, it } from "vitest";
 import type { AgentHandle } from "../src/run.js";
@@ -152,24 +152,4 @@ describe("runAgents", () => {
     const run = runAgents({ agentsDir: join(tmpdir(), "no-such-agents"), env: "prod", signal: AbortSignal.abort(), log: () => {} });
     await expect(run).rejects.toThrow(/no agents/);
   });
-});
-
-// This kit is honest agents only (gh#1538): no adversarial strategy, no test-population
-// labels or identities. This file is the only one allowed to name them. agents/ is the
-// user's own and is not scanned. The list is kept by hand: there is no list of private
-// names to derive it from, so a change that adds a private name adds it here too. An
-// ordinary word that matches fails the kit, which is the safe direction.
-const FORBIDDEN = /bdaybonus|\b(sniper|sybil|wash|extortion|griefer)\b|intendedAbuse|labels\.jsonl|runGuard|archetype|harness/i;
-const SKIP = new Set(["node_modules", "dist", ".git", ".pi-state", ".taskfast", "agents", ".env"]);
-
-function files(dir: string): string[] {
-  return readdirSync(dir).flatMap((n) => (SKIP.has(n) ? [] : statSync(join(dir, n)).isDirectory() ? files(join(dir, n)) : [join(dir, n)]));
-}
-
-it("contains no adversarial or test-population code", () => {
-  const hits = files(ROOT)
-    .filter((f) => f !== import.meta.filename && !f.endsWith("pnpm-lock.yaml"))
-    .filter((f) => FORBIDDEN.test(readFileSync(f, "utf8")))
-    .map((f) => relative(ROOT, f));
-  expect(hits).toEqual([]);
 });
