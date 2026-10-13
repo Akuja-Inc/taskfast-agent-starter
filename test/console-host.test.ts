@@ -141,3 +141,66 @@ it("keeps the host running when an agent cannot reopen", async () => {
     expect(listed.agents.map((agent) => agent.id)).toEqual(["you"]);
   });
 });
+
+it("refuses a spec whose provider cannot be built, touching neither the file nor the running agent", async () => {
+  const dir = folders("me", "you");
+  const file = join(dir, "me", "agent.json");
+  const before = readFileSync(file, "utf8");
+  await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls) => {
+    await put(link!, "/api/agents/me/spec", { ...JSON.parse(before), model: "nosuch:some-model" });
+    expect(readFileSync(file, "utf8")).toBe(before);
+    expect(calls).toEqual(["open me", "open you"]);
+    const listed = await (await get(link!, "/api/agents")).json() as { agents: { id: string }[] };
+    expect(listed.agents.map((agent) => agent.id)).toEqual(["me", "you"]);
+    const view = await (await get(link!, "/api/agents/me")).json() as { spec: { model: string } };
+    expect(view.spec.model).toBe("anthropic:claude-haiku-5-5");
+  });
+});
+
+it("skips dead-letter lines that are not records of string at, reason and line", async () => {
+  const dir = folders("me");
+  writeFileSync(join(dir, "me", ".taskfast", "dead-letter.jsonl"), [
+    JSON.stringify({ at: "2026-10-13T08:00:00Z", reason: "no event name", line: JSON.stringify({ event_id: "bad-1" }) }),
+    "null",
+    JSON.stringify(["not", "a", "record"]),
+    JSON.stringify({ at: "2026-10-13T09:00:00Z", reason: 42, line: "{}" }),
+  ].join("\n") + "\n");
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    command: async (): Promise<CliResult> => ({ outcome: "ok", data: null }),
+  }, async (link) => {
+    const view = await (await get(link!, "/api/agents/me")).json() as { host?: Record<string, unknown>; attention: Record<string, unknown>[] };
+    // A parseable non-record line must not take the whole agent view down.
+    expect(view.host).toBeDefined();
+    expect(view.attention.filter((entry) => entry.kind === "dead-letter")).toEqual([
+      { kind: "dead-letter", id: "dead-letter:bad-1", at: "2026-10-13T08:00:00Z", reason: "no event name", line: JSON.stringify({ event_id: "bad-1" }) },
+    ]);
+  });
+});
+
+it("discovers an unlock file created after start, in facts and in the reopen runtime", async () => {
+  const dir = folders("me");
+  const seen: (string | undefined)[] = [];
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    command: async (): Promise<CliResult> => ({ outcome: "ok", data: null }),
+    openAgent: async ({ id, runtime }) => (seen.push(runtime.walletPasswordFile), handle(id, [])),
+  }, async (link) => {
+    expect((await (await get(link!, "/api/agents/me")).json() as { host: { unlockFile: boolean } }).host.unlockFile).toBe(false);
+    writeFileSync(join(dir, "me", ".taskfast", "wallet-password"), "x", { mode: 0o400 });
+    expect((await (await get(link!, "/api/agents/me")).json() as { host: { unlockFile: boolean } }).host.unlockFile).toBe(true);
+    await put(link!, "/api/agents/me/spec", JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8")));
+    expect(seen).toEqual([undefined, join(dir, "me", ".taskfast", "wallet-password")]);
+  });
+});
+
+it("closes a half-opened agent whose listener cannot start", async () => {
+  const dir = folders("me");
+  const calls: string[] = [];
+  await expect(runAgents({
+    agentsDir: dir, env: "local", signal: new AbortController().signal, log: () => {},
+    openAgent: async ({ id }) => (calls.push(`open ${id}`), handle(id, calls)),
+    listen: () => { throw new Error("old CLI"); },
+  })).rejects.toThrow("old CLI");
+  expect(calls).toEqual(["open me", "close me"]);
+});

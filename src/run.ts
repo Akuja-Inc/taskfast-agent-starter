@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, openSync, readdirSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -10,6 +10,7 @@ import type { Command } from "./core/policy.js";
 import { UUID } from "./core/tools.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
+import { createAgentModels } from "./core/model.js";
 import { parseAgentSpec } from "./core/spec.js";
 import { parseWalletPasswordFile } from "./core/cli.js";
 import { PASSWORD_PATH, folderFile, portableFile, providerSettings } from "./core/folder.js";
@@ -49,10 +50,43 @@ function streamStatus(line: string): HostFacts["stream"] | undefined {
   return undefined;
 }
 
+// One durable replace: fsync the temporary file, rename it over the target,
+// then fsync the directory so the rename itself survives a power loss.
+function writeFileDurable(path: string, text: string): void {
+  const temporary = `${path}.saving`;
+  const file = openSync(temporary, "w");
+  try {
+    writeSync(file, text);
+    fsyncSync(file);
+  } finally { closeSync(file); }
+  renameSync(temporary, path);
+  const directory = openSync(dirname(path), "r");
+  try { fsyncSync(directory); }
+  finally { closeSync(directory); }
+}
+
+// A dead-letter line is trusted only as a record with the three string fields
+// the console reads; anything else parseable (null, arrays) is skipped.
+function deadLetter(line: string): HostFacts["deadLetters"][number] | undefined {
+  let value: unknown;
+  try { value = JSON.parse(line); } catch { return undefined; }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.at !== "string" || typeof record.reason !== "string" || typeof record.line !== "string") return undefined;
+  return { at: record.at, reason: record.reason, line: record.line };
+}
+
 // One owning process per store. Event listeners restart with backoff independently
 // of model runs. The periodic poll survives each host restart and wakes idle agents.
 export async function runAgents(o: RunOptions): Promise<void> {
   const walletPasswordFile = o.walletPasswordFile === undefined ? undefined : parseWalletPasswordFile(o.walletPasswordFile);
+  // The folder's own unlock file wins when present, otherwise the host-level one.
+  // Discovery re-runs at each use: the console page invites creating the file
+  // while the host is already running.
+  function findUnlockFile(agentDir: string): string | undefined {
+    const local = folderFile({ agentDir, path: PASSWORD_PATH, resource: "wallet unlock file" });
+    return existsSync(local) ? local : walletPasswordFile;
+  }
   const ids = existsSync(o.agentsDir) ? readdirSync(o.agentsDir).filter((id) => existsSync(join(o.agentsDir, id, "agent.json"))) : [];
   if (!ids.length) throw new Error(`no agents: put one in ${o.agentsDir}/<id>/agent.json (copy one from examples/)`);
   // Validate all files before opening any store or starting any marketplace work.
@@ -71,9 +105,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
     if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error(`${id}: TaskFast config must be an object`);
     if ("keystore_path" in config && config.keystore_path !== null) portableFile({ agentDir, path: config.keystore_path, resource: "wallet reference" });
     providerSettings(agentDir); // Check persisted file references before any store opens.
-    const localPassword = folderFile({ agentDir, path: PASSWORD_PATH, resource: "wallet unlock file" });
-    const file = existsSync(localPassword) ? localPassword : walletPasswordFile;
-    return { id, spec, specPath, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
+    const file = findUnlockFile(agentDir);
+    return { id, agentDir, spec, specPath, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
   });
   type Item = typeof agents[number];
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
@@ -85,13 +118,27 @@ export async function runAgents(o: RunOptions): Promise<void> {
       ? await o.openAgent(item)
       : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, log: (line) => o.log(`${item.id}: ${line}`) });
     const owned: typeof running[number] = { id: item.id, spec: item.spec, agent };
+    // Shutdown beat this open: close the store and never join the roster.
+    if (o.signal.aborted) {
+      await agent.close();
+      throw new Error("the host is shutting down");
+    }
     running.splice(at, 0, owned);
     streams.set(item.id, "starting");
-    owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => {
-      const stream = streamStatus(line);
-      if (stream) streams.set(item.id, stream);
-      o.log(`${item.id}: ${line}`);
-    } });
+    try {
+      owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => {
+        const stream = streamStatus(line);
+        if (stream) streams.set(item.id, stream);
+        o.log(`${item.id}: ${line}`);
+      } });
+    } catch (error) {
+      // An old CLI throws before the stream exists; leave no half-started agent behind.
+      const index = running.indexOf(owned);
+      if (index >= 0) running.splice(index, 1);
+      streams.delete(item.id);
+      await agent.close();
+      throw error;
+    }
   }
   // Server reads for the console, each kept for a minute so page refreshes cost nothing.
   const reads = new Map<string, { at: number; value: unknown }>();
@@ -107,10 +154,11 @@ export async function runAgents(o: RunOptions): Promise<void> {
   async function facts(item: Item, taskIds: string[]): Promise<HostFacts> {
     const deadLetterPath = join(dirname(item.runtime.configPath), "dead-letter.jsonl");
     const deadLetters = existsSync(deadLetterPath)
-      ? readFileSync(deadLetterPath, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line) as HostFacts["deadLetters"][number]]; } catch { return []; } })
+      ? readFileSync(deadLetterPath, "utf8").split("\n").filter(Boolean).flatMap((line) => deadLetter(line) ?? [])
       : [];
+    const unlock = findUnlockFile(item.agentDir);
     return {
-      unlockFile: item.runtime.walletPasswordFile !== undefined && existsSync(item.runtime.walletPasswordFile),
+      unlockFile: unlock !== undefined && existsSync(unlock),
       stream: streams.get(item.id) ?? "starting",
       wallet: await read(item, ["wallet", "balance"]),
       tasks: Object.fromEntries(await Promise.all(taskIds.filter((id) => UUID.test(id)).map(async (id) => [id, await read(item, ["task", "get", "--", id])]))),
@@ -120,10 +168,21 @@ export async function runAgents(o: RunOptions): Promise<void> {
   // Saves a checked agent file, then reopens only that agent. If it cannot reopen it
   // stays stopped and the others keep running.
   async function reopen(item: Item, spec: AgentSpec): Promise<void> {
-    const temporary = `${item.specPath}.saving`;
-    writeFileSync(temporary, `${JSON.stringify(spec, null, 2)}\n`);
-    renameSync(temporary, item.specPath);
+    if (o.signal.aborted) throw new Error("the host is shutting down; agent file not saved");
+    // The console checks only the file's shape. Refuse what cannot be built before
+    // anything changes: an unknown provider passes the shape check, fails to open
+    // and the saved file would stop the next host start for every agent.
+    try {
+      await createAgentModels(spec.model, { agentDir: item.agentDir, settings: providerSettings(item.agentDir) });
+    } catch (error) {
+      throw new Error(`agent file rejected, nothing was saved: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const previous = { text: readFileSync(item.specPath, "utf8"), spec: item.spec, runtime: item.runtime };
+    writeFileDurable(item.specPath, `${JSON.stringify(spec, null, 2)}\n`);
     item.spec = spec;
+    // The unlock file may have been created since this agent started; rediscover it.
+    const file = findUnlockFile(item.agentDir);
+    item.runtime = { env: item.runtime.env, configPath: item.runtime.configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) };
     const at = running.findIndex((owned) => owned.id === item.id);
     if (at >= 0) {
       const [owned] = running.splice(at, 1);
@@ -133,12 +192,24 @@ export async function runAgents(o: RunOptions): Promise<void> {
     }
     try { await start(item, at >= 0 ? at : running.length); }
     catch (error) {
+      // A transient reopen failure must not leave a file the next start cannot load.
+      writeFileDurable(item.specPath, previous.text);
+      item.spec = previous.spec;
+      item.runtime = previous.runtime;
       o.log(`${item.id}: stopped, could not reopen: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
   try {
-    for (const item of agents) await start(item);
+    for (const item of agents) {
+      if (o.signal.aborted) return;
+      try { await start(item); }
+      catch (error) {
+        // A stop request during one open must still shut down cleanly.
+        if (o.signal.aborted) return;
+        throw error;
+      }
+    }
     if (o.console) {
       consoleServer = await startConsole({
         port: o.console.port, token: randomBytes(32).toString("hex"), env: o.env,
@@ -157,9 +228,13 @@ export async function runAgents(o: RunOptions): Promise<void> {
     }
   } finally {
     await consoleServer?.close();
-    // Close streams before stores so no event can be ACKed after its owner closed.
-    await Promise.allSettled(running.map(async ({ listener }) => listener?.close()));
-    await Promise.all(running.map(({ agent }) => agent.close()));
+    // A save still in flight can add an agent while these close; keep going until none remain.
+    while (running.length) {
+      const batch = running.splice(0, running.length);
+      // Close streams before stores so no event can be ACKed after its owner closed.
+      await Promise.allSettled(batch.map(async ({ listener }) => listener?.close()));
+      await Promise.all(batch.map(({ agent }) => agent.close()));
+    }
   }
 }
 
@@ -167,7 +242,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const { values } = parseArgs({ options: { env: { type: "string", default: "production" }, "wallet-password-file": { type: "string" }, console: { type: "boolean", default: false }, "console-port": { type: "string", default: "7070" } } });
   const file = values["wallet-password-file"];
   if (file !== undefined && !file) throw new Error("--wallet-password-file needs a path");
-  const port = Number(values["console-port"]);
+  const portText = values["console-port"];
+  // Number("") is 0 and Number("0x1f") is 31; only plain decimal digits are a port.
+  if (!/^\d+$/.test(portText)) throw new Error("--console-port must be a port number");
+  const port = Number(portText);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("--console-port must be a port number");
   const stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
