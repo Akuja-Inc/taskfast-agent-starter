@@ -1,0 +1,122 @@
+{
+  "suite": "taskfast-agent-starter-skill-conflict-regression",
+  "description": "Trigger regression prompts for the six skills in this kit: setting-up-an-agent, running-an-agent, changing-an-agent-tool, ship-pr, landing-a-pr and simplify.",
+  "evals": [
+    {
+      "id": "test-then-pr-for-existing-tool-change",
+      "prompt": "Run pnpm test and open a PR for my tools.ts change.",
+      "expected_skill": "ship-pr",
+      "must_not_trigger": [
+        "changing-an-agent-tool"
+      ]
+    },
+    {
+      "id": "watch-open-pr-to-merge",
+      "prompt": "Watch PR #7 until it merges.",
+      "expected_skill": "landing-a-pr",
+      "must_not_trigger": [
+        "ship-pr"
+      ]
+    },
+    {
+      "id": "agent-stopped-bidding",
+      "prompt": "My agent stopped bidding on staging an hour ago. What is wrong?",
+      "expected_skill": "running-an-agent",
+      "must_not_trigger": [
+        "ship-pr",
+        "setting-up-an-agent"
+      ]
+    },
+    {
+      "id": "messy-policy-function",
+      "prompt": "This policy.ts function is a mess, clean it up without changing what it does.",
+      "expected_skill": "simplify",
+      "must_not_trigger": [
+        "changing-an-agent-tool"
+      ]
+    },
+    {
+      "id": "daily-spend-cap",
+      "prompt": "Give my agent a daily spend cap of $25.",
+      "expected_skill": "setting-up-an-agent",
+      "must_not_trigger": [
+        "changing-an-agent-tool"
+      ]
+    },
+    {
+      "id": "ship-finished-branch",
+      "prompt": "I finished the console-page fix on this branch. Ship it as a PR.",
+      "expected_skill": "ship-pr",
+      "must_not_trigger": [
+        "landing-a-pr"
+      ]
+    },
+    {
+      "id": "merge-when-green",
+      "prompt": "Checks are green on PR #12 and the maintainer approved. Merge it.",
+      "expected_skill": "landing-a-pr",
+      "must_not_trigger": [
+        "ship-pr"
+      ]
+    },
+    {
+      "id": "answer-review-threads",
+      "prompt": "PR #3 has two review comments from Sam. Reply in the threads and push whatever fixes they need.",
+      "expected_skill": "landing-a-pr",
+      "must_not_trigger": [
+        "ship-pr"
+      ]
+    },
+    {
+      "id": "new-agent-from-description",
+      "prompt": "Make me an agent that proofreads contracts on staging.",
+      "expected_skill": "setting-up-an-agent",
+      "must_not_trigger": [
+        "changing-an-agent-tool",
+        "running-an-agent"
+      ]
+    },
+    {
+      "id": "store-owner-error",
+      "prompt": "pnpm agents says the agent store is already owned. What should I do?",
+      "expected_skill": "running-an-agent",
+      "must_not_trigger": [
+        "setting-up-an-agent"
+      ]
+    },
+    {
+      "id": "new-notes-tool",
+      "prompt": "Let the agent add a note with taskfast notes add whenever it wins a job.",
+      "expected_skill": "changing-an-agent-tool",
+      "must_not_trigger": [
+        "setting-up-an-agent",
+        "running-an-agent"
+      ]
+    },
+    {
+      "id": "consolidate-repeated-validation",
+      "prompt": "The args builders in tools.ts repeat the same checks everywhere; consolidate them but keep behavior identical.",
+      "expected_skill": "simplify",
+      "must_not_trigger": [
+        "changing-an-agent-tool"
+      ]
+    },
+    {
+      "id": "fresh-branch-implementation",
+      "prompt": "Start a branch from latest main and implement the dead-letter summary, then open the PR.",
+      "expected_skill": "ship-pr",
+      "must_not_trigger": [
+        "running-an-agent",
+        "landing-a-pr"
+      ]
+    },
+    {
+      "id": "red-check-then-merge",
+      "prompt": "The typecheck job is red on PR #8. Get it green and merge once it passes.",
+      "expected_skill": "landing-a-pr",
+      "must_not_trigger": [
+        "ship-pr"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+[
+  { "prompt": "This policy.ts function is a mess, clean it up without changing what it does.", "should_trigger": true, "why": "Refactoring for clarity with behavior preserved." },
+  { "prompt": "The args builders in tools.ts repeat the same validation everywhere; consolidate them but keep the behavior identical.", "should_trigger": true, "why": "Duplicated logic consolidated as a behavior-preserving simplification." },
+  { "prompt": "cli.ts works but it is hard to follow. Make it easier to read before anyone else touches it.", "should_trigger": true, "why": "Working code that is harder to read than it should be." },
+  { "prompt": "Review the diff I just pushed and simplify anything more complicated than it needs to be.", "should_trigger": true, "why": "A simplification pass over recent changes." },
+  { "prompt": "Replace the nested ternaries in console-page.ts with something a new contributor can read.", "should_trigger": true, "why": "Readability refactor with no behavior change." },
+  { "prompt": "Add a tool so the agent can filter bids by price range.", "should_trigger": false, "why": "A new behavior: changing-an-agent-tool." },
+  { "prompt": "Run pnpm test and open a PR for my timeline.ts change.", "should_trigger": false, "why": "Shipping an existing change: ship-pr." },
+  { "prompt": "Give my agent a daily spend cap of $25.", "should_trigger": false, "why": "Editing agent.json: setting-up-an-agent." },
+  { "prompt": "The freeze button on the console does nothing; make it freeze spending.", "should_trigger": false, "why": "A behavior fix, not a simplification: ship-pr." },
+  { "prompt": "My agent stopped bidding after the restart. Why?", "should_trigger": false, "why": "A running-agent question: running-an-agent." }
+]
