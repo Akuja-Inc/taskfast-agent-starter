@@ -15,6 +15,16 @@ export interface ConsoleAgent {
   agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript">;
   // Writes an already-checked agent file and reopens this agent with it.
   saveSpec?(spec: AgentSpec): Promise<void>;
+  // What only the host knows, with server reads for the given task IDs.
+  host?(taskIds: string[]): Promise<HostFacts>;
+}
+export interface HostFacts {
+  unlockFile: boolean;
+  stream: "starting" | "connected" | "reconnecting" | "restarting" | "auth failed";
+  wallet?: unknown;
+  tasks: Record<string, unknown>;
+  // dead-letter.jsonl records: events the stream gave up on and acknowledged.
+  deadLetters: { at: string; reason: string; line: string }[];
 }
 export interface ConsoleOptions {
   // 0 picks a free port.
@@ -27,7 +37,16 @@ export interface ConsoleOptions {
 
 // Enough recent history for the timeline without paging; older turns stay in the store.
 const TRANSCRIPT_ENTRIES = 400;
+// Task cards read the newest tasks the timeline mentions, at most this many.
+const TASK_READS = 20;
 const MAX_BODY = 64 * 1024;
+function eventIdOf(line: string): string | undefined {
+  try {
+    const value: unknown = JSON.parse(line);
+    const id = field(value, "event_id");
+    return typeof id === "string" ? id : undefined;
+  } catch { return undefined; }
+}
 const MAX_TEXT = 4000;
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -136,19 +155,25 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     const problem = await act(controls, action, body);
     return problem === undefined ? send(res, 204, "") : send(res, problem === null ? 404 : 400, { error: problem ?? "not found" });
   }
-  async function view({ id, spec, agent }: ConsoleAgent) {
+  async function view({ id, spec, agent, host }: ConsoleAgent) {
     const [policy, operator, events, transcript] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES)]);
+    const timeline = buildTimeline(transcript);
+    const taskIds = [...new Set(timeline.flatMap((turn) => turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))))].slice(-TASK_READS);
+    const facts = await host?.(taskIds);
+    const deadLetters = (facts?.deadLetters ?? []).map((record) => ({ kind: "dead-letter", id: `dead-letter:${eventIdOf(record.line) ?? record.at}`, ...record }));
     const attention = [
       ...Object.entries(policy.actions).filter(([key, action]) => action.status === "uncertain" && !operator.checked[key])
         .map(([key, action]) => ({ kind: "uncertain", id: key, at: action.at, amount: action.amount })),
       ...Object.entries(events).filter(([key, work]) => work.kind === "abandoned" && !operator.checked[key])
         .map(([key, work]) => ({ kind: "abandoned", id: key.slice("event:".length), attempts: work.attempt + 1, event: work.event })),
+      ...deadLetters.filter((letter) => !operator.checked[letter.id]),
     ];
+    const { deadLetters: _, ...hostFacts } = facts ?? { deadLetters: [] };
     return {
       id, env: o.env, spec, operator, attention, events,
       actions: policy.actions, spend: policy.spend, notes: policy.memory,
       prompt: marketplacePrompt(spec, policy.memory, operator.orders),
-      timeline: buildTimeline(transcript),
+      timeline, host: facts ? hostFacts : undefined,
     };
   }
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(o.port, "127.0.0.1", resolve); });

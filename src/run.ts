@@ -1,10 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { startConsole, type ConsoleAgent } from "./console.js";
+import { startConsole, type ConsoleAgent, type HostFacts } from "./console.js";
+import { runCli } from "./core/cli.js";
+import type { Command } from "./core/policy.js";
+import { UUID } from "./core/tools.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
 import { parseAgentSpec } from "./core/spec.js";
@@ -27,11 +30,23 @@ export interface RunOptions {
   walletPasswordFile?: string;
   // Serve the local console on 127.0.0.1 at this port (0 picks one). Off unless given.
   console?: { port: number };
+  // The console's own server reads (wallet, tasks). Defaults to the agent's CLI.
+  command?: Command;
   openAgent?(agent: { id: string; spec: AgentSpec; runtime: Runtime; storePath: string }): Promise<AgentHandle>;
   listen?: typeof startListener;
   signal: AbortSignal;
   log(line: string): void;
   pingEveryMs?: number;
+}
+
+const READ_TTL_MS = 60_000;
+// The stream's sentinels arrive as listener log lines (pump.ts).
+function streamStatus(line: string): HostFacts["stream"] | undefined {
+  if (line === "sentinel connected" || line === "sentinel resumed") return "connected";
+  if (line === "sentinel reconnecting") return "reconnecting";
+  if (line === "sentinel auth_failed") return "auth failed";
+  if (line.startsWith("stream exited")) return "restarting";
+  return undefined;
 }
 
 // One owning process per store. Event listeners restart with backoff independently
@@ -63,6 +78,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
   type Item = typeof agents[number];
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
   let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
+  const streams = new Map<string, HostFacts["stream"]>();
   // Opens one agent's store, then its stream, keeping its place among the others.
   async function start(item: Item, at = running.length): Promise<void> {
     const agent = o.openAgent
@@ -70,7 +86,36 @@ export async function runAgents(o: RunOptions): Promise<void> {
       : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, log: (line) => o.log(`${item.id}: ${line}`) });
     const owned: typeof running[number] = { id: item.id, spec: item.spec, agent };
     running.splice(at, 0, owned);
-    owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => o.log(`${item.id}: ${line}`) });
+    streams.set(item.id, "starting");
+    owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => {
+      const stream = streamStatus(line);
+      if (stream) streams.set(item.id, stream);
+      o.log(`${item.id}: ${line}`);
+    } });
+  }
+  // Server reads for the console, each kept for a minute so page refreshes cost nothing.
+  const reads = new Map<string, { at: number; value: unknown }>();
+  async function read(item: Item, args: string[]): Promise<unknown> {
+    const key = `${item.id} ${args.join(" ")}`;
+    const cached = reads.get(key);
+    if (cached && Date.now() - cached.at < READ_TTL_MS) return cached.value;
+    const result = await (o.command ?? runCli)(item.runtime, args);
+    const value = result.outcome === "ok" ? result.data ?? null : { error: result.error ?? result.outcome };
+    reads.set(key, { at: Date.now(), value });
+    return value;
+  }
+  async function facts(item: Item, taskIds: string[]): Promise<HostFacts> {
+    const deadLetterPath = join(dirname(item.runtime.configPath), "dead-letter.jsonl");
+    const deadLetters = existsSync(deadLetterPath)
+      ? readFileSync(deadLetterPath, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line) as HostFacts["deadLetters"][number]]; } catch { return []; } })
+      : [];
+    return {
+      unlockFile: item.runtime.walletPasswordFile !== undefined && existsSync(item.runtime.walletPasswordFile),
+      stream: streams.get(item.id) ?? "starting",
+      wallet: await read(item, ["wallet", "balance"]),
+      tasks: Object.fromEntries(await Promise.all(taskIds.filter((id) => UUID.test(id)).map(async (id) => [id, await read(item, ["task", "get", "--", id])]))),
+      deadLetters,
+    };
   }
   // Saves a checked agent file, then reopens only that agent. If it cannot reopen it
   // stays stopped and the others keep running.
@@ -100,7 +145,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
         agents: () => running.flatMap(({ id, spec, agent }) => {
           const item = agents.find((candidate) => candidate.id === id);
           if (!item || !agent.operator || !agent.status || !agent.transcript) return [];
-          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript }, saveSpec: (next: AgentSpec) => reopen(item, next) }];
+          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript }, saveSpec: (next: AgentSpec) => reopen(item, next), host: (taskIds: string[]) => facts(item, taskIds) }];
         }),
       });
       o.log(`console: ${consoleServer.url}`);

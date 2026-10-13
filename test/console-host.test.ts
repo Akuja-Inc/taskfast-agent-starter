@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import type { CliResult } from "../src/core/cli.js";
 import { initialOperator } from "../src/core/operator.js";
 import { runAgents, type AgentHandle, type RunOptions } from "../src/run.js";
 
@@ -85,6 +87,39 @@ it("saves a valid agent file and reopens only that agent; an invalid one changes
     expect(calls).toEqual(["open me", "open you", "close me", "open me"]);
     const view = await (await get(link!, "/api/agents/me")).json() as { spec: { limits: unknown } };
     expect(view.spec.limits).toEqual({ perJobUsd: 20, dailyUsd: 80 });
+  });
+});
+
+it("adds what only the host knows: unlock file, stream, wallet, dead letters and task summaries", async () => {
+  const dir = folders("me");
+  const task = "11111111-1111-4111-8111-111111111111";
+  writeFileSync(join(dir, "me", ".taskfast", "dead-letter.jsonl"), `${JSON.stringify({ at: "2026-10-13T08:00:00Z", reason: "no event name", line: JSON.stringify({ event_id: "bad-1" }) })}\n`);
+  writeFileSync(join(dir, "me", ".taskfast", "wallet-password"), "x", { mode: 0o400 });
+  const reads: string[][] = [];
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    listen: ({ log }) => (log("sentinel connected"), { close: async () => {} }),
+    command: async (_runtime, args): Promise<CliResult> => {
+      reads.push(args);
+      if (args[0] === "wallet") return { outcome: "ok", data: { balance: { available_balance: "0x0" } } };
+      if (args[0] === "task") return { outcome: "ok", data: { task: { id: task, title: "Edit a page", status: "open", budget_max: "15.00" } } };
+      return { outcome: "failed", error: "unexpected read" };
+    },
+    openAgent: async ({ id }) => ({ ...handle(id, []), transcript: async () => [
+      { role: "user", content: "Message from your operator:\nPost a job.", timestamp: 1 },
+      fauxAssistantMessage([fauxToolCall("message_send", { task_id: task, content: "Hi" }, { id: "c1" })], { stopReason: "toolUse" }),
+      { role: "toolResult", toolCallId: "c1", toolName: "message_send", content: [{ type: "text", text: "{}" }], isError: false, timestamp: 3 },
+    ] }),
+  }, async (link) => {
+    const view = await (await get(link!, "/api/agents/me")).json() as { host: Record<string, unknown>; attention: unknown[] };
+    expect(view.host).toMatchObject({
+      unlockFile: true, stream: "connected",
+      wallet: { balance: { available_balance: "0x0" } },
+      tasks: { [task]: { task: { id: task, title: "Edit a page", status: "open", budget_max: "15.00" } } },
+    });
+    expect(view.attention).toContainEqual({ kind: "dead-letter", id: "dead-letter:bad-1", at: "2026-10-13T08:00:00Z", reason: "no event name", line: JSON.stringify({ event_id: "bad-1" }) });
+    await get(link!, "/api/agents/me");
+    expect(reads).toEqual([["wallet", "balance"], ["task", "get", "--", task]]);
   });
 });
 
