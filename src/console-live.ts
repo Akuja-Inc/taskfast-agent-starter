@@ -28,6 +28,8 @@ export function follow(path: string, token: string, onView: (view: unknown) => v
         }
       }
     } catch {}
+    // Whatever ended the read, end the request too, so it can't hold a stream place.
+    controller.abort();
     if (stopped) return;
     if (polling === null) { polling = setInterval(poll, 3000); poll(); }
     setTimeout(connect, 5000);

@@ -60,7 +60,7 @@ export function setField(ui: Ui, view: ConsoleView, field: Field, value: string)
   return { ...ui, draft };
 }
 
-const money = (n: number | undefined) => (n === undefined ? "none" : `$${n.toFixed(2)}`);
+const money = (n: number | undefined) => (n === undefined ? "none" : Number.isFinite(n) ? `$${n.toFixed(2)}` : "invalid");
 const toggle = (list: string[], key: string) => (list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
 const clamp = (n: number, count: number) => Math.max(0, Math.min(n, count - 1));
 const PANELS: Ui["panel"][] = ["timeline", "attention", "sidebar"];
@@ -72,7 +72,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
   if (ui.confirm) {
     if (key === "y") {
       const effect = ui.confirm.kind === "freeze" ? call("POST", "frozen", { value: true }) : call("PUT", "spec", ui.draft);
-      return { ui: { ...ui, confirm: undefined, draft: ui.confirm.kind === "save" ? undefined : ui.draft }, effect };
+      return { ui: { ...ui, confirm: undefined }, effect };
     }
     return { ui: key === "n" || key === "escape" ? { ...ui, confirm: undefined } : ui };
   }
@@ -104,7 +104,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     case "p": return { ui, effect: call("POST", "paused", { value: !view.operator.paused }) };
     case "f": return view.operator.frozen ? { ui, effect: call("POST", "frozen", { value: false }) } : { ui: { ...ui, confirm: { kind: "freeze" } } };
     case "m": return { ui: { ...ui, tab: "timeline", editing: "message" } };
-    case "escape": return { ui: { ...ui, editing: undefined, draft: undefined } };
+    case "escape": return { ui: { ...ui, editing: undefined, draft: ui.tab === "briefing" ? undefined : ui.draft } };
   }
   if (ui.tab === "briefing") {
     if (key === "a") return { ui: { ...ui, editing: "order" } };

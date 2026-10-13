@@ -75,13 +75,13 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
       key: `t${t}r${r}`,
       text: clean(reply.text),
       badge: badge(reply.calls),
-      calls: reply.calls.map((call) => ({ name: call.name, outcome: call.outcome, arguments: clean(JSON.stringify(call.arguments)), error: call.error === undefined ? undefined : clean(call.error) })),
+      calls: reply.calls.map((call) => ({ name: clean(call.name), outcome: call.outcome, arguments: clean(JSON.stringify(call.arguments)), error: call.error === undefined ? undefined : clean(call.error) })),
       tasks: reply.tasks.map((ref) => {
         const group = GROUP[ref.via];
         const { title: name, summary } = task(view, ref.id);
         if (group) groups[group].set(ref.id, { id: ref.id, title: name });
         const link = taskLink(view.env, ref.id);
-        return { id: ref.id, via: ref.via.toUpperCase(), title: name, summary, ...(link ? { link } : {}) };
+        return { id: ref.id, via: clean(ref.via).toUpperCase(), title: name, summary, ...(link ? { link } : {}) };
       }),
     })),
   }));
@@ -108,8 +108,8 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
       readiness: [
         { label: "Wallet balance", detail: wallet, ok: !/^0\.00 |unavailable|unknown/.test(wallet) },
         { label: "Wallet unlock file", detail: view.host?.unlockFile ? "present" : "missing · create .taskfast/wallet-password (mode 0400) in the agent folder", ok: Boolean(view.host?.unlockFile) },
-        { label: "Event stream", detail: view.host?.stream ?? "unknown", ok: view.host?.stream === "connected" },
-        { label: "Model", detail: view.spec.model, ok: true },
+        { label: "Event stream", detail: clean(view.host?.stream ?? "unknown"), ok: view.host?.stream === "connected" },
+        { label: "Model", detail: clean(view.spec.model), ok: true },
         { label: "Spending limits", detail: hasLimits ? [limits.perJobUsd !== undefined ? `${money(limits.perJobUsd)} per job` : "", limits.dailyUsd !== undefined ? `${money(limits.dailyUsd)} per day` : ""].filter(Boolean).join(" · ") : "none: nothing caps commitments", ok: hasLimits },
       ],
       tasks: Object.fromEntries(Object.entries(groups).map(([name, refs]) => [name, [...refs.values()]])) as Record<keyof typeof groups, { id: string; title: string }[]>,

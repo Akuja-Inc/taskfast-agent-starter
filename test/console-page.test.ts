@@ -10,6 +10,20 @@ const body = (chunks: string[], stay = false) => new ReadableStream<Uint8Array>(
 });
 const settle = () => new Promise((done) => setTimeout(done, 10));
 
+it("aborts a stream it stops reading, so it never holds a place on the server", async () => {
+  const signals: AbortSignal[] = [];
+  const fetch = async (_url: string, init: { signal: AbortSignal }) => {
+    signals.push(init.signal);
+    return new Response(body(['event: view\ndata: {"n":1}\n\n'], true));
+  };
+  const noTimer = () => 0;
+  const follow = new Function("fetch", "setTimeout", "setInterval", "clearInterval", `${LIVE}\nreturn follow;`)(fetch, noTimer, noTimer, noTimer);
+  follow("/s", "t", () => { throw new Error("render failed"); }, () => {});
+  await settle();
+  expect(signals).toHaveLength(1);
+  expect(signals[0].aborted).toBe(true);
+});
+
 it("follows the event stream, polls while it is down, and stops polling when it returns", async () => {
   const requests: { url: string; authorization: string }[] = [];
   const responses = [

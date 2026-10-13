@@ -120,8 +120,8 @@ Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](do
 The same console in a terminal, for SSH or tmux. Start the host with `--console`, then in another terminal:
 
 ```bash
-pnpm tui 'http://127.0.0.1:7070/#token=…'   # the link pnpm agents printed
-TASKFAST_CONSOLE_URL='http://127.0.0.1:7070/#token=…' pnpm tui   # or from the environment
+TASKFAST_CONSOLE_URL='http://127.0.0.1:7070/#token=…' pnpm tui   # the link pnpm agents printed
+pnpm tui 'http://127.0.0.1:7070/#token=…'   # also works, but puts the token in the process list and shell history
 ```
 
 The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`) on first use; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.

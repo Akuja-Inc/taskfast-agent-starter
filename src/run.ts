@@ -187,7 +187,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     if (at >= 0) {
       const [owned] = running.splice(at, 1);
       // Streams before store, as at shutdown.
-      consoleServer?.closeStreams(item.id);
+      await consoleServer?.closeStreams(item.id);
       await owned.listener?.close();
       await owned.agent.close();
     }

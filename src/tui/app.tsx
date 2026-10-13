@@ -53,10 +53,12 @@ export function App(p: AppProps) {
   const [list, setList] = createSignal<Listing>();
   const [view, setView] = createSignal<ConsoleView>();
   const [down, setDown] = createSignal<string>();
-  const [notice, setNotice] = createSignal("");
+  const [notice, showNotice] = createSignal("");
+  const setNotice = (text: string) => showNotice(clean(text));
   const [ui, setUi] = createSignal<Ui>(initialUi());
-  // A message keeps its request ID until it is accepted, so resending it queues it once.
-  let requestId: string | undefined;
+  // A message keeps its request ID until it is accepted, so sending the same text again
+  // after a failure queues it once. Different text is a new message with a new ID.
+  let attempt: { text: string; requestId: string } | undefined;
   let stop = () => {};
   onCleanup(() => stop());
 
@@ -82,7 +84,8 @@ export function App(p: AppProps) {
       if (!id) throw new Error("the host shows no agents");
       setView(await api("GET", agentPath(id)) as ConsoleView);
       stop = follow(p.origin + agentPath(id) + "/stream", p.token, (next) => { setView(next as ConsoleView); setDown(undefined); }, () => {
-        api("GET", agentPath(id)).then((next) => { setView(next as ConsoleView); setDown(undefined); }, (error: unknown) => setDown(message(error)));
+        // The host stopped or no longer takes the token: show that, not a stale view.
+        api("GET", agentPath(id)).then((next) => { setView(next as ConsoleView); setDown(undefined); }, (error: unknown) => { setView(undefined); setDown(message(error)); });
       });
     } catch (error) {
       setView(undefined);
@@ -100,7 +103,10 @@ export function App(p: AppProps) {
     try {
       setNotice("");
       await api(effect.method, `${agentPath(id)}/${effect.action}`, effect.body);
-      if (effect.action === "spec") setNotice("Saved. Only this agent reopened.");
+      if (effect.action === "spec") {
+        setUi({ ...ui(), draft: undefined });
+        setNotice("Saved. Only this agent reopened.");
+      }
     } catch (error) { setNotice(message(error)); }
   }
   async function send(text: string, action: "messages" | "orders") {
@@ -109,9 +115,9 @@ export function App(p: AppProps) {
     try {
       if (action === "orders") await api("POST", `${agentPath(id)}/orders`, { text: text.trim() });
       else {
-        requestId ??= crypto.randomUUID();
-        await api("POST", `${agentPath(id)}/messages`, { requestId, text: text.trim() });
-        requestId = undefined;
+        if (attempt?.text !== text.trim()) attempt = { text: text.trim(), requestId: crypto.randomUUID() };
+        await api("POST", `${agentPath(id)}/messages`, attempt);
+        attempt = undefined;
         setNotice("Message queued; the agent reads it next.");
       }
     } catch (error) { setNotice(message(error)); }
@@ -155,7 +161,7 @@ export function App(p: AppProps) {
             <box height={1} flexShrink={0} backgroundColor={TONE[s().banner.tone]} paddingX={1}><text fg="#ffffff"><b>{s().banner.text}</b></text></box>
             <box height={1} paddingX={1}>
               <text>
-                <Span fg={MUTED}>‹ </Span><b>{agent()?.id ?? ""}</b>{` · ${clean(agent()?.name ?? "")} (${agent()?.role ?? ""})`}<Span fg={MUTED}> ›   </Span>
+                <Span fg={MUTED}>‹ </Span><b>{clean(agent()?.id ?? "")}</b>{` · ${clean(agent()?.name ?? "")} (${clean(agent()?.role ?? "")})`}<Span fg={MUTED}> ›   </Span>
                 <Span fg={ui().tab === "timeline" ? ACCENT : MUTED}>{ui().tab === "timeline" ? "[1 Timeline]" : " 1 Timeline "}</Span>
                 <Span fg={ui().tab === "briefing" ? ACCENT : MUTED}>{ui().tab === "briefing" ? "[2 Briefing]" : " 2 Briefing "}</Span>
                 <Span fg={view()?.operator.paused ? WARN : OK}>{`   ● ${s().state}`}</Span>
@@ -241,7 +247,7 @@ export function App(p: AppProps) {
                   </scrollbox>
                   <box height={3} flexShrink={0} border borderColor={ui().editing === "message" ? ACCENT : MUTED} title=" Message " paddingX={1}>
                     <Show when={ui().editing === "message"} fallback={<text fg={MUTED}>{`m to write to ${clean(view()?.spec.character.name ?? "the agent")}; enter sends it once`}</text>}>
-                      <input focused placeholder="Your message to the agent" onInput={() => { requestId = undefined; }} onSubmit={(text: unknown) => { void send(String(text), "messages"); done(); }} />
+                      <input focused placeholder="Your message to the agent" onSubmit={(text: unknown) => { void send(String(text), "messages"); done(); }} />
                     </Show>
                   </box>
                 </box>

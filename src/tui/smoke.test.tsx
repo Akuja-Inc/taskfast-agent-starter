@@ -6,29 +6,36 @@ import { testRender } from "@opentui/solid";
 import { App } from "./app.js";
 
 const ROOT = new URL("../../", import.meta.url);
-const host = spawn("node", [new URL("test/fixtures/tui-host.mjs", ROOT).pathname], { stdio: ["ignore", "pipe", "inherit"] });
-afterAll(() => { host.kill("SIGTERM"); });
-const link = await new Promise<URL>((resolve, reject) => {
-  let out = "";
-  host.stdout!.on("data", (chunk: Buffer) => {
-    out += chunk.toString();
-    const printed = /console: (\S+)/.exec(out);
-    if (printed) resolve(new URL(printed[1]));
+const hosts: ReturnType<typeof spawn>[] = [];
+afterAll(() => { for (const host of hosts) host.kill("SIGTERM"); });
+// Starts one throwaway host; resolves with it and the console link it printed.
+async function startHost() {
+  const host = spawn("node", [new URL("test/fixtures/tui-host.mjs", ROOT).pathname], { stdio: ["ignore", "pipe", "inherit"] });
+  hosts.push(host);
+  const link = await new Promise<URL>((resolve, reject) => {
+    let out = "";
+    host.stdout!.on("data", (chunk: Buffer) => {
+      out += chunk.toString();
+      const printed = /console: (\S+)/.exec(out);
+      if (printed) resolve(new URL(printed[1]));
+    });
+    host.once("exit", (code) => reject(new Error(`tui-host exited with ${code}`)));
   });
-  host.once("exit", (code) => reject(new Error(`tui-host exited with ${code}`)));
-});
+  return { host, link };
+}
+const { link } = await startHost();
 const token = link.hash.slice("#token=".length);
 
-async function draw(width: number, height: number, origin = link.origin) {
+async function draw(width: number, height: number, origin = link.origin, key = token) {
   const opened: string[] = [];
   let quits = 0;
-  const setup = await testRender(() => <App origin={origin} token={token} open={(url) => opened.push(url)} quit={() => { quits++; }} />, { width, height });
+  const setup = await testRender(() => <App origin={origin} token={key} open={(url) => opened.push(url)} quit={() => { quits++; }} />, { width, height });
   // Renders until `seen` holds for the frame; network replies arrive between passes.
   async function until(seen: (frame: string) => boolean): Promise<string> {
     for (let tries = 0; tries < 200; tries++) {
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
-      expect(frame).not.toContain(token);
+      expect(frame).not.toContain(key);
       if (seen(frame)) return frame;
       await Bun.sleep(25);
     }
@@ -103,6 +110,18 @@ test("folds the sidebar away below 100 columns", async () => {
   await until((frame) => frame.includes("Ready to work?"));
   keys.pressKey("a");
   await until((frame) => frame.includes("Needs attention"));
+  setup.renderer.destroy();
+}, 30_000);
+
+test("drops a stale view for the can't-reach screen when the host stops", async () => {
+  const other = await startHost();
+  const { setup, until, keys } = await draw(120, 30, other.link.origin, other.link.hash.slice("#token=".length));
+  await until((frame) => frame.includes("A new bid arrived"));
+  other.host.kill("SIGTERM");
+  const down = await until((frame) => frame.includes("Can't reach the console"));
+  expect(down).not.toContain("A new bid arrived");
+  keys.pressKey("r");
+  await until((frame) => frame.includes("Can't reach the console"));
   setup.renderer.destroy();
 }, 30_000);
 

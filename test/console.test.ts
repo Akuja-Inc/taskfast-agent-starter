@@ -159,6 +159,26 @@ it("pings an idle stream, and resends the view when something outside the store 
   expect(frame).toMatchObject({ event: "view", data: { operator: { paused: true } } });
 });
 
+it("closing an agent's streams waits for a view read already under way", async () => {
+  const { agent } = fakeAgent();
+  let release = () => {};
+  let reading = () => {};
+  const started = new Promise<void>((done) => { reading = done; });
+  const read = agent.agent.transcript;
+  agent.agent.transcript = async (limit) => { reading(); await new Promise<void>((done) => { release = done; }); return read(limit); };
+  const consoleServer = await serve([agent]);
+  const live = await stream(consoleServer.port);
+  await started;
+  let closed = false;
+  const closing = consoleServer.closeStreams("foo").then(() => { closed = true; });
+  await new Promise((done) => setTimeout(done, 30));
+  expect(closed).toBe(false);
+  release();
+  await closing;
+  await live.ended;
+  expect(closed).toBe(true);
+});
+
 it("caps open streams, and frees a place when one closes", async () => {
   const { port } = await serve(undefined, { maxStreams: 2 });
   const [one] = [await stream(port), await stream(port)];

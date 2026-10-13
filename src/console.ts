@@ -173,11 +173,11 @@ async function listenFrom(server: Server, port: number): Promise<number> {
 
 // The local console: this machine only. A foreign Host is a rebound DNS name and a
 // foreign Origin is another site's page; both are refused, and no CORS is offered.
-export async function startConsole(o: ConsoleOptions): Promise<{ url: string; port: number; closeStreams(id?: string): void; close(): Promise<void> }> {
+export async function startConsole(o: ConsoleOptions): Promise<{ url: string; port: number; closeStreams(id?: string): Promise<void>; close(): Promise<void> }> {
   // An empty token would compare equal to a missing bearer header and serve every request.
   if (!o.token) throw new Error("console: token required");
   let port = 0;
-  const open = new Set<{ id: string; end(): void }>();
+  const open = new Set<{ id: string; end(): void; settled(): Promise<void> }>();
   const own = () => [`127.0.0.1:${port}`, `localhost:${port}`];
   const server = createServer((req, res) => {
     void handle(req, res).catch((error: unknown) => send(res, 500, { error: error instanceof Error ? error.message : String(error) }));
@@ -228,6 +228,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
   function watch(item: ConsoleAgent, res: ServerResponse): void {
     if (open.size >= (o.maxStreams ?? MAX_STREAMS)) return send(res, 429, { error: "too many open streams" });
     res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+    res.flushHeaders();
     let last = "";
     let timer: NodeJS.Timeout | undefined;
     let sending = Promise.resolve();
@@ -242,7 +243,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     const unsubscribe = item.agent.changes(() => { timer ??= setTimeout(() => { timer = undefined; push(); }, o.coalesceMs ?? COALESCE_MS); });
     // Keeps idle connections open, and picks up host facts (stream, wallet) that change without a commit.
     const ping = setInterval(() => { res.write(": ping\n\n"); push(); }, o.pingMs ?? PING_MS);
-    const stream = { id: item.id, end };
+    const stream = { id: item.id, end, settled: () => sending };
     function end() {
       if (!open.delete(stream)) return;
       clearTimeout(timer);
@@ -254,13 +255,21 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     res.on("close", end);
     push();
   }
-  // Ends streams at once, not on a later socket event, so none outlives its agent's store.
-  const closeStreams = (id?: string) => { for (const stream of open) if (id === undefined || stream.id === id) stream.end(); };
+  // Ends streams at once, not on a later socket event, then waits out any view read
+  // already under way, so none reads an agent's store after it starts to close.
+  async function closeStreams(id?: string): Promise<void> {
+    const closing = [...open].filter((stream) => id === undefined || stream.id === id);
+    for (const stream of closing) stream.end();
+    await Promise.allSettled(closing.map((stream) => stream.settled()));
+  }
   port = await listenFrom(server, o.port);
   return {
     url: `http://127.0.0.1:${port}/#token=${o.token}`,
     port,
     closeStreams,
-    close: () => new Promise<void>((resolve) => { closeStreams(); server.closeAllConnections(); server.close(() => resolve()); }),
+    close: async () => {
+      await closeStreams();
+      await new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); });
+    },
   };
 }

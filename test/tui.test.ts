@@ -165,7 +165,17 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
   expect(saving.run("ctrl+s")).toEqual([]);
   expect(saving.ui.confirm).toEqual({ kind: "save", lines: ["Per job limit $20.00 → $30.00"] });
   expect(saving.run("y")).toEqual([{ kind: "call", method: "PUT", action: "spec", body: ui.draft }]);
-  expect(saving.ui.draft).toBeUndefined();
+  // The draft stays until the server accepts it, so a refused save loses nothing.
+  expect(saving.ui.draft).toEqual(ui.draft);
+
+  const typo = keys(view, setField(k.ui, view, "perJobUsd", "abc"));
+  typo.run("ctrl+s");
+  expect(typo.ui.confirm).toEqual({ kind: "save", lines: ["Per job limit $20.00 → invalid"] });
+
+  // Escape on the timeline closes lines; only the briefing's escape discards its draft.
+  const away = keys(view, { ...setField(k.ui, view, "goals", "x"), tab: "timeline" });
+  away.run("escape");
+  expect(away.ui.draft?.character.goals).toBe("x");
 
   const discarding = keys(view, setField(k.ui, view, "dailyUsd", ""));
   expect(discarding.ui.draft?.limits).toEqual({ perJobUsd: 20 });
@@ -178,6 +188,17 @@ it("offers retry and quit when the console can't be reached", () => {
   expect(press(initialUi(), "r", undefined, 0).effect).toEqual({ kind: "retry" });
   expect(press(initialUi(), "q", undefined, 0).effect).toEqual({ kind: "quit" });
   expect(press(initialUi(), "p", undefined, 0).effect).toBeUndefined();
+});
+
+it("strips escapes from tool names and host facts too", () => {
+  const view = fixtureView();
+  view.timeline[0].replies[0].calls[0].name = "task_list\x1b]0;pwned\x07";
+  view.host = { ...view.host!, stream: "connected\x1b[2J" as never };
+  view.spec = { ...view.spec, model: "anthropic:x\x1b]8;;https://evil.example\x1b\\" };
+  const drawn = screen(view, 120, NOW);
+  expect(drawn.turns[0].replies[0].calls[0].name).toBe("task_list");
+  expect(drawn.sidebar.readiness.find((check) => check.label === "Event stream")?.detail).toBe("connected");
+  expect(drawn.sidebar.readiness.find((check) => check.label === "Model")?.detail).toBe("anthropic:x");
 });
 
 it("links tasks only in development, flags production, and stacks below 100 columns", () => {
