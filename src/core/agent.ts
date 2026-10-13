@@ -121,28 +121,23 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         const pending = await owner.snapshot(Events, context);
         for (const [id, work] of Object.entries(pending?.events ?? {})) {
           if (work.kind === "done" || work.kind === "abandoned") continue;
+          // Only recovery changes a stored event, so `work` is current unless this pass moves it.
+          let current: EventWork = work;
           if (work.kind === "submitted") {
             const submission = await owner.submission(work.submission, context);
             if (!submission) throw new Error("event submission is missing from storage");
             const result = await submission.status(context);
             if (result.status === "queued" || result.status === "placed") continue;
-            await conversation.commit(async (tx) => {
+            current = await conversation.commit(async (tx): Promise<EventWork> => {
               const state = await tx.doc(Events);
               const event = state.events[id];
-              state.events[id] = result.status === "done"
-                ? { ...event, kind: "done", submission: work.submission }
-                : event.attempt >= EVENT_RETRY.retries
-                  ? { ...event, kind: "abandoned", submission: work.submission }
-                  : { kind: "admitted", event: event.event, attempt: event.attempt + 1, notBefore: now() + createTimeout(event.attempt, EVENT_RETRY) };
+              if (result.status === "done") return state.events[id] = { ...event, kind: "done", submission: work.submission };
+              if (event.attempt >= EVENT_RETRY.retries) return state.events[id] = { ...event, kind: "abandoned", submission: work.submission };
+              return state.events[id] = { kind: "admitted", event: event.event, attempt: event.attempt + 1, notBefore: now() + createTimeout(event.attempt, EVENT_RETRY) };
             }, context);
-            if (result.status === "done") continue;
+            if (current.kind === "abandoned") log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
           }
-          const current = (await owner.snapshot(Events, context))?.events[id];
-          if (current?.kind === "abandoned") {
-            log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
-            continue;
-          }
-          if (current?.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
+          if (current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
           // Request dedupe covers death between submit() and saving its ID here.
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
