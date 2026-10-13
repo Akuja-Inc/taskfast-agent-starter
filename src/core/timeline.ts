@@ -27,13 +27,24 @@ function classify(content: string): Pick<Turn, "kind" | "text" | "event"> {
   return { kind: "other", text: content };
 }
 // Policy answers a write with { uncertain } or { failed | refused | error }; a read's error is { error }.
+// A repeated uncertain write comes back { skipped: "outcome unknown; ..." }: nothing ran
+// and the earlier attempt's result is not known, so show it as uncertain, not ok.
 function settle(call: Call, message: ToolResultMessage): void {
-  const body = text(message.content);
-  const value = parse(body);
+  // A stored result can carry text parts beyond the tool's own (the engine appends a
+  // diagnostics text part), so parse each text part until one yields the JSON body.
+  const parts = typeof message.content === "string" ? [message.content] : message.content.flatMap((part) => (part.type === "text" ? [part.text] : []));
+  let body = parts.join("");
+  let value: unknown;
+  for (const part of parts) {
+    value = parse(part);
+    if (value !== undefined) { body = part; break; }
+  }
+  const skipped = field(value, "skipped");
+  const repeated = typeof skipped === "string" && skipped.startsWith("outcome unknown") ? skipped : undefined;
   const problem = field(value, "uncertain") ?? field(value, "failed") ?? field(value, "refused") ?? field(value, "error");
-  call.outcome = field(value, "uncertain") !== undefined ? "uncertain" : message.isError || problem !== undefined ? "failed" : "ok";
+  call.outcome = field(value, "uncertain") !== undefined || repeated !== undefined ? "uncertain" : message.isError || problem !== undefined ? "failed" : "ok";
   if (call.outcome === "ok") call.result = body;
-  else call.error = typeof problem === "string" ? problem : body;
+  else call.error = typeof problem === "string" ? problem : repeated ?? body;
 }
 function taskIds(call: Call): string[] {
   const ids = [field(call.arguments, "task_id")];

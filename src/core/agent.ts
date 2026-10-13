@@ -136,8 +136,6 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       if (closed) return;
       if (recovering) return recovering;
       recovering = (async () => {
-        // Paused: settle finished runs, but submit nothing and start no work.
-        const paused = (await owner.snapshot(Operator, context))?.paused ?? false;
         const pending = await owner.snapshot(Events, context);
         for (const [id, work] of Object.entries(pending?.events ?? {})) {
           if (work.kind === "done" || work.kind === "abandoned") continue;
@@ -157,12 +155,17 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
             }, context);
             if (current.kind === "abandoned") log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
           }
-          if (paused || current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
+          if (current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
+          // Re-read the pause state per event: a pause committed while this pass was
+          // working on earlier events still stops the submissions that follow it.
+          if ((await owner.snapshot(Operator, context))?.paused) continue;
           // Request dedupe covers death between submit() and saving its ID here.
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
-        if (paused) return;
+        // Paused: settle finished runs, but submit nothing and start no work. Read it
+        // again after the loop so a pause committed mid-pass also stops the drain.
+        if ((await owner.snapshot(Operator, context))?.paused) return;
         // The request ID makes a resend, or a crash before the removal commits, one input.
         for (const { requestId, text } of (await owner.snapshot(Operator, context))?.messages ?? []) {
           await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text }, context);
@@ -208,21 +211,35 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     await recover();
     const timer = setInterval(() => { void recover().catch((error: unknown) => log(`recovery: ${String(error)}`)); }, o.recoverEveryMs ?? 5000);
     timer.unref();
+    // An operator action's own commit is durable before recovery runs, so — as with
+    // deliver() — a recovery failure is logged, never reported as the action's result.
+    const recoverLogged = async (): Promise<void> => {
+      try { await recover(); }
+      catch (error) { log(`recovery: ${String(error)}`); }
+    };
     const operator: OperatorControls = {
       state: async () => (await owner.snapshot(Operator, context)) ?? initialOperator(),
       setFrozen: async (frozen) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).frozen = frozen; }, context); },
       setPaused: async (paused) => {
         await conversation.commit(async (tx) => { (await tx.doc(Operator)).paused = paused; }, context);
-        if (!paused) await recover();
+        if (paused) return;
+        // A pass that started while paused may still be in flight; joining it is not
+        // enough. The second call guarantees one fresh pass sees the resumed state.
+        await recoverLogged();
+        await recoverLogged();
       },
       message: async ({ requestId, text }) => {
         await conversation.commit(async (tx) => {
           const state = await tx.doc(Operator);
           if (!state.messages.some((item) => item.requestId === requestId)) state.messages.push({ requestId, text });
         }, context);
-        await recover();
+        await recoverLogged();
       },
-      addOrder: async (order) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).orders.push(order); }, context); },
+      addOrder: async (order) => {
+        // Each order renders as one bullet line in the system prompt; collapsing line
+        // breaks keeps a multi-line order from forging extra prompt lines.
+        await conversation.commit(async (tx) => { (await tx.doc(Operator)).orders.push(order.replace(/[\r\n]+/g, " ")); }, context);
+      },
       removeOrder: async (index) => {
         await conversation.commit(async (tx) => {
           const state = await tx.doc(Operator);
@@ -238,7 +255,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           // A new attempt number is a new request ID; reusing the last would dedupe into the failed run.
           state.events[`event:${eventId}`] = { kind: "admitted", event: work.event, attempt: work.attempt + 1 };
         }, context);
-        await recover();
+        await recoverLogged();
       },
       markChecked: async (id) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).checked[id] = new Date(now()).toISOString(); }, context); },
     };

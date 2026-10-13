@@ -45,3 +45,37 @@ it("groups a transcript into turns by what started them, with each reply's tool 
   expect(turns[2].replies[0].tasks).toEqual([{ id: task, via: "message_send" }]);
   expect(turns[2].replies[0].calls[0].outcome).toBe("uncertain");
 });
+
+it("shows a skipped repeat of an uncertain write as uncertain, while a skipped repeat of a done write stays ok", () => {
+  const turns = buildTimeline([
+    user("Check your marketplace work", 1000),
+    fauxAssistantMessage([
+      fauxToolCall("post_task", { title: "Edit a page" }, { id: "c1" }),
+      fauxToolCall("post_task", { title: "Edit another page" }, { id: "c2" }),
+    ], { stopReason: "toolUse" }),
+    result("c1", "post_task", JSON.stringify({ skipped: "outcome unknown; read the current state", at: "2026-10-13T12:00:00.000Z" })),
+    result("c2", "post_task", JSON.stringify({ skipped: "already done", at: "2026-10-13T12:00:00.000Z" })),
+  ]);
+  const [unknown, done] = turns[0].replies[0].calls;
+  expect(unknown.outcome).toBe("uncertain");
+  expect(unknown.error).toBe("outcome unknown; read the current state");
+  expect(done.outcome).toBe("ok");
+  expect(done.error).toBeUndefined();
+});
+
+it("parses the tool's JSON when the stored result carries a second diagnostics text part", () => {
+  const body = JSON.stringify({ task: { id: task, status: "open" } });
+  const stored: ToolResultMessage = {
+    role: "toolResult", toolCallId: "c1", toolName: "post_task", isError: false, timestamp: 0,
+    content: [{ type: "text", text: body }, { type: "text", text: "[warn] Output truncated to its beginning: 0 lines, 4 bytes dropped" }],
+  };
+  const turns = buildTimeline([
+    user("Message from your operator:\nPost it.", 1000),
+    fauxAssistantMessage([fauxToolCall("post_task", { title: "Edit a page" }, { id: "c1" })], { stopReason: "toolUse" }),
+    stored,
+  ]);
+  const call = turns[0].replies[0].calls[0];
+  expect(call.outcome).toBe("ok");
+  expect(call.result).toBe(body);
+  expect(turns[0].replies[0].tasks).toEqual([{ id: task, via: "post_task" }]);
+});
