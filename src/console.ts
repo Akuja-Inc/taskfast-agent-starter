@@ -103,9 +103,14 @@ async function act(controls: ConsoleAgent["agent"]["operator"], action: string |
   }
 }
 
+// The page may run only its own inline code and talk only to this server.
+const PAGE_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json") {
   const text = type === "application/json" ? JSON.stringify(body) : String(body);
-  res.writeHead(status, { "content-type": `${type}; charset=utf-8`, "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+  res.writeHead(status, {
+    "content-type": `${type}; charset=utf-8`, "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+    ...(type === "text/html" ? { "content-security-policy": PAGE_POLICY } : {}),
+  });
   res.end(text);
 }
 function sameToken(header: string | undefined, token: string): boolean {

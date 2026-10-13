@@ -59,6 +59,8 @@ it("only answers this machine's own pages, and only with the token", async () =>
   expect(page.status).toBe(200);
   expect(page.text).toContain("<html");
   expect(page.text).not.toContain(token);
+  expect(page.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(page.headers["content-security-policy"]).toContain("connect-src 'self'");
 
   expect((await call(port, "/api/agents")).status).toBe(401);
   expect((await call(port, "/api/agents", { headers: { authorization: `Bearer ${"b".repeat(64)}` } })).status).toBe(401);
