@@ -2,6 +2,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type, StringEnum, type Models, type TSchema } from "@earendil-works/pi-ai";
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
+import { createTimeout } from "retry";
 import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
@@ -23,9 +24,12 @@ const PiRuntime = factories[0];
 type PiEngine = Awaited<ReturnType<typeof PiRuntime.open>>;
 const context = BACKGROUND_CONTEXT;
 type EventWork = { event: Json; attempt: number } & (
-  | { kind: "admitted" }
-  | { kind: "submitted" | "done"; submission: SubmissionId }
+  | { kind: "admitted"; notBefore?: number }
+  | { kind: "submitted" | "done" | "abandoned"; submission: SubmissionId }
 );
+// A failed event run is resubmitted after a jittered exponential delay, at most
+// `retries` times, then abandoned. The due time is stored, so restarts keep it.
+export const EVENT_RETRY = { retries: 5, factor: 2, minTimeout: 30_000, maxTimeout: 10 * 60_000, randomize: true };
 const Events = defineDoc<{ events: Record<string, EventWork> }>({
   kind: "taskfast.events", version: 1, scope: "session", initial: () => ({ events: {} }),
 });
@@ -71,6 +75,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   const agentDir = agentDirectory(runtime);
   const models = o.models ?? await createAgentModels(spec.model, { agentDir, settings: providerSettings(agentDir) });
   const log = (line: string) => { try { o.log?.(line); } catch {} };
+  const now = () => (o.now?.() ?? new Date()).getTime();
   const storage = await openAgentStorage(o.storePath);
   let pi: PiEngine | undefined;
   try {
@@ -115,26 +120,33 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       recovering = (async () => {
         const pending = await owner.snapshot(Events, context);
         for (const [id, work] of Object.entries(pending?.events ?? {})) {
-          if (work.kind === "done") continue;
+          if (work.kind === "done" || work.kind === "abandoned") continue;
           if (work.kind === "submitted") {
             const submission = await owner.submission(work.submission, context);
             if (!submission) throw new Error("event submission is missing from storage");
             const result = await submission.status(context);
             if (result.status === "queued" || result.status === "placed") continue;
+            const notBefore = now() + createTimeout(work.attempt, EVENT_RETRY);
             await conversation.commit(async (tx) => {
               const state = await tx.doc(Events);
               const event = state.events[id];
               state.events[id] = result.status === "done"
                 ? { ...event, kind: "done", submission: work.submission }
-                : { kind: "admitted", event: event.event, attempt: event.attempt + 1 };
+                : event.attempt >= EVENT_RETRY.retries
+                  ? { ...event, kind: "abandoned", submission: work.submission }
+                  : { kind: "admitted", event: event.event, attempt: event.attempt + 1, notBefore };
             }, context);
             if (result.status === "done") continue;
           }
           const current = (await owner.snapshot(Events, context))?.events[id];
-          if (!current || current.kind === "done") continue;
+          if (current?.kind === "abandoned") {
+            log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
+            continue;
+          }
+          if (current?.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
           // Request dedupe covers death between submit() and saving its ID here.
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
-          await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { ...current, kind: "submitted", submission: submission.id }; }, context);
+          await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
         owner.resume();
         const stalled = await owner.inspect(context);
