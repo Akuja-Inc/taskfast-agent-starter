@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { eventProblem } from "./event.js";
+import { agentDirectory } from "./folder.js";
 import type { MarketEvent } from "./types.js";
 
 export interface PumpOptions {
@@ -10,7 +11,8 @@ export interface PumpOptions {
   // Passed through as --env. Omitted means the CLI's own default: production.
   env?: "prod" | "staging" | "local";
   // The CLI's whole environment when given (e.g. PATH, HOME, TASKFAST_CONFIG);
-  // otherwise it inherits this process's environment.
+  // otherwise it inherits this process's environment. A selected config also
+  // selects the owning folder as cwd, including the startup version check.
   cliEnv?: NodeJS.ProcessEnv;
   // Hands one event to the agent. Resolve only once the event is stored durably:
   // the pump acks after this resolves, and the server then forgets the event.
@@ -26,7 +28,7 @@ export interface PumpOptions {
   maxAttempts?: number;
   // A deliver() still pending after this counts as a failed attempt (default 60 s),
   // so a call that never settles cannot hold the stream. If it completes later, the
-  // re-pushed copy is dropped by the actor's dedupe.
+  // re-pushed copy is dropped by the agent's dedupe.
   deliverTimeoutMs?: number;
   // Failure counts by event id. runEventPumpForever passes one map to every child, so
   // a restart does not reset an event's attempts.
@@ -39,12 +41,17 @@ export interface PumpOptions {
   signal?: AbortSignal;
 }
 
+function selectedCwd(env: NodeJS.ProcessEnv | undefined): string | undefined {
+  const configPath = env?.TASKFAST_CONFIG;
+  return configPath ? agentDirectory({ configPath }) : undefined;
+}
+
 // `events stream --ack-stdin` arrived in taskfast-cli 0.19.0 (taskfast-cli#169). An
 // older CLI rejects the flag and every stream exits at once, so check before pumping.
 export function assertPumpCli(bin: string, env: NodeJS.ProcessEnv = process.env): string {
   let out = "";
   try {
-    out = execFileSync(bin, ["--version"], { encoding: "utf8", env }).trim();
+    out = execFileSync(bin, ["--version"], { encoding: "utf8", env, cwd: selectedCwd(env) }).trim();
   } catch (e) {
     throw new Error(`cannot run ${bin} --version: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -67,6 +74,7 @@ export function runEventPump(opts: PumpOptions): Promise<number | null> {
   const args = ["events", "stream", "--ack-stdin", ...(o.env ? ["--env", o.env] : [])];
   const child = spawn(o.taskfastBin, args, {
     env: o.cliEnv ?? process.env,
+    cwd: selectedCwd(o.cliEnv ?? process.env),
     stdio: ["pipe", "pipe", "pipe"],
     signal: o.signal,
   });
@@ -177,7 +185,7 @@ async function handle(line: string, o: Guarded, stdin: NodeJS.WritableStream, fa
     failures.delete(id!);
     stdin.write(`${id}\n`);
   };
-  // The same rule Persona.deliver applies. Without an id there is nothing the server
+  // The same rule MarketplaceAgent.deliver applies. Without an id there is nothing the server
   // could be holding for us to ack; with one, the event can never be stored, so it is
   // dead-lettered rather than left to stall the stream.
   const problem = eventProblem(m);

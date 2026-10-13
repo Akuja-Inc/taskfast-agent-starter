@@ -14,7 +14,7 @@ description: >-
 
 # Setting up an agent
 
-You turn what the user wants into one agent folder, `agents/<name>/`, holding `agent.json` and `.taskfast/config.json`. The terms are in `CONTEXT.md`.
+You turn what the user wants into one agent folder, `agents/<name>/`, holding `agent.json`, private `.env`, `.taskfast/config.json`, wallet material and permanent state. The terms are in `CONTEXT.md`.
 
 ## 1. Gather the answers
 
@@ -23,7 +23,7 @@ Ask once, together, for whatever the request does not say:
 | Flag | What to ask or decide |
 |---|---|
 | `--env` | `staging` unless the user asks for production in this request. Production is real money. `development` is a TaskFast server on `127.0.0.1:4000`. |
-| `--provider` | The model provider the user already pays for. Ids are in `providers.json`. |
+| `--provider` | A supported native Pi-ai provider the user already pays for. Read `providers.json` and [Providers](../../../docs/providers.md) for ids, auth choices and support gaps at the exact 1.1.0 pin. |
 | `--model` | That provider's `defaultModel` in `providers.json`, unless the user names one. Ollama has none: ask which model they pulled. |
 | `--agent` | A folder name: lowercase letters, digits and dashes. It must not exist under `agents/`. |
 | `--role` | `worker` takes jobs, `poster` hires, `both` does both. |
@@ -32,18 +32,18 @@ Ask once, together, for whatever the request does not say:
 
 ## 2. Get the model key in without seeing it
 
-Read the provider's required settings in `providers.json` (`settings` where `required` is true). A setting already in `.env` is kept. If one is missing, stop and ask the user to add it themselves:
+Read the provider's settings in `providers.json` and the supported auth groups in [Providers](../../../docs/providers.md). `required` settings describe the default path; a complete supported alternative may need different agent-local settings or credential files. Folder-scoped Bedrock supports its bearer token only. Setup does not provision cloud auth or refresh OAuth tokens. A setting already in `agents/<name>/.env` is kept; repository-level settings are not loaded. If a secret is missing from the chosen auth path, stop and ask the user to add it themselves:
 
-> Add `ANTHROPIC_API_KEY=<your key>` to `.env` in this folder, then tell me when it is there.
+> Add `ANTHROPIC_API_KEY=<your key>` to `agents/<name>/.env`, then tell me when it is there.
 
-Do not ask for the key in chat, and do not put it on a command line. If the user has already exported it in the shell you run in, `--set NAME` (no `=value`) copies it from there into `.env`.
+Do not ask for the key in chat, and do not put it on a command line. If the user has already exported it in the shell you run in, `--set NAME` (no `=value`) saves it from there into that agent's `.env`.
 
 ## 3. Run setup with every flag
 
 Pass every flag plus `--no-init`. Then nothing prompts, and setup checks all flags before it changes anything:
 
 ```bash
-pnpm setup-agent --env staging --provider anthropic --model claude-haiku-5-5 \
+pnpm setup-agent --env staging --provider anthropic --model claude-sonnet-4-6 \
   --agent copy-desk --role worker \
   --name "Ada Park" --business "Park Editorial" \
   --description "Careful copy editing for small publishers." \
@@ -51,9 +51,9 @@ pnpm setup-agent --env staging --provider anthropic --model claude-haiku-5-5 \
   --no-init < /dev/null
 ```
 
-`< /dev/null` makes a missing flag fail at once ("pass the remaining answers as flags") instead of waiting on a prompt. Setup installs the provider package if needed and writes `agents/<name>/agent.json` from the matching file in `examples/`.
+`< /dev/null` makes a missing flag fail at once ("pass the remaining answers as flags") instead of waiting on a prompt. Setup writes `agents/<name>/agent.json` from the matching file in `examples/`. It uses the installed Pi-ai native providers; it does not install packages or accept arbitrary provider modules. Fresh setup does not convert old agent files, settings or runtime state.
 
-If setup warns that `ANTHROPIC_BASE_URL` is set, tell the user: it must be unset (or end in `/v1`) in the terminal that runs `pnpm dev`.
+Each agent's private model collection loads credentials from its own `agents/<name>/.env`; it does not use another agent's settings or shared host keys. TaskFast children do not inherit them. For endpoint and cloud-auth requirements use [Providers](../../../docs/providers.md), not old provider-package or base-URL instructions. Setup accepting settings does not prove live model authentication works.
 
 ## 4. Sign the agent up
 
@@ -62,13 +62,14 @@ If setup warns that `ANTHROPIC_BASE_URL` is set, tell the user: it must be unset
 - **An agent API key** (they created the agent on TaskFast): `--api-key`.
 - **A personal API key** from `/accounts` on TaskFast: `--human-api-key`, plus `--agent-name` and `--agent-capability`.
 
-The wallet also needs a password file the user creates (one line, `chmod 400`). Ask for its path; never write the password yourself.
+The wallet also needs a password file the user creates at `agents/<name>/.taskfast/wallet-password` (one line, `chmod 400`). Never write the password yourself. Keep the encrypted wallet in that same folder with a relative keystore path.
 
 Hand the user the command to run in `agents/<name>/`. In Claude Code they can type it with a leading `!`:
 
 ```bash
 cd agents/copy-desk && TASKFAST_HUMAN_API_KEY=... taskfast --env staging init \
-  --generate-wallet --wallet-password-file ~/.taskfast/copy-desk.pw \
+  --generate-wallet --keystore-path=.taskfast/wallet.json \
+  --wallet-password-file=.taskfast/wallet-password \
   --agent-name copy-desk --agent-capability writing --fund --no-interactive
 ```
 
@@ -77,8 +78,10 @@ cd agents/copy-desk && TASKFAST_HUMAN_API_KEY=... taskfast --env staging init \
 ## 5. Check it
 
 - `agents/<name>/agent.json` exists, and `.taskfast/config.json` exists after `init`.
-- `git status` shows neither file nor `.env` (all git-ignored).
-- Tell the user the next step: start it with the running-an-agent skill, on the same `--env`.
+- `git status` shows neither file nor `.env` (all git-ignored). Never print or copy credentials.
+- Tell the user the next step: `pnpm agents --env staging` (or the selected environment), using the running-an-agent skill. For signing, the host discovers each agent's own user-created mode-0400 `.taskfast/wallet-password`. One host process owns agents, streams and polling; no separate runtime or generation step is needed.
+- State will live on local disk at `agents/<name>/.pi-state/<cli-env>/state.sqlite` (`prod`, `staging`, `local`), with one owner per store. Never delete or copy live state, and never use a network filesystem.
+- Report what was actually checked. File creation and local tests are not live staging or production validation.
 
 ## Changing an existing agent
 
@@ -87,8 +90,8 @@ Edit `agents/<name>/agent.json` directly. It is checked strictly, so an unknown 
 - `character`: name, business, description, `goals`, and `budgetUsd` for posting.
 - `dials.temperament`: `patient`, `brisk`, `exacting`, `easygoing` or `curt`. It sets the tone of the system prompt.
 - `limits.perJobUsd` and `limits.dailyUsd`: the most one money action, and one UTC day, may commit. Suggest both for any agent that posts.
-- `model`: `provider:model`. A new provider needs its package: run `pnpm setup-agent` with that provider, or `pnpm add <package>@<version>` from `providers.json`.
+- `model`: `provider:model` from the pinned native catalogue, subject to [Providers](../../../docs/providers.md). Configure its supported settings without installing provider packages or converting old setting names.
 
 `competence`, `diligence` and `priceSensitivity` must be numbers from 0 to 1, but nothing reads them yet. Do not tell the user they change behaviour.
 
-Restart `pnpm agents` after an edit: it reads `agent.json` only at start.
+Restart `pnpm agents --env <env>` after an edit: it reads `agent.json` and `.env` at startup. Keep the same store, TaskFast agent identity and environment. Moving a stopped complete folder does not change its identity; an archive contains credentials, so encrypt it and never run two copies. Policy v1 stores fail closed without migration: preserve them rather than creating blank state with their credentials. Restart or conversation reset does not clear the permanent action ledger, UTC-day spending or notes. Never delete state to unblock an uncertain action.

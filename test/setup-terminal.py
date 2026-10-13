@@ -21,12 +21,12 @@ child.write_text(
 child.chmod(0o755)
 master, slave = pty.openpty()
 initial = termios.tcgetattr(slave)
-args = [node, setup, "--env", "staging", "--provider", "anthropic", "--model", "dummy",
+args = [node, setup, "--env", "staging", "--provider", "anthropic", "--model", "claude-sonnet-4-6",
         "--agent", "check", "--role", "worker", "--name", "Demo", "--business", "Demo",
         "--description", "Demo", "--goals", "Demo"]
 if scenario != "secret":
     args += ["--set", "ANTHROPIC_API_KEY=dummy"]
-env = {**os.environ, "PATH": root + os.pathsep + os.environ["PATH"]}
+env = {"HOME": os.environ["HOME"], "PATH": root + os.pathsep + os.environ["PATH"], "TERM": "xterm-256color"}
 proc = subprocess.Popen(args, cwd=root, stdin=slave, stdout=slave, stderr=slave, env=env)
 transcript = b""
 
@@ -51,9 +51,9 @@ try:
         until(b"**************")
         assert b"dummy-secret" not in transcript, "secret appeared on screen"
         os.write(master, b"\x7f\r")
-        until(b"Saved ANTHROPIC_API_KEY")
-        assert (pathlib.Path(root) / ".env").read_text() == "ANTHROPIC_API_KEY=dummy-secret-\n"
     until(b"[Y/n]:")
+    if scenario == "secret":
+        assert (pathlib.Path(root) / "agents" / "check" / ".env").read_text() == "ANTHROPIC_API_KEY=dummy-secret-\n"
     if scenario == "cancel":
         os.write(master, b"\x03")
         assert proc.wait(timeout=5) == 130, "Ctrl-C must cancel setup"

@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 
-// The tools a persona's model can call. Each one maps to a taskfast command (or, for
-// memory, to the actor's own notes). The model only fills in values: every value is
+// The tools an agent's model can call. Each one maps to a taskfast command (or, for
+// memory, to the agent's own notes). The model only fills in values: every value is
 // checked here, options are passed as --name=value and positionals after --, so a
 // value can never become a flag such as --env.
 //
 // kind: read (safe to repeat), write (runs at most once per actionKey), money (a
 // write that commits funds; its amount is fixed by code and counted against the
-// agent's limits), memory (changes only the actor's notes).
+// agent's limits), memory (changes only the agent's notes).
 export type ToolKind = "read" | "write" | "money" | "memory";
 // A money tool must name where its amount comes from: the type will not compile without
 // one, so a charged command cannot be added without being counted.
@@ -22,14 +22,13 @@ interface ToolBase {
   description: string;
   schema: { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[] }>; required: string[]; additionalProperties: false };
   args(input: Record<string, unknown>): string[];
-  key?(input: Record<string, unknown>): string;
 }
 export type ToolSpec =
-  | (ToolBase & { kind: "read" | "memory"; amount?: never; party?: never })
-  | (ToolBase & { kind: "write"; amount?: never; party: Party | null })
+  | (ToolBase & { kind: "read" | "memory"; amount?: never; party?: never; key?: never })
+  | (ToolBase & { kind: "write"; amount?: never; party: Party | null; key(input: Record<string, unknown>): string })
   // For a money tool, where its amount comes from, always read from the server: the
   // bid's price, or the platform's submission fee. Never free text from the model.
-  | (ToolBase & { kind: "money"; amount: AmountSource; party: Party | null });
+  | (ToolBase & { kind: "money"; amount: AmountSource; party: Party | null; key(input: Record<string, unknown>): string });
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PRICE = /^\d{1,9}(\.\d{1,2})?$/;
@@ -179,8 +178,8 @@ export const TOOLS: Record<string, ToolSpec> = {
     party: "worker",
   },
 
-  remember: { kind: "memory", description: "Keep a note for later turns.", schema: obj({ note: s("the note") }, ["note"]), args: () => [] },
-  forget: { kind: "memory", description: "Drop one of your notes by its number.", schema: obj({ index: { type: "number", description: "note number" } }, ["index"]), args: () => [] },
+  remember: { kind: "memory", description: "Keep a note for later turns.", schema: obj({ note: s("the note") }, ["note"]), args: (i) => (text(i.note, "note"), []) },
+  forget: { kind: "memory", description: "Drop one of your notes by its number.", schema: obj({ index: { type: "number", description: "note number" } }, ["index"]), args: (i) => (Number.isInteger(i.index) && (i.index as number) >= 0 ? [] : bad("index must be a non-negative integer")) },
 };
 
 // Validates a tool call from the model. Returns the command args and action key, or
@@ -188,7 +187,12 @@ export const TOOLS: Record<string, ToolSpec> = {
 export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: string[]; key: string | null; input: Record<string, unknown> } {
   const spec = Object.hasOwn(TOOLS, tool) ? TOOLS[tool]! : bad(`no tool named ${tool}`);
   if (input === null || typeof input !== "object" || Array.isArray(input)) bad("tool input must be an object");
-  const i = input as Record<string, unknown>;
-  for (const k of Object.keys(i)) if (!Object.hasOwn(spec.schema.properties, k)) bad(`${tool} has no field ${k}`);
+  const i = { ...(input as Record<string, unknown>) };
+  for (const k of Object.keys(i)) {
+    if (!Object.hasOwn(spec.schema.properties, k)) bad(`${tool} has no field ${k}`);
+    // UUID case is not marketplace identity. Normalize before both key construction
+    // and the policy reads, so a fresh model call cannot vary casing to run twice.
+    if (k === "task_id" || k === "bid_id") i[k] = uuid(i[k], k).toLowerCase();
+  }
   return { spec, args: spec.args(i), key: spec.key ? spec.key(i) : null, input: i };
 }

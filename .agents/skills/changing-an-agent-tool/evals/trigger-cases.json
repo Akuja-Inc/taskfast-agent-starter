@@ -8,5 +8,5 @@
   { "prompt": "My agent keeps failing to post, what's wrong?", "should_trigger": false, "why": "Diagnosing a running agent: running-an-agent." },
   { "prompt": "Make the agent's messages friendlier.", "should_trigger": false, "why": "Temperament in agent.json or prompt.ts, not a tool." },
   { "prompt": "Withdraw my bid on task 4b7e9c1a on TaskFast.", "should_trigger": false, "why": "The coding agent acting on the marketplace itself: the taskfast CLI's taskfast-agent skill." },
-  { "prompt": "Bump durable-actors to the next version.", "should_trigger": false, "why": "A dependency bump, not a tool change." }
+  { "prompt": "Bump the pinned Pi packages to the next version.", "should_trigger": false, "why": "A dependency bump, not a tool change." }
 ]

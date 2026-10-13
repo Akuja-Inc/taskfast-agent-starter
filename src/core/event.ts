@@ -1,7 +1,7 @@
 import type { MarketEvent } from "./types.js";
 
 // The one rule for what an agent can store, used by both the pump and
-// Persona.deliver so the two cannot drift. Returns why a value is not a deliverable
+// MarketplaceAgent.deliver so the two cannot drift. Returns why a value is not a deliverable
 // event, or null when it is.
 export function eventProblem(v: unknown): string | null {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return "not an object";

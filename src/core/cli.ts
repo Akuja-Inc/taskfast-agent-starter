@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { isAbsolute } from "node:path";
 import type { Json, Runtime } from "./types.js";
+import { agentDirectory } from "./folder.js";
 
-// How a command ended, from the actor's side:
+// How a command ended, from the agent's side:
 // - ok: the CLI reported success.
 // - failed: the CLI or server refused it before acting (bad input, auth, rate limit,
 //   validation, wallet). Nothing changed on the server.
@@ -19,15 +21,32 @@ const REFUSED = new Set(["usage", "auth", "missing_api_key", "rate_limited", "va
 
 export const taskfastBin = (): string => process.env.TASKFAST_BIN ?? "taskfast";
 
-// The whole environment of a taskfast child run for this actor: only its own config.
-// Nothing from the host process (another persona's key, a custom endpoint) leaks in.
+// The whole environment of a taskfast child: only its own config.
+// No model credential, wallet password or custom endpoint leaks from the host.
 export const cliEnv = (rt: Runtime): NodeJS.ProcessEnv => ({ PATH: process.env.PATH, HOME: process.env.HOME, TASKFAST_CONFIG: rt.configPath });
 
-// Runs one taskfast command as this actor: its own env (passed as --env, ahead of the
-// subcommand), its own persona config and a clean environment.
+export function parseWalletPasswordFile(value: unknown): string {
+  if (typeof value !== "string" || !isAbsolute(value) || value.includes("\0")) throw new Error("wallet password file must be an absolute path without NUL");
+  return value;
+}
+
+// Runs one command with the agent's env before the subcommand, its own TaskFast
+// config, and a clean environment. Only signing commands receive the host's file
+// path, as one option before the positional delimiter; no password is inherited.
 export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promise<CliResult> {
+  let commandArgs = args;
+  if (rt.walletPasswordFile !== undefined) {
+    let file: string;
+    try { file = parseWalletPasswordFile(rt.walletPasswordFile); }
+    catch { return Promise.resolve({ outcome: "failed", error: "config: wallet password file must be an absolute path without NUL" }); }
+    if (args[0] === "post" || args[0] === "settle" || (args[0] === "escrow" && args[1] === "sign")) {
+      const delimiter = args.indexOf("--");
+      const at = delimiter < 0 ? args.length : delimiter;
+      commandArgs = [...args.slice(0, at), `--wallet-password-file=${file}`, ...args.slice(at)];
+    }
+  }
   return new Promise((resolve) => {
-    execFile(taskfastBin(), ["--env", rt.env, ...args], { env: cliEnv(rt), timeout: timeoutMs, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
+    execFile(taskfastBin(), ["--env", rt.env, ...commandArgs], { env: cliEnv(rt), cwd: agentDirectory(rt), timeout: timeoutMs, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
       let envelope: { ok?: unknown; data?: Json; error?: { code?: unknown; message?: unknown } } | null = null;
       try {
         envelope = JSON.parse(stdout);

@@ -1,37 +1,58 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join, resolve } from "node:path";
+import { parseEnv } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import input from "@inquirer/input";
 import password from "@inquirer/password";
-import { providerSource } from "./core/model.js";
+import { createAgentModels, providerSource } from "./core/model.js";
+import { credentialSetting, folderFile, PASSWORD_PATH, WALLET_PATH } from "./core/folder.js";
 import { parseAgentSpec } from "./core/spec.js";
 import type { AgentSpec, Role } from "./core/types.js";
 import { ENVIRONMENTS, taskfastEnv, type Environment } from "./run.js";
 
-// One entry of providers.json, which scripts/gen-providers.mjs in the TaskFast repo
-// generates from the AI SDK's provider packages and models.dev.
+// One entry of the catalogue generated from the installed pi-ai pin.
 export interface Provider {
   id: string;
   package: string;
-  export?: string;
-  // The version the catalogue was built from; setup installs exactly this one.
-  version?: string;
+  export: string;
+  nativeId: string;
+  // All choices share the already installed pi-ai package pin.
+  version: string;
   label: string;
   settings: { name: string; required: boolean; description: string }[];
-  // Tool-calling text models, newest first.
+  // Tool-calling text models in pinned catalog order.
   models: string[];
-  // The suggestion (gen-providers.mjs modelMenu): the provider's newest own model, else
-  // the newest model models.dev traces to a maker (OpenRouter suggests another maker's
-  // model), else its newest usable model; empty when models.dev lists none (Ollama).
   defaultModel: string;
+  // Each group is an alternative to the default required settings.
+  authAlternatives: string[][];
   note?: string;
 }
 
-export const readCatalogue = (root: string): Provider[] => (JSON.parse(readFileSync(join(root, "providers.json"), "utf8")) as { providers: Provider[] }).providers;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item: unknown) => typeof item === "string");
+function isProvider(value: unknown): value is Provider {
+  if (!isRecord(value)) return false;
+  return [value.id, value.nativeId, value.package, value.export, value.version, value.label, value.defaultModel].every((item) => typeof item === "string")
+    && (value.note === undefined || typeof value.note === "string")
+    && isStringArray(value.models)
+    && Array.isArray(value.authAlternatives) && value.authAlternatives.every(isStringArray)
+    && Array.isArray(value.settings) && value.settings.every((setting: unknown) => isRecord(setting) && typeof setting.name === "string" && typeof setting.required === "boolean" && typeof setting.description === "string");
+}
+export function readCatalogue(root: string): Provider[] {
+  const value: unknown = JSON.parse(readFileSync(join(root, "providers.json"), "utf8"));
+  if (!isRecord(value) || !Array.isArray(value.providers) || !value.providers.every(isProvider)) throw new Error("Invalid providers.json; regenerate it from the installed pi-ai pin");
+  const providers = value.providers;
+  for (const provider of providers) {
+    const source = providerSource(provider.id);
+    if (source.package !== provider.package || source.export !== provider.export || source.version !== provider.version || source.nativeId !== provider.nativeId) throw new Error("providers.json does not match the generated provider table");
+  }
+  return providers;
+}
 
 // Every answer can be passed as a flag instead; whatever is not passed is asked, except
 // env, which is production unless passed.
@@ -59,11 +80,12 @@ Sets up a model provider and one agent. Anything you leave out is asked.
                           Where the agent's TaskFast account lives (default: production).
                           development is a TaskFast server on this machine (127.0.0.1:4000).
   --provider <id>         Model provider, e.g. anthropic, openai, moonshotai, openrouter,
-                          ollama, or any @ai-sdk/<id> package (see providers.json)
+                          ollama; supported installed providers only (see providers.json)
+                          Setup never installs packages. Auth notes: docs/providers.md
   --set NAME=value        A provider setting for .env, e.g. --set ANTHROPIC_API_KEY=sk-...
                           Repeat for each setting. --set NAME takes the value from your
                           environment, which keeps it out of your shell history.
-  --model <id>            Model id, e.g. claude-haiku-5-5
+  --model <id>            Model id, e.g. claude-sonnet-4-6
   --agent <folder>        Agent folder under agents/ (lowercase letters, digits, dashes)
   --role worker|poster|both
   --name <text>           Your name, as the agent signs it
@@ -104,23 +126,14 @@ export function upsertEnv(text: string, key: string, value: string): string {
   return `${lines.join("\n")}\n`;
 }
 
-// The version of pkg the project resolves, or null when it is not installed. Read from
-// the package.json above its entry file, since not every package exports
-// "./package.json".
+// Read the installed shared package's manifest without requiring its import-only
+// entrypoint. This is informational; setup never installs or replaces packages.
 export function installedVersion(root: string, pkg: string): string | null {
-  let dir: string;
-  try {
-    dir = dirname(createRequire(join(root, "package.json")).resolve(pkg));
-  } catch {
-    return null;
-  }
-  for (; dir !== dirname(dir); dir = dirname(dir)) {
-    const file = join(dir, "package.json");
-    if (!existsSync(file)) continue;
-    const p = JSON.parse(readFileSync(file, "utf8")) as { name?: string; version?: string };
-    if (p.name === pkg) return p.version ?? null;
-  }
-  return null;
+  if (!/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(pkg)) return null;
+  const file = join(root, "node_modules", ...pkg.split("/"), "package.json");
+  if (!existsSync(file)) return null;
+  const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+  return isRecord(value) && value.name === pkg && typeof value.version === "string" ? value.version : null;
 }
 
 // A setting whose value is a credential is masked while typing.
@@ -131,11 +144,14 @@ const agentProblem = (root: string, v: string) =>
 
 // Checks every flag before setup changes anything, so a typo cannot leave a half-done
 // setup. Returns the --set values by name.
-function checkOptions(o: SetupOptions, io: SetupIO): Map<string, string> {
+function checkOptions({ options: o, io, catalogue }: { options: SetupOptions; io: SetupIO; catalogue: Provider[] }): Map<string, string> {
   const problems: string[] = [];
   const bad = (flag: string, why: string) => problems.push(`--${flag}: ${why}`);
   if (o.env !== undefined && !Object.hasOwn(ENVIRONMENTS, o.env)) bad("env", `use production, staging or development, not ${JSON.stringify(o.env)}`);
-  if (o.provider !== undefined && !/^[a-z0-9-]+$/.test(o.provider)) bad("provider", "use the provider id, lowercase letters, digits and dashes");
+  if (o.provider !== undefined) {
+    if (!/^[a-z0-9-]+$/.test(o.provider)) bad("provider", "use the provider id, lowercase letters, digits and dashes");
+    else if (!catalogue.some((p) => p.id === o.provider)) bad("provider", `unsupported provider ${JSON.stringify(o.provider)}; see docs/providers.md`);
+  }
   const set = new Map<string, string>();
   for (const s of o.set ?? []) {
     const at = s.indexOf("=");
@@ -154,8 +170,12 @@ function checkOptions(o: SetupOptions, io: SetupIO): Map<string, string> {
   if (o.role !== undefined && !Object.hasOwn(ROLES, o.role)) bad("role", "use worker, poster or both");
   for (const f of ["name", "business", "description", "goals"] as const) if (o[f] !== undefined && !o[f].trim()) bad(f, "it is empty");
   if (o.budget !== undefined) {
-    if (!(Number(o.budget) > 0)) bad("budget", "enter a positive number of USD");
+    if (!(Number(o.budget) > 0) || !Number.isFinite(Number(o.budget))) bad("budget", "enter a positive number of USD");
     else if (o.role === "worker") bad("budget", "a worker has no budget; it applies to poster and both");
+  }
+  const selected = catalogue.find((p) => p.id === o.provider);
+  if (selected) for (const name of set.keys()) {
+    if (!selected.settings.some((s) => s.name === name)) bad("set", `${name} is not a setting for ${selected.id}; see docs/providers.md`);
   }
   if (problems.length) throw new Error(`check these options:\n  ${problems.join("\n  ")}\n\n${USAGE}`);
   return set;
@@ -184,11 +204,11 @@ async function text(io: SetupIO, question: string, fallback = "", check: (v: str
   }
 }
 
-// The model: one of the provider's newest models by number, or any id typed out.
+// The model: a pinned catalogue entry by number, or a supported id typed out.
 async function pickModel(io: SetupIO, p: Provider): Promise<string> {
   const shown = p.models.slice(0, SHOWN);
   if (shown.length) {
-    io.log(`\nModels on ${p.label}, newest first:`);
+    io.log(`\nModels on ${p.label}, in pinned catalog order:`);
     shown.forEach((m, i) => io.log(`  ${String(i + 1).padStart(2)}. ${m}${m === p.defaultModel ? "  (suggested)" : ""}`));
     if (p.models.length > shown.length) io.log(`  ... and ${p.models.length - shown.length} more in providers.json; type any of them.`);
   }
@@ -201,51 +221,60 @@ async function pickModel(io: SetupIO, p: Provider): Promise<string> {
   }
 }
 
-// Sets up the model provider, its settings and one agent: installs the provider
-// package, writes .env and agents/<id>/agent.json, then runs taskfast init. Values
+// Sets up an installed provider's settings and one agent: writes .env and
+// agents/<id>/agent.json, then runs taskfast init. No package installation. Values
 // passed in `o` are used as given; the rest are asked.
 export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
-  const set = checkOptions(o, io);
+  const catalogue = readCatalogue(io.root);
+  const set = checkOptions({ options: o, io, catalogue });
   const environment = (o.env ?? "production") as Environment;
   io.log("TaskFast agent setup. Press Enter to take the value in [brackets].");
   io.log(`Environment: ${environment}${o.env ? "" : " (pass --env staging or --env development to change it)"}\n`);
 
-  // 1. Model provider and its package.
-  const catalogue = readCatalogue(io.root);
-  const other: Provider = { id: "", package: "", label: "Another @ai-sdk provider (enter its name)", settings: [], models: [], defaultModel: "" };
-  const picked = o.provider ? (catalogue.find((p) => p.id === o.provider) ?? { ...other, id: o.provider }) : await choose(io, "Which model provider will your agent use?", [...catalogue, other], (p) => p.label, 0, (p) => p.id);
-  let provider: Provider = picked;
-  if (!catalogue.includes(picked)) {
-    // Not in providers.json: an @ai-sdk/<id> package whose settings the user names.
-    const id = picked.id || (await text(io, "Provider package name, as in @ai-sdk/<name>", "", (v) => (/^[a-z0-9-]+$/.test(v) ? null : "use lowercase letters, digits and dashes")));
-    const keys = set.size ? [...set.keys()] : [await text(io, "Its API key variable (see its page on ai-sdk.dev)", "", (v) => (SETTING.test(v) ? null : "use the variable name, e.g. MY_PROVIDER_API_KEY"))];
-    provider = { ...other, id, package: providerSource(id).package, label: `@ai-sdk/${id}`, settings: keys.map((name) => ({ name, required: true, description: "" })) };
-  }
+  // 1. Only explicit, generated provider choices. Check flagged models before
+  // settings are saved; construction uses native catalogs without network calls.
+  const provider = o.provider ? catalogue.find((p) => p.id === o.provider) : await choose(io, "Which model provider will your agent use?", catalogue, (p) => p.label, 0, (p) => p.id);
+  if (!provider) throw new Error("unsupported provider; see docs/providers.md");
+  for (const name of set.keys()) if (!provider.settings.some((s) => s.name === name)) throw new Error(`--set: ${name} is not a setting for ${provider.id}; see docs/providers.md`);
+  if (o.model !== undefined) await createAgentModels(`${provider.id}:${o.model}`);
   if (provider.note) io.log(`\nNote: ${provider.note}`);
-  // The catalogue's settings and models were read from provider.version, so that is the
-  // version installed: added when missing, replaced when another is installed (F7).
-  const found = installedVersion(io.root, provider.package);
-  if (found === null || (provider.version && found !== provider.version)) {
-    const spec = provider.version ? `${provider.package}@${provider.version}` : provider.package;
-    io.log(found === null ? `\nInstalling ${spec} ...` : `\n${provider.package}@${found} is installed; setup was built for ${provider.version}. Installing ${spec} ...`);
-    if (io.run("pnpm", ["add", spec], io.root) !== 0) throw new Error(`pnpm add ${spec} failed`);
-  }
 
-  // 2. The provider's settings, kept in .env (git-ignored); `pnpm dev` passes them on.
-  // A --set value is written as given; a required setting already in .env is kept;
-  // any other required setting is asked.
-  const envPath = join(io.root, ".env");
+  // Select the owning folder before collecting private settings. Nothing is
+  // written until the full agent file has been validated.
+  const id = o.agent ?? (await text(io, "\nAgent folder name (agents/<name>)", "my-agent", (v) => agentProblem(io.root, v)));
+  const dir = join(io.root, "agents", id);
+  // Each agent keeps its own provider settings; never read the repository's .env.
+  const envPath = folderFile({ agentDir: dir, path: ".env", resource: "provider settings" });
+  for (const path of ["agent.json", ".taskfast/config.json", WALLET_PATH, PASSWORD_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
   let envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   const save = (name: string, value: string) => {
-    envText = upsertEnv(envText, name, value);
-    writeFileSync(envPath, envText, { mode: 0o600 });
-    chmodSync(envPath, 0o600);
-    io.log(`Saved ${name} to .env`);
+    envText = upsertEnv(envText, name, credentialSetting({ agentDir: dir, name, value }));
+    io.log(`Collected ${name} for agents/${id}/.env`);
   };
+  // Required shell settings are saved to this agent's private settings so the
+  // stopped folder remains self-contained.
+  const available = (name: string) => set.get(name) ?? envText.split("\n").find((line) => line.startsWith(`${name}=`))?.slice(name.length + 1) ?? io.env[name];
+  const defaults = provider.settings.filter((s) => s.required).map((s) => s.name);
+  const groups = [defaults, ...provider.authAlternatives];
+  const complete = groups.find((group) => group.every((name) => available(name)));
+  // A partial explicitly supplied alternative chooses its path (e.g. AWS keys),
+  // rather than prompting for an unrelated bearer token or cloud API key.
+  const required = complete ?? groups.find((group) => group.some((name) => !defaults.includes(name) && available(name))) ?? defaults;
+  if (provider.nativeId === "google-vertex" && !required.includes("GOOGLE_CLOUD_API_KEY")) {
+    const path = available("GOOGLE_APPLICATION_CREDENTIALS") ?? ".config/gcloud/application_default_credentials.json";
+    const local = credentialSetting({ agentDir: dir, name: "GOOGLE_APPLICATION_CREDENTIALS", value: path });
+    if (!existsSync(resolve(dir, local))) throw new Error("Vertex ADC needs an existing credentials file inside the agent folder; place it there and pass --set GOOGLE_APPLICATION_CREDENTIALS");
+    save("GOOGLE_APPLICATION_CREDENTIALS", local);
+  }
   for (const [name, value] of set) save(name, value);
-  for (const s of provider.settings.filter((s) => s.required && !set.has(s.name))) {
+  for (const s of provider.settings.filter((s) => required.includes(s.name) && !set.has(s.name))) {
     if (envText.split("\n").some((l) => l.startsWith(`${s.name}=`) && l.length > s.name.length + 1)) {
       io.log(`Using ${s.name} already in .env (pass --set ${s.name}=... to replace it)`);
+      continue;
+    }
+    const value = available(s.name);
+    if (value) {
+      save(s.name, value);
       continue;
     }
     const what = s.description ? ` (${s.description})` : "";
@@ -253,13 +282,19 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   }
   const optional = provider.settings.filter((s) => !s.required && !set.has(s.name)).map((s) => s.name);
   if (optional.length) io.log(`\nOptional settings, if you need them, go in .env too (or pass --set): ${optional.join(", ")}`);
-  if (provider.id === "anthropic" && io.env.ANTHROPIC_BASE_URL && !io.env.ANTHROPIC_BASE_URL.replace(/\/$/, "").endsWith("/v1")) {
-    io.log(`Warning: your shell sets ANTHROPIC_BASE_URL=${io.env.ANTHROPIC_BASE_URL}. Unset it before \`pnpm dev\`, or the agent's model calls fail with "Not Found".`);
+  let model: string;
+  for (;;) {
+    model = `${provider.id}:${o.model ?? (await pickModel(io, provider))}`;
+    try {
+      await createAgentModels(model);
+      break;
+    } catch (error) {
+      if (o.model !== undefined) throw error;
+      io.log(error instanceof Error ? error.message : "unsupported model");
+    }
   }
-  const model = `${provider.id}:${o.model ?? (await pickModel(io, provider))}`;
 
   // 3. The agent.
-  const id = o.agent ?? (await text(io, "\nAgent folder name (agents/<name>)", "my-agent", (v) => agentProblem(io.root, v)));
   const role = (o.role as Role | undefined) ?? (await choose(io, "\nWhat will it do on TaskFast?", Object.keys(ROLES) as Role[], (r) => ROLES[r]));
   if (o.budget !== undefined && role === "worker") throw new Error("--budget: a worker has no budget; it applies to poster and both");
   const example = JSON.parse(readFileSync(join(io.root, "examples", EXAMPLE[role]), "utf8")) as AgentSpec;
@@ -270,23 +305,29 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
     goals: o.goals ?? (await text(io, "What the agent should aim for", example.character.goals)),
   };
   if (role !== "worker") {
-    character.budgetUsd = Number(o.budget ?? (await text(io, "Budget per job in USD", String(example.character.budgetUsd ?? 20), (v) => (Number(v) > 0 ? null : "enter a positive number"))));
+    character.budgetUsd = Number(o.budget ?? (await text(io, "Budget per job in USD", String(example.character.budgetUsd ?? 20), (v) => (Number(v) > 0 && Number.isFinite(Number(v)) ? null : "enter a positive number"))));
   }
   const spec = parseAgentSpec({ ...example, role, model, character });
-  const dir = join(io.root, "agents", id);
-  mkdirSync(dir, { recursive: true });
+  const settings: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parseEnv(envText))) if (typeof value === "string") settings[name] = value;
+  await createAgentModels(model, { agentDir: dir, settings });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (envText) {
+    writeFileSync(envPath, envText, { mode: 0o600 });
+    chmodSync(envPath, 0o600);
+  }
   writeFileSync(join(dir, "agent.json"), `${JSON.stringify(spec, null, 2)}\n`);
   io.log(`\nWrote agents/${id}/agent.json (dials, temperament and limits come from examples/${EXAMPLE[role]}; edit them there any time).`);
 
   // 4. The agent's TaskFast account, in the environment given by --env.
   const cliEnv = taskfastEnv(environment);
-  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init"];
+  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init", `--keystore-path=${WALLET_PATH}`, ...(existsSync(join(dir, PASSWORD_PATH)) ? [`--wallet-password-file=${PASSWORD_PATH}`] : [])];
   const initCmd = `taskfast ${initArgs.join(" ")}`;
   const ran = o.init ?? !/^n/i.test(await io.ask(`\nRun \`${initCmd}\` in agents/${id} now? It signs the agent up on ${environment} and sets up its wallet. [Y/n]: `));
   const status = ran ? io.run("taskfast", initArgs, dir) : -1;
   if (status !== 0) io.log(`\n${ran ? "taskfast init did not finish. " : ""}Run it yourself when ready:\n  cd agents/${id} && ${initCmd}`);
 
-  io.log(`\nNext, in two terminals:\n  pnpm dev\n  pnpm agents${environment === "production" ? "" : ` --env ${environment}`}`);
+  io.log(`\nNext:\n  pnpm agents --env ${environment}`);
 }
 
 // Reads setup's command-line flags; throws on an unknown flag.

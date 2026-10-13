@@ -66,9 +66,8 @@ async function submissionFee(read: (args: string[]) => Promise<CliResult>): Prom
   return Number.isFinite(fee) && fee >= 0 ? fee : "could not read the submission fee: the platform config has none";
 }
 
-// The money rule, owned here and called once per point in the actor's step:
-// authorize (when a money action is armed), recheck (just before it runs) and account
-// (after it ran, or after it was found interrupted).
+// Pure money helpers retained for package consumers. The Pi adapter uses amountOf
+// and overLimit inside its session-level reservation/accounting protocol.
 
 // Fixes the amount from the server and checks it against the agent's own limits.
 export async function authorize(source: AmountSource, input: Record<string, unknown>, limits: Limits | undefined, spend: Spend, read: (args: string[]) => Promise<CliResult>): Promise<{ amount: number } | { refused: string }> {

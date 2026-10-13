@@ -1,128 +1,133 @@
 # Context
 
-The language of this repository: what each word means here, and which words to avoid. [README.md](README.md#code) maps the modules; this file defines the terms they use. Why the repository exists is in [INTENT.md](INTENT.md).
+The language of this repository. [README.md](README.md#code) maps modules; this file defines their terms. [INTENT.md](INTENT.md) records the design choices.
 
 ## What the agent sits between
 
-- **TaskFast server**: the marketplace. It owns tasks, bids, escrow and settlement. The agent never calls it directly.
-- **`taskfast` CLI**: the only way the agent reaches the server. Each command runs as a child process with the agent's own config (`cli.ts`).
-- **Durable Actors runtime** (`durable-actors`): runs each agent as an actor and keeps its state in `.actors/`. Started by `pnpm dev`.
-- **Model provider**: any AI SDK provider. It chooses the agent's next tool call. It never runs a command or sets an amount itself.
-- **The user's wallet**: set up by `taskfast init`, funded and signed for by the user.
+- **TaskFast server:** owns tasks, bids, escrow and settlement. The agent never calls it directly.
+- **`taskfast` CLI:** the only way the agent reaches the server. Each command is a child process with the agent's own config and a restricted environment (`cli.ts`).
+- **Pi Durable:** persists the conversation and schedules model/tool tasks inside the local host process.
+- **Marketplace policy:** kit-owned, session-scoped state and checks for writes, amounts, limits, counterparties and notes (`policy.ts`).
+- **Model provider:** a supported native Pi-ai provider. The model chooses tools; code runs commands and sets amounts. See [Providers](docs/providers.md) for support gaps.
+- **The user's wallet:** initialized by `taskfast init`, funded and signed for by the user.
 
-## Language
+## Who is who
 
-### Who is who
+**Agent:**
+The user's marketplace participant, with its own identity, behaviour, credentials, wallet material and durable history. On the server it is an `Agent` account.
+_Avoid_: bot, persona, or user when the agent is meant.
 
-**Agent**:
-The user's marketplace agent: one folder `agents/<name>/` with an agent file and a TaskFast config, run as one Persona actor. On the server it is an `Agent` account.
-_Avoid_: bot, persona (except for the actor class), user.
+**Agent folder:**
+The self-contained bundle belonging to one agent. Its configuration, credentials and durable history stay together when the stopped agent is archived or moved; a copy is not a new agent.
 
-**Coding agent**:
-A tool such as Claude Code, OpenAI Codex, pi or GitHub Copilot that edits this repository or runs its commands for a person. It reads `AGENTS.md`. It is never the marketplace agent.
-_Avoid_: agent, on its own, when the coding agent is meant.
+**Coding agent:**
+A tool such as Claude Code, OpenAI Codex, pi or GitHub Copilot that edits this repository or runs commands for a person. It reads `AGENTS.md`. It is never the marketplace agent.
+_Avoid_: agent on its own when the coding agent is meant.
 
-**User**:
-The person who owns the agent, its TaskFast account, its wallet and its model key.
+**User:**
+The person who owns the agent, account, wallet and model credentials. Distinct agent folders or credentials do not imply distinct users; TaskFast forbids an owner's agents from working on that owner's tasks.
 
-**Persona** (`Persona`):
-The actor class in `actors.ts`. One instance per agent, keyed by the agent's folder name.
+**Host:**
+The process that calls `openMarketplaceAgent`, owns the agent's store and stream, polls with `ping()` and closes them at shutdown. Here it is `src/run.ts`; downstream consumers can supply another host. Only a host can set counterparties.
 
-**Host**:
-Whatever calls `init()` and `ping()` on a Persona. Here that is `src/run.ts`. TaskFast's own persona tooling is another host. Only a host can set counterparties.
+**Honest:**
+Acting as an ordinary marketplace user would: real bids, work and settlement. The only kind of agent this repository builds.
 
-**Honest**:
-Acting as an ordinary marketplace user would: real bids, real work, real settlement. The only kind of agent this repository builds.
-
-### The agent file
+## The agent file
 
 **Agent file** (`agent.json`, `AgentSpec`):
-Who the agent is and how it behaves: `role`, `model`, `character`, `dials` and optional `limits`. Checked strictly by `spec.ts`; an unknown field is refused.
-_Avoid_: config (that is the TaskFast config), profile.
+Identity and behaviour: `role`, `model`, `character`, `dials` and optional `limits`. Strictly checked by `spec.ts`; unknown fields are refused.
+_Avoid_: config (that means the TaskFast config), profile.
 
-**Role**:
+**Role:**
 `poster` (hires), `worker` (takes jobs) or `both`.
 
-**Character**:
+**Character:**
 The person the model writes as: name, business, description, goals and, for posting, `budgetUsd` per job.
 
-**Dials**:
-`temperament` sets the manner phrase in the system prompt (`prompt.ts`). `competence`, `diligence` and `priceSensitivity` are checked to be from 0 to 1, but nothing in this repository or in TaskFast reads them yet. Do not tell a user they change behaviour.
+**Dials:**
+`temperament` sets the system prompt's manner phrase (`prompt.ts`). `competence`, `diligence` and `priceSensitivity` must be from 0 to 1 but currently do not affect behaviour.
 
-**Limits** / **Spend**:
-`perJobUsd` caps one money action and `dailyUsd` caps a UTC day. Spend is what the agent has committed today, counted with or without limits.
+**Limits / spend:**
+`perJobUsd` caps one money action; `dailyUsd` caps commitments per UTC day. Spend is durably committed at reservation, with or without limits. Known refusals release it; uncertain actions retain it. Daily records are not evicted.
 
-**Model id**:
-`provider:model`, for example `anthropic:claude-haiku-5-5`. The provider part names an `@ai-sdk/<provider>` package (`providers.ts`).
+**Model id:**
+`provider:model`, for example `anthropic:claude-sonnet-4-6`. The provider names a supported Pi-ai entry or documented alias, not a package to install. Setup's catalogue and auth constraints are in [Providers](docs/providers.md).
 
-### Where it runs
+## Where it runs
 
-**Environment**:
-The kit's names are `production`, `staging` and `development`. The `taskfast` CLI's names for them are `prod`, `staging` and `local` (`ENVIRONMENTS` in `run.ts`). Use the kit's names with people and in `--env` for `pnpm` commands; the CLI's names appear in code and in `taskfast --env`.
+**Environment:**
+The kit uses `production`, `staging`, `development`. The CLI equivalents are `prod`, `staging`, `local` (`ENVIRONMENTS` in `run.ts`). Use kit names with `pnpm ... --env`; CLI names with `taskfast --env` and in state paths. Production is the default and real money, not permission to run there.
 
-**Runtime** (`Runtime` type):
-What an agent's commands run against: its environment, the absolute path of its TaskFast config and, optionally, its counterparties. Set once at `init()`.
-_Avoid_: runtime, on its own, for this; "runtime" alone means the Durable Actors runtime.
+**Runtime options** (`Runtime`):
+The CLI environment, absolute TaskFast config path, optional absolute wallet password-file path and allowed counterparties supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is the TaskFast agent UUID and environment; moving the folder does not change it, but another account cannot use its ledger.
+_Avoid_: runtime alone for this data; that can mean Pi's execution engine.
 
 **TaskFast config** (`.taskfast/config.json`):
-Written by `taskfast init`. It holds the agent's TaskFast API key and wallet settings. Never printed or committed.
+Written by `taskfast init`; holds TaskFast API credentials and wallet settings. Never printed, committed or copied.
 
-**Provider settings** (`.env`):
-The model provider's keys and settings, written by `pnpm setup-agent` and passed to the actors by `pnpm dev`.
+**Provider settings** (`agents/<name>/.env`):
+One agent's private model credentials and settings. Setup saves them in its folder; its private model collection uses them without loading repository-level or other agents' settings, and never passes them to TaskFast children. Never printed, committed or copied.
 
-### How the agent acts
+**Store:**
+`agents/<agent>/.pi-state/<cli-env>/state.sqlite`. Holds Pi conversation/tasks plus kit documents for policy and admitted events. Uses Node 24 SQLite WAL and `synchronous=FULL`. Power durability depends on local storage honoring fsync; network filesystems are unsupported.
 
-**Event**:
-One marketplace event from `taskfast events stream`, with an `event_id` and an `event` name.
+**Owner lock:**
+The separate `state.sqlite.owner` SQLite database holds `BEGIN EXCLUSIVE` for the store's lifetime. A second owner is refused; process death releases the OS lock without deleting files. Never delete or copy a live store or companion files.
 
-**Pump** / **Listener**:
-The pump runs one event stream and acks each event once `deliver()` has stored it (`pump.ts`). The listener starts one pump per actor in each runtime worker (`listener.ts`); after a worker restarts, the next call to the actor starts it again. An event that keeps failing is written to `dead-letter.jsonl` next to the agent's TaskFast config, then acked.
+**Session / root conversation:**
+The persistent Pi session owns policy documents. The agent uses only its root conversation for marketplace work. No coding tools, forks or child conversations are enabled. Session-scoped policy survives conversation reset and compaction.
 
-**Inbox**:
-Events delivered and not yet shown to a turn.
+## How the agent acts
 
-**Ping**:
-A wake-up from the host, every 15 minutes from `pnpm agents`. The runtime has no timers, and new open tasks arrive as no event, so this is how an idle agent looks for work.
+**Event:**
+A marketplace event from `taskfast events stream`, with an `event_id` and an `event` name.
 
-**Turn**:
-One run of the model over the inbox, made of steps, until the model ends it. Its transcript is what the model sees of its own tool calls.
+**Admission:**
+`deliver()` durably records a validated event, deduplicated by event id, before resolving. Admission is not completion of model work. Stored event work is submitted and recovered separately.
 
-**Step**:
-One committed call to the actor: the model chooses a tool, or one chosen tool runs.
+**Pump / listener:**
+The pump runs a stream and acknowledges an event after `deliver()` resolves (`pump.ts`). Failed admission is not acknowledged. Repeated failures or invalid events are recorded in `dead-letter.jsonl` next to the TaskFast config before acknowledgement; if recording fails the stream stops without acknowledging. The host owns one listener per agent and restarts streams with backoff (`listener.ts`).
 
-**Pending** / **armed**:
-The tool call the model chose and that has not finished. A write is armed in one step (status `executing`) and runs in the next; only the call that armed it may run it.
+**Ping / poll:**
+A host wake-up: `pnpm agents` polls immediately and every 15 minutes thereafter. It submits marketplace work when idle. Events do not cover discovery of every new open task.
 
-**Tool**:
-One entry in the tool table (`tools.ts`), with a kind:
-- **read**: safe to repeat.
-- **write**: changes something on the server; runs at most once per action key.
-- **money**: a write that commits funds; its amount comes from the server and counts against limits.
-- **memory**: changes only the agent's notes.
+**Recovery:**
+Resuming admitted events and queued work after interruption. Pi owns persisted model/tool tasks; the kit retains event admission records and permanent write policy. Recovery does not grant permission to repeat an uncertain write.
 
-**Action key**:
-The name of a write, such as `bid:<task>` or `escrow:<bid>`. Two attempts with the same key are the same action.
+**Tool:**
+An entry in `tools.ts`:
+- **read:** safe to repeat; registered with Pi as safe to replay.
+- **write:** changes server state; registered unsafe to replay and guarded by an action key.
+- **money:** a write that commits funds, with an amount from the server.
+- **memory:** changes only notes; also registered unsafe to replay.
+
+**Action key:**
+The identity of a write, such as `bid:<task>` or `escrow:<bid>`. Two attempts with the same key are the same action.
+
+**Reservation:**
+A durably committed `reserved` action and its spending before CLI dispatch. Only the current execution can dispatch it. On reopening, an interrupted reservation becomes `uncertain`, even if the CLI may never have started.
 
 **Ledger** (`actions`):
-One record per action key, never evicted. It is what makes a write run at most once.
+One permanent record per action key in session-scoped `Policy`. Never evicted. Status is `reserved`, `done`, `failed` or `uncertain`. A known failed action may be attempted again; other statuses cannot dispatch again.
 
-**Outcome**:
-How a command ended: `ok`; `failed`, refused before it acted, so it may be tried again; or `uncertain`, which may have reached the server, so it is never repeated and counts as spent.
+**Outcome:**
+The CLI result: `ok`; `failed` (known refusal before acting); or `uncertain` (may have reached the server). Success records `done`. Only `failed` is retryable and releases committed spending; uncertain writes never repeat and count as spent.
 
 **Notes** (`memory` field):
-Short notes the agent keeps between turns with the `remember` and `forget` tools.
-_Avoid_: memory, on its own; it is also the name of a tool kind.
+Short notes retained by policy between model runs using `remember` and `forget`.
+_Avoid_: memory alone; it is also a tool kind.
 
-**Counterparty**:
-The other side of a write: a task's poster, a bid's bidder or a task's worker (`party` on each tool). A host may give a list of allowed counterparties; without one, nothing is checked.
+**Counterparty:**
+The other side of a write: task poster, bid bidder or task worker, identified by `party` on the tool. A host may supply allowed accounts and agents; without a list, nothing is checked. A post has no counterparty.
 
-### Maintaining the kit
+## Maintaining the kit
 
 **Provider catalogue** (`providers.json`, `src/core/providers.ts`):
-Generated by `scripts/gen-providers.mjs` from the providers' packages, npm and models.dev. Not edited by hand.
+Generated offline by `scripts/gen-providers.mjs` from the installed exact Pi-ai pin. Not edited by hand.
 
 **Kit scan** (`test/kit.test.ts`):
-Fails if any file names private TaskFast test tooling. It covers these documents too.
+Rejects names from private TaskFast test tooling. Covers these documents too; never weaken it.
 
-**Pin**:
-The exact commit of this repository that TaskFast's persona tooling depends on.
+**Pin:**
+An exact dependency version or the exact commit downstream TaskFast tooling uses. Pi packages are experimental and pinned to 1.1.0. Downstream consumers must replace removed `actors`, `self` and `turn` imports with the new `agent`, `policy` and `storage` lifecycle; no compatibility or state-migration tooling is supplied.
