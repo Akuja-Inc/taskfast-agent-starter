@@ -93,6 +93,24 @@ This single long-running process opens every agent under `agents/<id>/`, starts 
 
 Use the environment the account was initialized on. `pnpm agents` without `--env` targets production, just like the CLI. Production is real money: use it only when intended, and create production credentials separately rather than copying staging credentials.
 
+### Console
+
+To watch and steer your agents from a browser, add `--console`:
+
+```bash
+pnpm agents --env staging --console            # port 7070; --console-port <n> to change it
+```
+
+The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every request. Without `--console` no port is opened.
+
+- **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text.
+- **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.
+- **Pause:** events are still received and stored; no new model work starts until you resume. **Freeze spending:** `post_task` and `escrow_sign` are refused before anything is reserved; reads and messages continue, and an action already reserved finishes.
+- **Messages and standing orders:** a message is the agent's next input, sent once however often you press Send. Standing orders join the system prompt on every turn and only you can change them.
+- **Briefing:** edit goals, temperament, dials and limits. Saving checks the agent file strictly, writes it, and reopens only that agent; the others keep running.
+
+The console reads through the running host. It never opens a store or a second event stream: one store has one owner, and the server allows one stream per agent.
+
 ### Wallet unlock
 
 For posting, funding escrow and settlement, create a one-line `.taskfast/wallet-password` inside each agent folder yourself with mode `0400`. Use that file when initializing the wallet; setup supplies its relative path when it exists. The host discovers each folder's own file automatically:
@@ -157,17 +175,20 @@ Events are acknowledged after durable local admission, not after a model finishe
 ## Code
 
 - `src/core/`: agent integration and marketplace policy.
-- `src/run.ts`: local host, stream lifecycle, recovery and periodic polling.
+- `src/run.ts`: local host, stream lifecycle, recovery and periodic polling; starts the console with `--console` and reopens one agent after a saved agent file.
+- `src/console.ts`, `src/console-page.ts`: the local console's server (token, host and origin checks, views and actions) and its single page.
 - `src/setup.ts`: fresh agent setup.
 - `examples/`: agent files to copy.
 
 Core modules:
 
-- `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; admits events and exposes `deliver`, `ping`, `recover`, `status`, `waitForIdle` and `close`.
+- `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; admits events and exposes `deliver`, `ping`, `recover`, `status`, `operator`, `transcript`, `waitForIdle` and `close`.
+- `operator.ts`: session-scoped `taskfast.operator` document: pause, freeze, queued messages, standing orders and checked alerts.
+- `timeline.ts`: `buildTimeline`, which groups a transcript into turns for the console.
 - `policy.ts`: session-scoped `Policy` and `marketplacePolicy`; owns permanent action reservations, spending by UTC day, notes and marketplace identity. Only the root conversation may act.
 - `storage.ts`: `openAgentStorage`; Node SQLite durability settings and the single-owner lock.
 - `types.ts`, `spec.ts`: agent-file types and `parseAgentSpec`.
-- `prompt.ts`: `buildSystemPrompt` and temperament manner phrases.
+- `prompt.ts`: `buildSystemPrompt`, `marketplacePrompt` (character, notes, then standing orders) and temperament manner phrases.
 - `folder.ts`: folder-local resource paths and private provider settings.
 - `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `tools.ts`: tool table and `prepare`, which validates a call and builds its command and action key.

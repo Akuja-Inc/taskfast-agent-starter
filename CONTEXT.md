@@ -118,6 +118,12 @@ The CLI result: `ok`; `failed` (known refusal before acting); or `uncertain` (ma
 Short notes retained by policy between model runs using `remember` and `forget`.
 _Avoid_: memory alone; it is also a tool kind.
 
+**Operator controls** (`taskfast.operator`, `operator.ts`):
+What the user has told the host to do with an agent: pause (events are admitted, no new model work starts), freeze (money tools refused before reservation), queued messages, standing orders and checked alerts. Session-scoped and separate from `Policy`. Standing orders join the system prompt after the notes; the agent cannot change them. Checking an alert never changes the ledger.
+
+**Console:**
+The opt-in local web page served by the host with `pnpm agents --console`. It reads through the running host, never the store or a second stream, and needs the per-start token on every request.
+
 ## Maintaining the kit
 
 **Provider catalogue** (`providers.json`, `src/core/providers.ts`):
