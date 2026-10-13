@@ -24,7 +24,7 @@ if (factories.length !== 1) throw new Error("unsupported Pi runtime factory expo
 const PiRuntime = factories[0];
 type PiEngine = Awaited<ReturnType<typeof PiRuntime.open>>;
 const context = BACKGROUND_CONTEXT;
-type EventWork = { event: Json; attempt: number } & (
+export type EventWork = { event: Json; attempt: number } & (
   | { kind: "admitted"; notBefore?: number }
   | { kind: "submitted" | "done" | "abandoned"; submission: SubmissionId }
 );
@@ -64,6 +64,10 @@ export interface OperatorControls {
   addOrder(order: string): Promise<void>;
   removeOrder(index: number): Promise<void>;
   markChecked(id: string): Promise<void>;
+  // Admitted marketplace events by `event:<event_id>`, with their run state.
+  events(): Promise<Record<string, EventWork>>;
+  // One fresh run for an abandoned event; a failure abandons it again.
+  retryEvent(eventId: string): Promise<void>;
 }
 
 function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
@@ -224,6 +228,17 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           const state = await tx.doc(Operator);
           state.orders = state.orders.filter((_, at) => at !== index);
         }, context);
+      },
+      events: async () => (await owner.snapshot(Events, context))?.events ?? {},
+      retryEvent: async (eventId) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Events);
+          const work = state.events[`event:${eventId}`];
+          if (work?.kind !== "abandoned") throw new Error(`event ${eventId} is not abandoned`);
+          // A new attempt number is a new request ID; reusing the last would dedupe into the failed run.
+          state.events[`event:${eventId}`] = { kind: "admitted", event: work.event, attempt: work.attempt + 1 };
+        }, context);
+        await recover();
       },
       markChecked: async (id) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).checked[id] = new Date(now()).toISOString(); }, context); },
     };

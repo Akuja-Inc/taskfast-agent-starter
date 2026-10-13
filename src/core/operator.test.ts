@@ -5,7 +5,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, expect, it } from "vitest";
-import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
+import { EVENT_RETRY, openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
 import { parseAgentSpec } from "./spec.js";
 import type { AgentSpec } from "./types.js";
@@ -24,14 +24,14 @@ function spec(): AgentSpec {
   return { ...parseAgentSpec(value), model: "faux:test", limits: { dailyUsd: 50, perJobUsd: 20 } };
 }
 // A real store in a fresh folder, a scripted model and a recording CLI.
-async function open(dir = mkdtempSync(join(tmpdir(), "operator-")), dispatch?: (args: string[]) => Promise<CliResult>) {
+async function open(dir = mkdtempSync(join(tmpdir(), "operator-")), dispatch?: (args: string[]) => Promise<CliResult>, now?: () => Date) {
   if (!dirs.includes(dir)) dirs.push(dir);
   const faux = fauxProvider({ models: [{ id: "test" }] });
   const models = createModels();
   models.setProvider(faux.provider);
   const calls: string[][] = [];
   const agent = await openMarketplaceAgent({
-    storePath: join(dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(dir, "config.json") }, models,
+    storePath: join(dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(dir, "config.json") }, models, now, recoverEveryMs: 60_000,
     command: async (_rt, args): Promise<CliResult> => {
       calls.push(args);
       if (args[0] === "me") return { outcome: "ok", data: { profile: { id: agentId } } };
@@ -125,6 +125,36 @@ it("marks an uncertain action checked without letting it run again", async () =>
   kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post, { id: "again" })], { stopReason: "toolUse" }), fauxAssistantMessage("Skipped.")]);
   await run(kit.agent);
   expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
+});
+
+it("runs an abandoned event once more on request, abandoning it again if that run fails", async () => {
+  let at = Date.parse("2026-10-13T12:00:00Z");
+  const kit = await open(undefined, undefined, () => new Date(at));
+  const failure = () => fauxAssistantMessage("", { stopReason: "error", errorMessage: "scripted model failure" });
+  kit.faux.setResponses(Array.from({ length: EVENT_RETRY.retries + 2 }, failure));
+  await kit.agent.deliver({ event_id: "stuck", event: "payment_signature_required" });
+  // Each failure takes two passes: one observes it and schedules the retry, the next submits it.
+  for (let n = 0; n <= 2 * EVENT_RETRY.retries; n++) {
+    await kit.agent.recover();
+    await kit.agent.waitForIdle();
+    at += 3_600_000;
+  }
+  await kit.agent.recover();
+  expect(kit.faux.state.callCount).toBe(EVENT_RETRY.retries + 1);
+  expect((await kit.agent.operator.events())["event:stuck"].kind).toBe("abandoned");
+
+  await kit.agent.operator.retryEvent("stuck");
+  await kit.agent.waitForIdle();
+  await kit.agent.recover();
+  expect(kit.faux.state.callCount).toBe(EVENT_RETRY.retries + 2);
+  expect((await kit.agent.operator.events())["event:stuck"].kind).toBe("abandoned");
+
+  kit.faux.setResponses([fauxAssistantMessage("Signed.")]);
+  await kit.agent.operator.retryEvent("stuck");
+  await kit.agent.waitForIdle();
+  await kit.agent.recover();
+  expect(kit.faux.state.callCount).toBe(EVENT_RETRY.retries + 3);
+  expect((await kit.agent.operator.events())["event:stuck"].kind).toBe("done");
 });
 
 it("refuses a money tool while spending is frozen, before reserving anything, and still runs reads", async () => {
