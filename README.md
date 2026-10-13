@@ -101,7 +101,7 @@ To watch and steer your agents from a browser, add `--console`:
 pnpm agents --env staging --console            # port 7070; --console-port <n> to change it
 ```
 
-If the port is taken, the console tries the next one up, one at a time (up to 100 ports), and prints the link with the port it got. The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every request. Without `--console` no port is opened.
+If the port is taken, the console tries the next one up, one at a time (up to 100 ports), and prints the link with the port it got. The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every API request. Without `--console` no port is opened.
 
 - **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text.
 - **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.
@@ -110,6 +110,8 @@ If the port is taken, the console tries the next one up, one at a time (up to 10
 - **Briefing:** edit goals, temperament, dials and limits. Saving checks the agent file strictly, writes it, and reopens only that agent; the others keep running. Saving mid-turn interrupts the agent: a write in flight is recorded as uncertain, as after a restart.
 
 The console reads through the running host. It never opens a store or a second event stream: one store has one owner, and the server allows one stream per agent.
+
+Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [briefing editor](docs/console/briefing.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
 
 ### Wallet unlock
 
