@@ -73,12 +73,12 @@ form.inline label { flex: 1 1 280px; }
 <script>
 "use strict";
 const app = document.getElementById("app");
-const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} } };
+const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} }, drop: (k) => { try { sessionStorage.removeItem(k); } catch {} } };
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, error: "", specDraft: null };
-let list = null, view = null;
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false };
+let list = null, view = null, polling = false;
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -130,21 +130,29 @@ function jsonBlock(key, value) {
 }
 async function api(method, path, body) {
   const res = await fetch(path, { method, headers: { authorization: "Bearer " + token, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (res.status === 401) { token = null; render(); throw new Error("The console token was refused. Paste the link pnpm agents printed."); }
-  if (!res.ok) { let message = res.statusText; try { message = (await res.json()).error || message; } catch {} throw new Error(message); }
+  if (res.status === 401) { token = null; store.drop("token"); render(); throw new Error("The console token was refused. Paste the link pnpm agents printed."); }
+  if (!res.ok) { let message = res.statusText; try { message = (await res.json()).error || message; } catch {} const error = new Error(message); error.status = res.status; throw error; }
   return res.status === 204 ? null : res.json();
 }
 async function act(method, action, body) {
   try { ui.error = ""; await api(method, "/api/agents/" + encodeURIComponent(ui.agent) + "/" + action, body); await refresh(); }
-  catch (error) { ui.error = error.message; render(); }
+  // A 409 says the operator acted on stale state (the orders changed): show the reason over fresh data.
+  catch (error) { ui.error = error.message; if (error.status === 409) await refresh(); else render(); }
 }
 async function refresh() {
   if (!token) return render();
+  polling = true;
   try {
     list = await api("GET", "/api/agents");
-    if (!list.agents.some((a) => a.id === ui.agent)) ui.agent = list.agents[0] ? list.agents[0].id : null;
-    view = ui.agent ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
+    // Fall back to the first agent only when nothing is selected. A selected agent
+    // missing from the list is mid save & reopen: keep the selection and say so,
+    // or the console would silently switch the operator to another agent.
+    if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
+    const present = ui.agent !== null && list.agents.some((a) => a.id === ui.agent);
+    ui.reopening = ui.agent !== null && !present;
+    view = present ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
   } catch (error) { ui.error = error.message; }
+  finally { polling = false; }
   render();
 }
 
@@ -185,6 +193,7 @@ function header() {
       el("span", { class: "mono", text: location.host }),
       el("label", { style: "flex-direction:row;align-items:center;color:inherit" }, "Agent",
         el("select", { onchange: (e) => { ui.agent = e.target.value; store.set("agent", ui.agent); ui.open.clear(); ui.raw.clear(); ui.specDraft = null; refresh(); } },
+          ui.reopening ? [el("option", { value: ui.agent, selected: true, text: ui.agent + " · reopening…" })] : [],
           (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + " · " + a.name + " (" + a.role + ")" })))),
       el("nav", { "aria-label": "Console" },
         el("a", { href: "#", "aria-current": ui.tab === "timeline" ? "page" : null, onclick: (e) => { e.preventDefault(); ui.tab = "timeline"; render(); }, text: "Timeline" }),
@@ -303,7 +312,9 @@ function timelineTab() {
         const text = ui.draft.trim();
         if (!text) return;
         ui.draftId = ui.draftId || crypto.randomUUID();
-        act("POST", "messages", { requestId: ui.draftId, text }).then(() => { if (!ui.error) { ui.draft = ""; ui.draftId = null; render(); } });
+        const sentId = ui.draftId, sentDraft = ui.draft;
+        // Clear the box only when nothing new was typed while this send was in flight.
+        act("POST", "messages", { requestId: sentId, text }).then(() => { if (!ui.error && ui.draftId === sentId && ui.draft === sentDraft) { ui.draft = ""; ui.draftId = null; render(); } });
       } },
         el("label", {}, "Message " + (view.spec.character.name || "the agent"),
           el("textarea", { rows: 2, oninput: (e) => { ui.draft = e.target.value; ui.draftId = null; }, text: ui.draft })),
@@ -320,17 +331,18 @@ function briefingTab() {
   const draft = ui.specDraft || (ui.specDraft = JSON.parse(JSON.stringify(view.spec)));
   const set = (path, value) => { let at = draft; for (const key of path.slice(0, -1)) at = at[key] = at[key] || {}; at[path[path.length - 1]] = value; render(); };
   const number = (value) => value === "" ? undefined : Number(value);
+  const limitText = (value) => value === undefined ? "no limit" : money(value);
   const limitChanges = ["perJobUsd", "dailyUsd"].filter((k) => (view.spec.limits || {})[k] !== (draft.limits || {})[k]);
-  let orderText = "";
   return el("div", { class: "page" },
     el("main", {},
       el("section", { class: "card" },
         el("h2", {}, "Standing orders ", el("span", { class: "small", text: "· live from the next turn · the agent cannot remove these" })),
         el("ol", { style: "margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px" },
           op.orders.map((order, index) => el("li", {}, el("div", { style: "display:flex;gap:12px;align-items:center;justify-content:space-between" }, el("span", { text: order }),
-            el("button", { "aria-label": "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index), text: "Remove" }))))),
-        el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); if (orderText.trim()) act("POST", "orders", { text: orderText.trim() }); } },
-          el("label", {}, "New order", el("input", { type: "text", oninput: (e) => { orderText = e.target.value; } })),
+            // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
+            el("button", { "aria-label": "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index, { expect: order }), text: "Remove" }))))),
+        el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) act("POST", "orders", { text }).then(() => { if (!ui.error) { ui.orderDraft = ""; render(); } }); } },
+          el("label", {}, "New order", el("input", { type: "text", value: ui.orderDraft, oninput: (e) => { ui.orderDraft = e.target.value; } })),
           el("button", { type: "submit", class: "primary", text: "Add" })),
         el("div", { class: "small", text: "The agent's own notes: " + (view.notes.length ? view.notes.join(" · ") : "none yet.") })),
       el("section", { class: "card" },
@@ -344,7 +356,7 @@ function briefingTab() {
           ["competence", "diligence", "priceSensitivity"].map((dial) => el("label", {}, dial + " " + draft.dials[dial],
             el("input", { type: "range", min: 0, max: 1, step: "0.1", value: draft.dials[dial], onchange: (e) => set(["dials", dial], Number(e.target.value)) })))),
         limitChanges.length ? el("div", { class: "note", role: "group" }, el("strong", { text: "Confirm spending change" }),
-          limitChanges.map((k) => el("div", { class: "mono", text: (k === "dailyUsd" ? "Daily limit " : "Per job limit ") + money((view.spec.limits || {})[k]) + " → " + money((draft.limits || {})[k]) })),
+          limitChanges.map((k) => el("div", { class: "mono", text: (k === "dailyUsd" ? "Daily limit " : "Per job limit ") + limitText((view.spec.limits || {})[k]) + " → " + limitText((draft.limits || {})[k]) })),
           el("div", { class: "small", text: "Takes effect when the agent reopens. Spending already counted today still counts." })) : null,
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
           el("button", { class: "primary", onclick: () => { if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits; act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; }); }, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
@@ -368,11 +380,16 @@ function unlock() {
 function render() {
   const focused = document.activeElement && document.activeElement.tagName;
   if (focused === "INPUT" || focused === "TEXTAREA" || focused === "SELECT") return;
-  app.replaceChildren(...(!token ? [unlock()] : !list || !view ? [el("div", { class: "unlock", text: ui.error || "Loading…" })] :
+  app.replaceChildren(...(!token ? [unlock()] :
+    !list || (!view && !ui.reopening) ? [el("div", { class: "unlock", text: ui.error || "Loading…" })] :
+    ui.reopening ? [...header(), el("div", { class: "page" },
+      el("div", { class: "note", role: "status", text: ui.agent + " is saving and reopening, so it is missing from the agent list for a moment. It stays selected here; its panels return when it reappears." }),
+      ui.error ? el("div", { class: "error", role: "alert", text: ui.error }) : null)] :
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
 }
 refresh();
-setInterval(refresh, 3000);
+// Skip a tick while a slow refresh is still running; overlapping polls would let the last finisher win with stale state.
+setInterval(() => { if (!polling) refresh(); }, 3000);
 </script>
 </body>
 </html>
