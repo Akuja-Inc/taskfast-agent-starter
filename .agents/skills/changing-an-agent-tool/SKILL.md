@@ -24,8 +24,8 @@ Run `taskfast <command> --help` with the CLI version the kit requires (0.19.0 or
 | Kind | Use when | Must also have |
 |---|---|---|
 | `read` | It changes nothing on the server. Safe to repeat. | Nothing else. |
-| `write` | It changes something on the server. | `key` and `party` |
-| `money` | It commits funds. | `key`, `party` and `amount` |
+| `write` | It changes something on the server. | `key` |
+| `money` | It commits funds. | `key` and `amount` |
 | `memory` | It changes only the agent's notes. | Its own branch in `marketplacePolicy.execute` in `policy.ts` |
 
 Reads are safe to replay. Writes, money actions and notes operations are registered unsafe to replay in `agent.ts`. Keep sequential execution and root-conversation-only policy access; do not enable forks or child conversations.
@@ -38,7 +38,6 @@ If in doubt between `read` and `write`, it is a `write`. If it can move funds, i
 - `schema`: built with `obj(...)`, so `additionalProperties` is false. List required fields.
 - `args(input)`: check every value with the validators at the top of `tools.ts` (`uuid`, `text`, `word`, `money`, `limit`, `hours`, or a new one beside them). Pass options as `--name=value`, using `opt(...)` for optional ones. Pass ids as positionals after `"--"`. Never put a raw input value into the args array.
 - `key(input)` (write and money): names the action, such as `bid:<task>` or `escrow:<bid>`. Two calls with the same key are the same action and run once. Choose what makes two attempts "the same": usually the target id, plus a digest of the text when one task can have many (`message_send`). Policy refuses a write without a key; still check the new entry explicitly.
-- `party` (write and money): who is on the other side: `poster`, `bidder`, `worker`, `other`, or `null` for a post. A `bidder` tool must require both `task_id` and `bid_id`, because the bidder is found among the task's bids.
 - `amount` (money): `bidPrice` or `submissionFee`. The amount is always read from the server in `money.ts`, never taken from the model's input. A new source means a new `AmountSource` and a new branch in `amountOf`, reading the server.
 
 If the CLI can refuse the command before acting with an error code not in `REFUSED` (`cli.ts`), leave it out unless the CLI guarantees the server did nothing. An unknown code is treated as `uncertain`, which is the safe side.
@@ -47,10 +46,9 @@ If the CLI can refuse the command before acting with an error code not in `REFUS
 
 In `src/core/tools.test.ts`, add the command it builds to the `prepare` cases, at least one refusal for a bad value, and its key for a write.
 
-Some tests pin the whole table on purpose and will fail until you update them:
+One test pins the whole table on purpose and will fail until you update it: "marks exactly the two tools that commit funds as money", the list of money tools. Adding to it means the agent can spend money in a new way. Confirm that with the user before you change the expected list.
 
-- "marks exactly the two tools that commit funds as money": the list of money tools. Adding to it means the agent can spend money in a new way. Confirm that with the user before you change the expected list.
-- "names the other side of every write": the `party` of every write. Add the new tool's.
+If the tool offers a fixed list of values the server publishes (an `enum`, such as `bid_list`'s `status`), add a case to `test/tools-contract.test.ts` that compares it with `test/fixtures/openapi.yaml`.
 
 Never loosen a check to make a new tool fit.
 

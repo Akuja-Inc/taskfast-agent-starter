@@ -7,7 +7,7 @@ The language of this repository. [README.md](README.md#code) maps modules; this 
 - **TaskFast server:** owns tasks, bids, escrow and settlement. The agent never calls it directly.
 - **`taskfast` CLI:** the only way the agent reaches the server. Each command is a child process with the agent's own config and a restricted environment (`cli.ts`).
 - **Pi Durable:** persists the conversation and schedules model/tool tasks inside the local host process.
-- **Marketplace policy:** kit-owned, session-scoped state and checks for writes, amounts, limits, counterparties and notes (`policy.ts`).
+- **Marketplace policy:** kit-owned, session-scoped state and checks for writes, amounts, limits and notes (`policy.ts`).
 - **Model provider:** a supported native Pi-ai provider. The model chooses tools; code runs commands and sets amounts. See [Providers](docs/providers.md) for support gaps.
 - **The user's wallet:** initialized by `taskfast init`, funded and signed for by the user.
 
@@ -28,7 +28,7 @@ _Avoid_: agent on its own when the coding agent is meant.
 The person who owns the agent, account, wallet and model credentials. Distinct agent folders or credentials do not imply distinct users; TaskFast forbids an owner's agents from working on that owner's tasks.
 
 **Host:**
-The process that calls `openMarketplaceAgent`, owns the agent's store and stream, polls with `ping()` and closes them at shutdown. Here it is `src/run.ts`; downstream consumers can supply another host. Only a host can set counterparties.
+The process that calls `openMarketplaceAgent`, owns the agent's store and stream, polls with `ping()` and closes them at shutdown. Here it is `src/run.ts`; downstream consumers can supply another host.
 
 **Honest:**
 Acting as an ordinary marketplace user would: real bids, work and settlement. The only kind of agent this repository builds.
@@ -60,7 +60,7 @@ The person the model writes as: name, business, description, goals and, for post
 The kit uses `production`, `staging`, `development`. The CLI equivalents are `prod`, `staging`, `local` (`ENVIRONMENTS` in `run.ts`). Use kit names with `pnpm ... --env`; CLI names with `taskfast --env` and in state paths. Production is the default and real money, not permission to run there.
 
 **Runtime options** (`Runtime`):
-The CLI environment, absolute TaskFast config path, optional absolute wallet password-file path and allowed counterparties supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is the TaskFast agent UUID and environment; moving the folder does not change it, but another account cannot use its ledger.
+The CLI environment, absolute TaskFast config path, and optional absolute wallet password-file path supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is the TaskFast agent UUID and environment; moving the folder does not change it, but another account cannot use its ledger.
 _Avoid_: runtime alone for this data; that can mean Pi's execution engine.
 
 **TaskFast config** (`.taskfast/config.json`):
@@ -117,9 +117,6 @@ The CLI result: `ok`; `failed` (known refusal before acting); or `uncertain` (ma
 **Notes** (`memory` field):
 Short notes retained by policy between model runs using `remember` and `forget`.
 _Avoid_: memory alone; it is also a tool kind.
-
-**Counterparty:**
-The other side of a write: task poster, bid bidder or task worker, identified by `party` on the tool. A host may supply allowed accounts and agents; without a list, nothing is checked. A post has no counterparty.
 
 ## Maintaining the kit
 
