@@ -51,6 +51,13 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .badge-fail { padding: 1px 7px; border-radius: 999px; background: #B8620A; color: #FFF; font-size: 12px; margin-left: 6px; }
 .task { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border: 1px solid #C9D6EC; border-radius: 8px; background: #F4F7FC; color: var(--ink); text-decoration: none; }
 pre { margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--ink); color: #D7DADF; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.json { position: relative; }
+.json pre { padding-right: 104px; min-height: 52px; }
+.copy { position: absolute; top: 6px; right: 6px; min-height: 40px; padding: 0 10px; display: inline-flex; gap: 6px; align-items: center; font-size: 12px; background: #2A2D31; color: #D7DADF; border-color: #4A4E55; }
+.copy:hover { background: #3A3E44; }
+.copy.done { background: var(--ok); border-color: var(--ok); color: #FFF; }
+.copy.failed { background: var(--bad); border-color: var(--bad); color: #FFF; }
 .check { display: flex; gap: 10px; align-items: flex-start; }
 .check .mark { font-weight: 700; min-width: 5em; } .check .mark.ok { color: var(--ok); } .check .mark.bad { color: var(--bad); }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
@@ -83,6 +90,43 @@ function el(tag, attrs, ...children) {
   }
   for (const child of children.flat()) if (child !== null && child !== undefined && child !== false) node.append(child instanceof Node ? child : String(child));
   return node;
+}
+// Stroke icons drawn as SVG, which document.createElement cannot make.
+function icon(paths) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [k, v] of Object.entries({ width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+  for (const d of paths) { const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", d); svg.append(p); }
+  return svg;
+}
+const COPY_ICON = ["M9 9h11v11H9z", "M5 15H4V4h11v1"];
+const DONE_ICON = ["M5 12l5 5 9-10"];
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  // Fallback for browsers that refuse the async clipboard here.
+  const area = el("textarea", { style: "position:fixed;opacity:0", readonly: true, text });
+  document.body.append(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch {}
+  area.remove();
+  return ok;
+}
+// Every JSON block the page shows: pretty-printed, as text, with a copy button.
+function jsonBlock(key, value) {
+  let text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (typeof value === "string") { try { text = JSON.stringify(JSON.parse(value), null, 2); } catch {} }
+  const state = ui.copied && ui.copied.key === key ? ui.copied.state : null;
+  const label = state === "done" ? "Copied" : state === "failed" ? "Copy failed" : "Copy";
+  return el("div", { class: "json" },
+    el("pre", { text }),
+    el("button", { class: "copy" + (state ? " " + state : ""), type: "button", "aria-label": state ? label : "Copy JSON", onclick: async () => {
+      const ok = await copyText(text);
+      ui.copied = { key, state: ok ? "done" : "failed" };
+      render();
+      clearTimeout(ui.copiedTimer);
+      ui.copiedTimer = setTimeout(() => { ui.copied = null; render(); }, 1600);
+    } }, icon(state === "done" ? DONE_ICON : COPY_ICON), el("span", { text: label })),
+    el("span", { class: "sr-only", role: "status", "aria-live": "polite", text: state === "done" ? "JSON copied" : state === "failed" ? "Could not copy JSON" : "" }));
 }
 async function api(method, path, body) {
   const res = await fetch(path, { method, headers: { authorization: "Bearer " + token, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -168,12 +212,12 @@ function attention() {
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
           el("button", { class: "primary", onclick: () => act("POST", "retry", { eventId: item.id }), text: "Run again" }),
           el("button", { "aria-expanded": String(ui.raw.has("a:" + item.id)), onclick: () => { toggle(ui.raw, "a:" + item.id); }, text: "Raw event" })),
-        ui.raw.has("a:" + item.id) ? el("pre", { text: JSON.stringify(item.event, null, 2) }) : null,
+        ui.raw.has("a:" + item.id) ? jsonBlock("a:" + item.id, item.event) : null,
         el("div", { class: "small", text: "Run again queues one fresh attempt. Writes already made stay blocked from repeating." }));
       return el("div", { class: "card" },
         el("div", {}, el("span", { class: "tag bad", text: "DEAD-LETTERED" }), " ", el("strong", { text: item.reason })),
         el("div", { class: "small", text: "The stream gave up on this event at " + item.at + " and acknowledged it, so the server will not send it again." }),
-        el("pre", { text: item.line }),
+        jsonBlock("d:" + item.id, item.line),
         el("div", {}, el("button", { onclick: () => act("POST", "checked", { id: item.id }), text: "Mark checked" })));
     }));
 }
@@ -190,7 +234,7 @@ function turnCard(turn, index) {
       el("span", { class: "small mono", text: time(turn.at) }),
       el("span", { style: "flex:1 1 300px;font-size:14px;color:var(--soft)", text: turn.kind === "event" ? (eventName || "event") + (turn.event && turn.event.task_id ? " · task " + turn.event.task_id : "") : turn.text }),
       turn.kind === "event" ? el("button", { class: "chip", "aria-expanded": String(ui.raw.has(key)), onclick: () => toggle(ui.raw, key), text: "Raw event" }) : null),
-    ui.raw.has(key) ? el("div", { style: "padding:0 18px 12px" }, el("pre", { text: JSON.stringify(turn.event, null, 2) || turn.text }), el("div", { class: "small", text: "Shown as plain text. HTML in marketplace content is never rendered." })) : null,
+    ui.raw.has(key) ? el("div", { style: "padding:0 18px 12px" }, jsonBlock("e:" + key, turn.event === undefined ? turn.text : turn.event), el("div", { class: "small", text: "Shown as plain text. HTML in marketplace content is never rendered." })) : null,
     el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, key + "r" + r)) : el("div", { class: "small", text: "No reply yet." })));
 }
 function replyBlock(reply, key) {
