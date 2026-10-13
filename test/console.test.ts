@@ -17,12 +17,14 @@ type Work = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["events"]>>;
 function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], state = initialOperator() }: { id?: string; actions?: Ledger["actions"]; events?: Work; transcript?: Message[]; state?: OperatorState } = {}) {
   const asked: unknown[][] = [];
   const record = (name: string) => async (...args: unknown[]) => { asked.push([name, ...args]); };
+  const listeners = new Set<() => void>();
   const agent: ConsoleAgent = {
     id,
     spec: parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8"))),
     agent: {
       status: async () => ({ identity: { env: "local", agentId: "33333333-3333-4333-8333-333333333333" }, actions, spend: { "2026-10-13": 15 }, memory: ["Use US spelling."] }),
       transcript: async () => transcript,
+      changes: (listener) => { listeners.add(listener); return () => void listeners.delete(listener); },
       operator: {
         state: async () => state, events: async () => events,
         setFrozen: record("setFrozen"), setPaused: record("setPaused"), message: record("message"),
@@ -30,10 +32,12 @@ function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], sta
       },
     },
   };
-  return { agent, asked };
+  // Stands in for a store commit: every watcher hears it.
+  const commit = () => listeners.forEach((listener) => listener());
+  return { agent, asked, listeners, commit };
 }
-async function serve(agents: ConsoleAgent[] = [fakeAgent().agent]) {
-  const consoleServer = await startConsole({ port: 0, token, env: "local", agents: () => agents });
+async function serve(agents: ConsoleAgent[] = [fakeAgent().agent], options: Partial<Parameters<typeof startConsole>[0]> = {}) {
+  const consoleServer = await startConsole({ port: 0, token, env: "local", agents: () => agents, ...options });
   closers.push(consoleServer.close);
   return consoleServer;
 }
@@ -53,6 +57,39 @@ function call(port: number, path: string, { method = "GET", headers = {}, body }
   });
 }
 const auth = { authorization: `Bearer ${token}` };
+// Opens an event stream and hands back its frames one at a time: `view` events
+// parsed, comments as { comment }.
+type Frame = { event: string; data: unknown } | { comment: string };
+function stream(port: number, path = "/api/agents/foo/stream", headers: Record<string, string> = auth) {
+  return new Promise<{ status: number; headers: Record<string, unknown>; next(): Promise<Frame>; ended: Promise<void>; close(): void }>((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, path, headers: { host: `127.0.0.1:${port}`, ...headers } }, (res) => {
+      let buffer = "";
+      const frames: Frame[] = [];
+      const waiting: ((frame: Frame) => void)[] = [];
+      const ended = new Promise<void>((done) => res.on("close", done));
+      res.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString();
+        for (let at = buffer.indexOf("\n\n"); at >= 0; at = buffer.indexOf("\n\n")) {
+          const block = buffer.slice(0, at);
+          buffer = buffer.slice(at + 2);
+          const frame: Frame = block.startsWith(":")
+            ? { comment: block.slice(1).trim() }
+            : { event: /^event: (.*)$/m.exec(block)?.[1] ?? "", data: JSON.parse(/^data: (.*)$/m.exec(block)?.[1] ?? "null") };
+          const take = waiting.shift();
+          if (take) take(frame);
+          else frames.push(frame);
+        }
+      });
+      closers.push(async () => { req.destroy(); });
+      resolve({
+        status: res.statusCode ?? 0, headers: res.headers, ended, close: () => req.destroy(),
+        next: () => { const frame = frames.shift(); return frame ? Promise.resolve(frame) : new Promise((take) => waiting.push(take)); },
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
 
 it("only answers this machine's own pages, and only with the token", async () => {
   const { port, url } = await serve();
@@ -75,6 +112,64 @@ it("only answers this machine's own pages, and only with the token", async () =>
   expect(allowed.status).toBe(200);
   expect(JSON.parse(allowed.text)).toMatchObject({ env: "local", agents: [{ id: "foo" }] });
   expect(Object.keys(allowed.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
+});
+
+it("streams only to this machine's own pages, only with the token in the header, and offers no CORS", async () => {
+  const { port } = await serve();
+  expect((await call(port, "/api/agents/foo/stream")).status).toBe(401);
+  expect((await call(port, `/api/agents/foo/stream?token=${token}`)).status).toBe(401);
+  expect((await call(port, "/api/agents/foo/stream", { headers: { ...auth, host: `rebound.example:${port}` } })).status).toBe(403);
+  expect((await call(port, "/api/agents/foo/stream", { headers: { ...auth, origin: "https://elsewhere.example" } })).status).toBe(403);
+  expect((await call(port, "/api/agents/nobody/stream", { headers: auth })).status).toBe(404);
+
+  const live = await stream(port);
+  expect(live.status).toBe(200);
+  expect(live.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
+  expect(live.headers["cache-control"]).toBe("no-store");
+  expect(Object.keys(live.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
+});
+
+it("sends the current view on connect, then one view per burst of commits", async () => {
+  const state = initialOperator();
+  const { agent, commit } = fakeAgent({ state });
+  const { port } = await serve([agent], { coalesceMs: 30 });
+  const live = await stream(port);
+  const first = await live.next();
+  expect(first).toEqual({ event: "view", data: JSON.parse((await call(port, "/api/agents/foo", { headers: auth })).text) });
+
+  for (const order of ["a", "b", "c", "d", "e"]) { state.orders.push(order); commit(); }
+  expect(await live.next()).toMatchObject({ event: "view", data: { operator: { orders: ["a", "b", "c", "d", "e"] } } });
+  await new Promise((done) => setTimeout(done, 100));
+  state.orders.push("f");
+  commit();
+  expect(await live.next()).toMatchObject({ event: "view", data: { operator: { orders: ["a", "b", "c", "d", "e", "f"] } } });
+});
+
+it("pings an idle stream, and resends the view when something outside the store changed", async () => {
+  const state = initialOperator();
+  const { agent } = fakeAgent({ state });
+  const { port } = await serve([agent], { pingMs: 30 });
+  const live = await stream(port);
+  expect(await live.next()).toMatchObject({ event: "view" });
+  expect(await live.next()).toEqual({ comment: "ping" });
+  expect(await live.next()).toEqual({ comment: "ping" });
+  state.paused = true;
+  let frame: Frame;
+  do frame = await live.next(); while ("comment" in frame);
+  expect(frame).toMatchObject({ event: "view", data: { operator: { paused: true } } });
+});
+
+it("caps open streams, and frees a place when one closes", async () => {
+  const { port } = await serve(undefined, { maxStreams: 2 });
+  const [one] = [await stream(port), await stream(port)];
+  const refused = await call(port, "/api/agents/foo/stream", { headers: auth });
+  expect(refused.status).toBe(429);
+  expect(JSON.parse(refused.text)).toEqual({ error: "too many open streams" });
+  await one.next();
+  one.close();
+  await one.ended;
+  await new Promise((done) => setTimeout(done, 20));
+  expect((await stream(port)).status).toBe(200);
 });
 
 it("moves up one port at a time past ports already in use", async () => {

@@ -186,7 +186,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
     const at = running.findIndex((owned) => owned.id === item.id);
     if (at >= 0) {
       const [owned] = running.splice(at, 1);
-      // Stream before store, as at shutdown.
+      // Streams before store, as at shutdown.
+      consoleServer?.closeStreams(item.id);
       await owned.listener?.close();
       await owned.agent.close();
     }
@@ -215,8 +216,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
         port: o.console.port, token: randomBytes(32).toString("hex"), env: o.env,
         agents: () => running.flatMap(({ id, spec, agent }) => {
           const item = agents.find((candidate) => candidate.id === id);
-          if (!item || !agent.operator || !agent.status || !agent.transcript) return [];
-          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript }, saveSpec: (next: AgentSpec) => reopen(item, next), host: (taskIds: string[]) => facts(item, taskIds) }];
+          if (!item || !agent.operator || !agent.status || !agent.transcript || !agent.changes) return [];
+          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript, changes: agent.changes }, saveSpec: (next: AgentSpec) => reopen(item, next), host: (taskIds: string[]) => facts(item, taskIds) }];
         }),
       });
       o.log(`console: ${consoleServer.url}`);

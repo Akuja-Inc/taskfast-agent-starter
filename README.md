@@ -111,6 +111,8 @@ If the port is taken, the console tries the next one up, one at a time (up to 10
 
 The console reads through the running host. It never opens a store or a second event stream: one store has one owner, and the server allows one stream per agent.
 
+The page updates live. The host pushes each agent's view after every commit over `GET /api/agents/:id/stream` (server-sent events with the same token and checks, at most 8 open at once). If that stream drops, the page polls every 3 s until it returns.
+
 Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [briefing editor](docs/console/briefing.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
 
 ### Wallet unlock
