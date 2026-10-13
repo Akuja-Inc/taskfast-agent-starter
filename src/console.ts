@@ -12,7 +12,7 @@ import type { AgentSpec, Env } from "./core/types.js";
 export interface ConsoleAgent {
   id: string;
   spec: AgentSpec;
-  agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript">;
+  agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript" | "changes">;
   // Writes an already-checked agent file and reopens this agent with it.
   saveSpec?(spec: AgentSpec): Promise<void>;
   // What only the host knows, with server reads for the given task IDs.
@@ -33,6 +33,10 @@ export interface ConsoleOptions {
   token: string;
   env: Env;
   agents(): ConsoleAgent[];
+  // Event stream tuning; tests pass small values.
+  coalesceMs?: number;
+  pingMs?: number;
+  maxStreams?: number;
 }
 
 // Enough recent history for the timeline without paging; older turns stay in the store.
@@ -48,6 +52,12 @@ function eventIdOf(line: string): string | undefined {
   } catch { return undefined; }
 }
 const MAX_TEXT = 4000;
+// A burst of commits (a model's partial answers land every ~100 ms) becomes one view.
+export const COALESCE_MS = 250;
+export const PING_MS = 15_000;
+export const MAX_STREAMS = 8;
+// Past this many bytes queued for one reader it has stalled: end its stream rather than buffer views forever.
+const MAX_BUFFERED_BYTES = 1024 * 1024;
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   let size = 0;
@@ -103,6 +113,29 @@ async function act(controls: ConsoleAgent["agent"]["operator"], action: string |
   }
 }
 
+// One agent as GET /api/agents/:id and its stream show it.
+export type ConsoleView = Awaited<ReturnType<typeof view>>;
+async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
+  const [policy, operator, events, transcript] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES)]);
+  const timeline = buildTimeline(transcript);
+  const taskIds = [...new Set(timeline.flatMap((turn) => turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))))].slice(-TASK_READS);
+  const facts = await host?.(taskIds);
+  const deadLetters = (facts?.deadLetters ?? []).map((record) => ({ kind: "dead-letter" as const, id: `dead-letter:${eventIdOf(record.line) ?? record.at}`, ...record }));
+  const attention = [
+    ...Object.entries(policy.actions).filter(([key, action]) => action.status === "uncertain" && !operator.checked[key])
+      .map(([key, action]) => ({ kind: "uncertain" as const, id: key, at: action.at, amount: action.amount })),
+    ...Object.entries(events).filter(([key, work]) => work.kind === "abandoned" && !operator.checked[key])
+      .map(([key, work]) => ({ kind: "abandoned" as const, id: key.slice("event:".length), attempts: work.attempt + 1, event: work.event })),
+    ...deadLetters.filter((letter) => !operator.checked[letter.id]),
+  ];
+  return {
+    id, env, spec, operator, attention, events,
+    actions: policy.actions, spend: policy.spend, notes: policy.memory,
+    prompt: marketplacePrompt(spec, policy.memory, operator.orders),
+    timeline, host: facts && { unlockFile: facts.unlockFile, stream: facts.stream, wallet: facts.wallet, tasks: facts.tasks },
+  };
+}
+
 // The page may run only its own inline code and talk only to this server.
 const PAGE_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json") {
@@ -142,10 +175,11 @@ async function listenFrom(server: Server, port: number): Promise<number> {
 
 // The local console: this machine only. A foreign Host is a rebound DNS name and a
 // foreign Origin is another site's page; both are refused, and no CORS is offered.
-export async function startConsole(o: ConsoleOptions): Promise<{ url: string; port: number; close(): Promise<void> }> {
+export async function startConsole(o: ConsoleOptions): Promise<{ url: string; port: number; closeStreams(id?: string): Promise<void>; close(): Promise<void> }> {
   // An empty token would compare equal to a missing bearer header and serve every request.
   if (!o.token) throw new Error("console: token required");
   let port = 0;
+  const open = new Set<{ id: string; end(): void; settled(): Promise<void> }>();
   const own = () => [`127.0.0.1:${port}`, `localhost:${port}`];
   const server = createServer((req, res) => {
     void handle(req, res).catch((error: unknown) => send(res, 500, { error: error instanceof Error ? error.message : String(error) }));
@@ -167,7 +201,10 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     const item = id === undefined ? undefined : o.agents().find((candidate) => candidate.id === id);
     if (!item) return send(res, 404, { error: "not found" });
     const [, , action, arg] = match ?? [];
-    if (req.method === "GET" && !action) return send(res, 200, await view(item));
+    // This one-shot read is not drained by closeStreams, so a fetch racing a spec-save
+    // reopen can transiently 500; Pi's serialized queue keeps storage safe.
+    if (req.method === "GET" && !action) return send(res, 200, await view(o.env, item));
+    if (req.method === "GET" && action === "stream" && arg === undefined) return watch(item, res);
     const controls = item.agent.operator;
     if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
       if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
@@ -190,31 +227,64 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     const problem = await act(controls, action, body);
     return problem === undefined ? send(res, 204, "") : send(res, problem === null ? 404 : 400, { error: problem ?? "not found" });
   }
-  async function view({ id, spec, agent, host }: ConsoleAgent) {
-    const [policy, operator, events, transcript] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES)]);
-    const timeline = buildTimeline(transcript);
-    const taskIds = [...new Set(timeline.flatMap((turn) => turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))))].slice(-TASK_READS);
-    const facts = await host?.(taskIds);
-    const deadLetters = (facts?.deadLetters ?? []).map((record) => ({ kind: "dead-letter", id: `dead-letter:${eventIdOf(record.line) ?? record.at}`, ...record }));
-    const attention = [
-      ...Object.entries(policy.actions).filter(([key, action]) => action.status === "uncertain" && !operator.checked[key])
-        .map(([key, action]) => ({ kind: "uncertain", id: key, at: action.at, amount: action.amount })),
-      ...Object.entries(events).filter(([key, work]) => work.kind === "abandoned" && !operator.checked[key])
-        .map(([key, work]) => ({ kind: "abandoned", id: key.slice("event:".length), attempts: work.attempt + 1, event: work.event })),
-      ...deadLetters.filter((letter) => !operator.checked[letter.id]),
-    ];
-    const { deadLetters: _, ...hostFacts } = facts ?? { deadLetters: [] };
-    return {
-      id, env: o.env, spec, operator, attention, events,
-      actions: policy.actions, spend: policy.spend, notes: policy.memory,
-      prompt: marketplacePrompt(spec, policy.memory, operator.orders),
-      timeline, host: facts ? hostFacts : undefined,
+  // One live view: sent on connect, then once per window after any commit. The window
+  // is fixed, not reset by each commit, so a model streaming partial answers can't starve it.
+  function watch(item: ConsoleAgent, res: ServerResponse): void {
+    if (open.size >= (o.maxStreams ?? MAX_STREAMS)) return send(res, 429, { error: "too many open streams" });
+    res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+    res.flushHeaders();
+    let last = "";
+    let timer: NodeJS.Timeout | undefined;
+    let dirty = false;
+    let sending = Promise.resolve();
+    const push = () => {
+      // A read is already queued or running; its loop picks this commit up.
+      if (dirty) return;
+      dirty = true;
+      sending = sending.then(async () => {
+        while (dirty && !res.writableEnded) {
+          dirty = false;
+          const data = JSON.stringify(await view(o.env, item));
+          // A stalled reader only fills its socket buffer: end the stream rather than buffer views forever.
+          if (res.writableLength > MAX_BUFFERED_BYTES) return end();
+          if (data === last || res.writableEnded) continue;
+          last = data;
+          res.write(`event: view\ndata: ${data}\n\n`);
+        }
+      }).catch(end);
     };
+    const unsubscribe = item.agent.changes(() => { timer ??= setTimeout(() => { timer = undefined; push(); }, o.coalesceMs ?? COALESCE_MS); });
+    // Keeps idle connections open, and picks up host facts (stream, wallet) that change without a commit.
+    const ping = setInterval(() => { res.write(": ping\n\n"); push(); }, o.pingMs ?? PING_MS);
+    const stream = { id: item.id, end, settled: () => sending };
+    function end() {
+      if (!open.delete(stream)) return;
+      clearTimeout(timer);
+      clearInterval(ping);
+      unsubscribe();
+      res.end();
+    }
+    open.add(stream);
+    res.on("close", end);
+    push();
+  }
+  // Ends streams at once, not on a later socket event, then waits out any view read
+  // already under way, so none reads an agent's store after it starts to close. Awaiting
+  // settled() deliberately waits out in-flight view reads, including CLI children bounded
+  // by runCli's timeout.
+  async function closeStreams(id?: string): Promise<void> {
+    const closing = [...open].filter((stream) => id === undefined || stream.id === id);
+    for (const stream of closing) stream.end();
+    await Promise.allSettled(closing.map((stream) => stream.settled()));
   }
   port = await listenFrom(server, o.port);
   return {
     url: `http://127.0.0.1:${port}/#token=${o.token}`,
     port,
-    close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }),
+    closeStreams,
+    close: async () => {
+      await closeStreams();
+      await new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); });
+    },
   };
 }

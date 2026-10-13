@@ -53,6 +53,8 @@ export interface MarketplaceAgent {
   operator: OperatorControls;
   // The newest `limit` stored entries' messages, oldest first.
   transcript(limit: number): Promise<Message[]>;
+  // Calls `listener` after every commit to this agent's store; returns the unsubscribe.
+  changes(listener: () => void): () => void;
   waitForIdle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -266,6 +268,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     }
     return {
       conversation, deliver, ping, recover, status: activePolicy.snapshot, operator, transcript,
+      // Every commit, not viewState(): that view skips commits to session documents (operator, policy, events).
+      changes: (listener) => owner.subscribeCommits(() => { try { listener(); } catch {} }),
       waitForIdle: () => conversation.waitForIdle(context),
       close: async () => {
         if (closed) return;

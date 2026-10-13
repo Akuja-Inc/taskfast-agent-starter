@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { openMarketplaceAgent } from "../src/core/agent.js";
 import type { CliResult } from "../src/core/cli.js";
 import { initialOperator } from "../src/core/operator.js";
 import { runAgents, type AgentHandle, type RunOptions } from "../src/run.js";
@@ -30,6 +32,7 @@ function handle(id: string, calls: string[]): AgentHandle {
     close: async () => void calls.push(`close ${id}`),
     status: async () => ({ identity: { env: "local", agentId: "33333333-3333-4333-8333-333333333333" }, actions: {}, spend: {}, memory: [] }),
     transcript: async () => [],
+    changes: () => () => {},
     operator: {
       state: async () => initialOperator(), events: async () => ({}),
       setFrozen: async () => {}, setPaused: async () => {}, message: async () => {}, addOrder: async () => {}, removeOrder: async () => {}, markChecked: async () => {}, retryEvent: async () => {},
@@ -121,6 +124,67 @@ it("adds what only the host knows: unlock file, stream, wallet, dead letters and
     await get(link!, "/api/agents/me");
     expect(reads).toEqual([["wallet", "balance"], ["task", "get", "--", task]]);
   });
+});
+
+// Reads an event stream's `view` events, skipping pings.
+async function views(link: URL, path: string) {
+  const response = await fetch(new URL(path, link), { headers: { authorization: `Bearer ${link.hash.slice("#token=".length)}` } });
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  return {
+    async next(): Promise<{ operator: { paused: boolean } } | "ended"> {
+      for (;;) {
+        const at = buffer.indexOf("\n\n");
+        if (at >= 0) {
+          const block = buffer.slice(0, at);
+          buffer = buffer.slice(at + 2);
+          if (block.startsWith("event: view")) return JSON.parse(block.slice(block.indexOf("data: ") + 6));
+          continue;
+        }
+        const { done, value } = await reader.read();
+        if (done) return "ended";
+        buffer += value;
+      }
+    },
+  };
+}
+
+it("streams a real store's commits, and closes its streams before the store at reopen and shutdown", async () => {
+  const dir = folders("me");
+  const faux = fauxProvider({ models: [{ id: "test" }] });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  faux.setResponses(Array.from({ length: 5 }, () => fauxAssistantMessage("Nothing yet.")));
+  const order: string[] = [];
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    openAgent: async ({ id, spec, runtime, storePath }) => {
+      const agent = await openMarketplaceAgent({
+        spec: { ...spec, model: "faux:test" }, runtime, storePath, models, recoverEveryMs: 60_000,
+        command: async () => ({ outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } }),
+      });
+      order.push(`open ${id}`);
+      return {
+        ...agent,
+        changes: (listener) => { const off = agent.changes(listener); return () => { order.push(`unwatch ${id}`); off(); }; },
+        close: async () => { order.push(`close ${id}`); await agent.close(); },
+      };
+    },
+  }, async (link) => {
+    const live = await views(link!, "/api/agents/me/stream");
+    expect(await live.next()).toMatchObject({ operator: { paused: false } });
+    const paused = await fetch(new URL("/api/agents/me/paused", link), { method: "POST", body: JSON.stringify({ value: true }), headers: { authorization: `Bearer ${link!.hash.slice(7)}`, "content-type": "application/json" } });
+    expect(paused.status).toBe(204);
+    let view = await live.next();
+    while (view !== "ended" && !view.operator.paused) view = await live.next();
+    expect(view).toMatchObject({ operator: { paused: true } });
+
+    expect((await put(link!, "/api/agents/me/spec", JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8")))).status).toBe(204);
+    while (await live.next() !== "ended");
+    expect(order).toEqual(["open me", "unwatch me", "close me", "open me"]);
+    await views(link!, "/api/agents/me/stream").then((again) => again.next());
+  });
+  expect(order).toEqual(["open me", "unwatch me", "close me", "open me", "unwatch me", "close me"]);
 });
 
 it("keeps the host running when an agent cannot reopen", async () => {

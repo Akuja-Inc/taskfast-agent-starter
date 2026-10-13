@@ -1,3 +1,8 @@
+import { follow } from "./console-live.js";
+
+// The page runs the same stream follower as the terminal UI.
+export const LIVE = follow.toString();
+
 // The console's single page. Kept as a module because the TypeScript build copies no
 // HTML. Everything from the server or the marketplace is set as text, never as markup.
 export const PAGE = `<!doctype html>
@@ -78,7 +83,7 @@ const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
 const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false };
-let list = null, view = null, polling = false;
+let list = null, view = null;
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -139,20 +144,37 @@ async function act(method, action, body) {
   // A 409 says the operator acted on stale state (the orders changed): show the reason over fresh data.
   catch (error) { ui.error = error.message; if (error.status === 409) await refresh(); else render(); }
 }
+${LIVE}
+// The stream being followed: which agent with which token, whether it is delivering,
+// and how to stop it.
+let following = { key: null, up: false, stop: () => {} };
 async function refresh() {
-  if (!token) return render();
-  polling = true;
   try {
-    list = await api("GET", "/api/agents");
-    // Fall back to the first agent only when nothing is selected. A selected agent
-    // missing from the list is mid save & reopen: keep the selection and say so,
-    // or the console would silently switch the operator to another agent.
-    if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
-    const present = ui.agent !== null && list.agents.some((a) => a.id === ui.agent);
-    ui.reopening = ui.agent !== null && !present;
-    view = present ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
+    if (token) {
+      list = await api("GET", "/api/agents");
+      // Fall back to the first agent only when nothing is selected. A selected agent
+      // missing from the list is mid save & reopen: keep the selection and say so,
+      // or the console would silently switch the operator to another agent.
+      if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
+      const present = ui.agent !== null && list.agents.some((a) => a.id === ui.agent);
+      ui.reopening = ui.agent !== null && !present;
+      const key = token && ui.agent ? token + " " + ui.agent : null;
+      // The server never re-pushes identical data, so a view GET that resolves after a
+      // newer stream push would overwrite it. Fetch the view only when the follower key
+      // is new or the stream is known down; while it delivers, its pushes are the truth.
+      if (key !== following.key || !following.up) {
+        const next = present ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
+        if (following.key !== key || !following.up) view = next;
+      }
+    }
   } catch (error) { ui.error = error.message; }
-  finally { polling = false; }
+  const key = token && ui.agent ? token + " " + ui.agent : null;
+  if (key !== following.key) {
+    following.stop();
+    following = { key, up: false, stop: key ? follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token,
+      (next) => { if (following.key !== key) return; view = next; following.up = true; render(); },
+      () => { if (following.key !== key) return; following.up = false; refresh(); }) : () => {} };
+  }
   render();
 }
 
@@ -388,8 +410,6 @@ function render() {
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
 }
 refresh();
-// Skip a tick while a slow refresh is still running; overlapping polls would let the last finisher win with stale state.
-setInterval(() => { if (!polling) refresh(); }, 3000);
 </script>
 </body>
 </html>

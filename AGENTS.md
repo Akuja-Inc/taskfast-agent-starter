@@ -32,6 +32,8 @@ pnpm test
 
 `pnpm build` directly runs the TypeScript build. There is no actor build or generation step. Keep the lockfile in step with `package.json`. For policy or storage changes, include real persistent-store restart and ownership checks, not only mocked model calls. Keep live marketplace validation separate from local checks.
 
+The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins and `bun.lock`. Host code never imports it, and its pure modules import host code by type only. `pnpm typecheck` and `pnpm test` cover `screen.ts`, `keys.ts` and `link.ts`; `app.tsx` is checked only by `pnpm tui:test` (needs Bun), which CI does not run, so run it when you change the TUI or the console API. Never run `pnpm install` inside `src/tui/`.
+
 ### Rules the code depends on
 
 - **Pi owns conversation, model and tool tasks.** `openMarketplaceAgent(AgentOptions)` in `agent.ts` opens persistent storage and one root conversation. No coding tools, child conversations or forks are enabled. Marketplace tools execute sequentially and policy serializes reservation through dispatch.

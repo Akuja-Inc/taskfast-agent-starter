@@ -23,7 +23,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "agents": "pnpm build && node dist/src/run.js",
-    "setup-agent": "pnpm build && node dist/src/setup.js"
+    "setup-agent": "pnpm build && node dist/src/setup.js",
+    "tui": "node scripts/tui.mjs",
+    "tui:test": "pnpm build && node scripts/tui.mjs --test"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
