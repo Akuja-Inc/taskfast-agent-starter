@@ -3,9 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
-import type { SubmissionId } from "@earendil-works/pi-durable";
-import { afterEach, expect, it, vi } from "vitest";
+import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";import { afterEach, expect, it, vi } from "vitest";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENT_RETRY, openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
 import { cliEnv, runCli } from "../src/core/cli.js";
@@ -331,13 +329,7 @@ it("queues one resume input however many recovery passes see the same stall", as
   ]);
   const at = Date.parse("2026-06-20T12:00:00Z");
   const agent = await open({ dir, selected, now: () => new Date(at) }); // Frozen time: no event retry comes due.
-  const resumeInputs = new Set<SubmissionId>();
-  const submit = agent.conversation.submit.bind(agent.conversation);
-  vi.spyOn(agent.conversation, "submit").mockImplementation(async (draft, ctx) => {
-    const submission = await submit(draft, ctx);
-    if (draft.requestId?.startsWith("resume:")) resumeInputs.add(submission.id);
-    return submission;
-  });
+  const submit = vi.spyOn(agent.conversation, "submit");
   await agent.ping();
   await started.promise;
   for (const id of ["stalled-one", "stalled-two", "stalled-three"]) await agent.deliver(event(id));
@@ -347,7 +339,7 @@ it("queues one resume input however many recovery passes see the same stall", as
     await sleep(100); // Several recovery timer ticks while every run fails.
     await agent.waitForIdle();
   }
-  expect(resumeInputs.size).toBe(1);
+  expect(submit.mock.calls.filter(([draft]) => draft.requestId?.startsWith("resume:"))).toHaveLength(1);
 });
 
 function hostAgent({ root, id }: { root: string; id: string }) {
