@@ -2,6 +2,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader, type Tx } from "@earendil-works/pi-durable";
 import { runCli, type CliResult } from "./cli.js";
 import { amountOf, overLimit, today } from "./money.js";
+import { FROZEN, Operator } from "./operator.js";
 import { prepare, UUID } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
 
@@ -121,6 +122,7 @@ export function marketplacePolicy(o: PolicyOptions) {
         const state = await tx.doc(Policy);
         const prior = state.actions[key];
         if (prior && prior.status !== "failed") return skipped(prior);
+        if (spec.kind === "money" && (await tx.doc(Operator)).frozen) return { refused: FROZEN };
         const day = today(now());
         const over = overLimit(o.spec.limits, state.spend[day] ?? 0, amount);
         if (over && spec.kind === "money") return { refused: over };

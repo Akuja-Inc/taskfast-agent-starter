@@ -7,6 +7,7 @@ import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_C
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
+import { initialOperator, Operator, type OperatorState } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
@@ -49,8 +50,14 @@ export interface MarketplaceAgent {
   ping(): Promise<void>;
   recover(): Promise<void>;
   status(): ReturnType<MarketplacePolicy["snapshot"]>;
+  operator: OperatorControls;
   waitForIdle(): Promise<void>;
   close(): Promise<void>;
+}
+// The user's controls, committed to the store before they take effect.
+export interface OperatorControls {
+  state(): Promise<OperatorState>;
+  setFrozen(frozen: boolean): Promise<void>;
 }
 
 function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
@@ -178,8 +185,12 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     await recover();
     const timer = setInterval(() => { void recover().catch((error: unknown) => log(`recovery: ${String(error)}`)); }, o.recoverEveryMs ?? 5000);
     timer.unref();
+    const operator: OperatorControls = {
+      state: async () => (await owner.snapshot(Operator, context)) ?? initialOperator(),
+      setFrozen: async (frozen) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).frozen = frozen; }, context); },
+    };
     return {
-      conversation, deliver, ping, recover, status: activePolicy.snapshot,
+      conversation, deliver, ping, recover, status: activePolicy.snapshot, operator,
       waitForIdle: () => conversation.waitForIdle(context),
       close: async () => {
         if (closed) return;
