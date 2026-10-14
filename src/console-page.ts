@@ -138,6 +138,14 @@ form.inline label { flex: 1 1 280px; }
 .hint { display: flex; justify-content: flex-end; gap: 14px; font-size: 12px; color: var(--muted); }
 kbd { font: 600 11px ui-monospace, monospace; background: var(--ground); border: 1px solid var(--hairline); border-bottom-width: 2px; border-radius: 3px; padding: 1px 5px; color: var(--soft); }
 textarea::placeholder { color: var(--muted); }
+.queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: start; }
+.queue-mode, .queue-text { grid-column: 1; }
+.queue-mode { font-size: 13px; font-weight: 700; }
+.queue-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.queue-promote { grid-column: 2; grid-row: 1 / 3; }
+.queue-error { grid-column: 1 / -1; }
+.queue-error:empty, .queue-notice:empty { display: none; }
+button:disabled { cursor: wait; opacity: .6; }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
 /* The rail: marks beside the turns, sized from --composer-space to end above the pinned composer. --under-band clears the sticky band. */
@@ -184,7 +192,7 @@ const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { 
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, windowN: 12 };
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, windowN: 12 };
 let list = null, view = null;
 
 function el(tag, attrs, ...children) {
@@ -368,7 +376,7 @@ function header() {
         el("span", { class: "rule" }),
         el("span", { class: "switcher" },
           el("span", { class: "sq you", title: roleTitle }, pict(roleGlyph, 15)),
-          el("select", { "aria-label": "Agent", onchange: (e) => { ui.agent = e.target.value; store.set("agent", ui.agent); ui.open.clear(); ui.raw.clear(); ui.specDraft = null; refresh(); } },
+          el("select", { "aria-label": "Agent", onchange: (e) => { ui.agent = e.target.value; ui.attempt = null; ui.messageError = ""; store.set("agent", ui.agent); ui.open.clear(); ui.raw.clear(); ui.specDraft = null; refresh(); } },
             ui.reopening ? [el("option", { value: ui.agent, selected: true, text: ui.agent + " · reopening…" })] : [],
             (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + " · " + a.name })))),
         el("button", { class: "theme", "aria-label": dark ? "Switch to the light theme" : "Switch to the dark theme", title: dark ? "Switch to the light theme" : "Switch to the dark theme", onclick: () => {
@@ -384,7 +392,16 @@ function header() {
 
 // One ghost help + one ghost close per alert, at the tag row's right end. Help drafts
 // a fix-it message into the composer; close clears the alert only (never the ledger).
-function draftInto(text) { ui.draft = text; ui.draftId = null; ui.focusComposer = true; render(); }
+function draftInto(text) {
+  if (ui.draft !== text) ui.attempt = null;
+  ui.draft = text;
+  ui.messageError = "";
+  const textarea = document.querySelector("form.composer textarea");
+  if (textarea) textarea.value = text;
+  ui.focusComposer = true;
+  render();
+  if (textarea) { textarea.focus(); ui.focusComposer = false; }
+}
 function attnActions(id, draftFix) {
   return el("span", { class: "attn-actions" },
     el("button", { class: "sq fix", title: "Drafts a fix-it message into the composer", "aria-label": "Fix this", onclick: draftFix }, pict("wrench", 13)),
@@ -616,9 +633,108 @@ function spendPanel() {
         el("span", { class: "state-word", text: op.frozen ? "FROZEN" : "READY" }))));
 }
 
+async function submitMessage(mode) {
+  const text = ui.draft.trim();
+  if (!text) return;
+  // Identity includes the first mode and the owning agent, not whichever key retries it.
+  const attempt = ui.attempt || (ui.attempt = { requestId: crypto.randomUUID(), agent: ui.agent, draft: ui.draft, text, mode, pending: false });
+  if (attempt.pending) return;
+  attempt.pending = true;
+  ui.messageError = "";
+  updateMessageStatus();
+  try {
+    await api("POST", "/api/agents/" + encodeURIComponent(attempt.agent) + "/messages", { requestId: attempt.requestId, text: attempt.text, ...(attempt.mode === "steer" ? { steer: true } : {}) });
+    // An edited draft belongs to a new send. Never clear it on an older admission.
+    if (ui.attempt === attempt && ui.agent === attempt.agent && ui.draft === attempt.draft) {
+      ui.draft = ""; ui.attempt = null;
+      const textarea = document.querySelector("form.composer textarea");
+      if (textarea) textarea.value = "";
+    }
+    await refresh();
+  } catch (error) {
+    if (ui.attempt === attempt && ui.agent === attempt.agent) ui.messageError = "Message not confirmed. Retry keeps its ID and " + modeLabel(attempt.mode) + " mode. " + error.message;
+  } finally { attempt.pending = false; render(); }
+}
+const modeLabel = (mode) => mode === "steer" ? "Steer" : "Follow-up";
+function updateMessageStatus() {
+  const status = document.querySelector(".message-status");
+  if (status) { status.textContent = ui.messageError || (ui.attempt && ui.attempt.pending ? "Sending " + modeLabel(ui.attempt.mode) + "…" : ""); status.className = "message-status " + (ui.messageError ? "error" : "small"); }
+  const send = document.querySelector("form.composer .send");
+  if (send) send.disabled = !!(ui.attempt && ui.attempt.pending);
+}
+
+const promotionKey = (agent, requestId) => agent + "/" + requestId;
+async function promoteMessage(requestId, agent) {
+  const key = promotionKey(agent, requestId);
+  const previous = ui.promotions.get(key);
+  if (previous && (previous.pending || previous.done)) return;
+  const state = { pending: true, done: false, error: "" };
+  ui.promotions.set(key, state);
+  ui.notices.delete(agent);
+  render();
+  try {
+    await api("POST", "/api/agents/" + encodeURIComponent(agent) + "/steer/" + encodeURIComponent(requestId));
+    state.done = true;
+    await refresh();
+  } catch (error) {
+    // This ID came from a visible follow-up. A 404 means it left the queue before
+    // the click arrived, just like the placement race reported with 409.
+    if (error.status === 409 || error.status === 404) {
+      state.done = true;
+      ui.notices.set(agent, "The agent already has this message.");
+      await refresh();
+    } else state.error = "Could not steer this message. Try again. " + error.message;
+  } finally { state.pending = false; render(); }
+}
+function queueRow(message) {
+  const row = el("div", { class: "card queue-row", "data-request-id": message.requestId },
+    el("div", { class: "queue-mode" }), el("div", { class: "queue-text" }),
+    el("div", { class: "error queue-error", role: "status" }));
+  updateQueueRow(row, message);
+  return row;
+}
+function updateQueueRow(row, message) {
+  row.querySelector(".queue-mode").textContent = modeLabel(message.mode);
+  const text = row.querySelector(".queue-text");
+  if (text.textContent !== message.text) text.textContent = message.text;
+  const state = ui.promotions.get(promotionKey(ui.agent, message.requestId));
+  row.querySelector(".queue-error").textContent = state ? state.error : "";
+  let button = row.querySelector(".queue-promote");
+  if (message.mode === "followUp") {
+    if (!button) { const agent = ui.agent; button = el("button", { type: "button", class: "queue-promote", onclick: () => promoteMessage(message.requestId, agent) }); row.append(button); }
+    button.textContent = state && state.pending ? "Steering…" : state && state.done ? "Sent" : "Steer";
+    button.disabled = !!(state && (state.pending || state.done));
+    button.setAttribute("aria-label", "Steer queued message: " + message.text);
+  } else if (button) { if (document.activeElement === button) row.closest("section").focus(); button.remove(); }
+}
+function queuedMessages() {
+  const queue = view.queuedMessages;
+  return el("section", { class: "section", id: "queued-messages", "data-agent": ui.agent, tabindex: "-1", "aria-label": "Queued messages" },
+    band("Queued messages"),
+    el("div", { class: "section queued-rows" }, queue.length ? queue.map(queueRow) : el("div", { class: "small queue-empty", text: "No queued messages." })),
+    el("div", { class: "small queue-notice", role: "status", "aria-live": "polite", text: ui.notices.get(ui.agent) || "" }));
+}
+function updateQueuedMessages() {
+  const section = document.querySelector("#queued-messages");
+  if (!section || !view || ui.tab !== "timeline" || section.getAttribute("data-agent") !== ui.agent) return;
+  const rows = section.querySelector(".queued-rows"), queue = view.queuedMessages;
+  const existing = new Map([...rows.children].filter((row) => row.hasAttribute("data-request-id")).map((row) => [row.getAttribute("data-request-id"), row]));
+  const ids = new Set(queue.map((message) => message.requestId));
+  for (const [id, row] of existing) if (!ids.has(id)) { if (row.contains(document.activeElement)) section.focus(); row.remove(); }
+  const empty = rows.querySelector(".queue-empty");
+  if (queue.length && empty) empty.remove();
+  queue.forEach((message, index) => {
+    const row = existing.get(message.requestId) || queueRow(message);
+    updateQueueRow(row, message);
+    if (rows.children[index] !== row) rows.insertBefore(row, rows.children[index] || null);
+  });
+  if (!queue.length && !empty) rows.append(el("div", { class: "small queue-empty", text: "No queued messages." }));
+  section.querySelector(".queue-notice").textContent = ui.notices.get(ui.agent) || "";
+}
+
 function timelineTab() {
   const op = view.operator;
-  const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + op.messages.length;
+  const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + view.queuedMessages.length;
   const n = view.timeline.length;
   return el("div", { class: "page" },
     el("main", {},
@@ -626,28 +742,27 @@ function timelineTab() {
       attention(),
       band("Timeline", n + (n === 1 ? " turn" : " turns") + (n > ui.windowN ? " · showing the newest " + ui.windowN : "")),
       n ? timelineTurns() : el("div", { class: "small", text: "No turns yet." }),
+      queuedMessages(),
       el("form", { class: "card composer", onsubmit: (e) => {
         e.preventDefault();
-        const text = ui.draft.trim();
-        if (!text) return;
-        ui.draftId = ui.draftId || crypto.randomUUID();
-        const sentId = ui.draftId, sentDraft = ui.draft;
-        // Clear the box only when nothing new was typed while this send was in flight.
-        act("POST", "messages", { requestId: sentId, text }).then(() => { if (!ui.error && ui.draftId === sentId && ui.draft === sentDraft) { ui.draft = ""; ui.draftId = null; render(); } });
+        submitMessage("followUp");
       } },
         el("label", {}, el("span", { class: "sr-only", text: "Message " + (view.spec.character.name || "the agent") }),
-          el("textarea", { rows: 2, "aria-label": "Message " + (view.spec.character.name || "the agent"), placeholder: 'e.g. "Post one copy-editing job under $15."', oninput: (e) => { ui.draft = e.target.value; ui.draftId = null; }, onkeydown: (e) => {
-            if ((e.key === "Enter" && !e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")) { e.preventDefault(); e.currentTarget.form.requestSubmit(); }
+          el("textarea", { rows: 2, "aria-label": "Message " + (view.spec.character.name || "the agent"), placeholder: 'e.g. "Post one copy-editing job under $15."', oninput: (e) => { if (ui.draft !== e.target.value) ui.attempt = null; ui.draft = e.target.value; ui.messageError = ""; updateMessageStatus(); }, onkeydown: (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); submitMessage("steer"); }
+            else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.currentTarget.form.requestSubmit(); }
           }, text: ui.draft })),
         el("div", { class: "samples" }, el("span", { class: "samples-label", text: "Try:" }),
           ["Post a job under $15", "Hold off on new bids today", "Summarize the last check-in"].map((s) =>
             el("button", { type: "button", class: "sample", onclick: () => draftInto(s), text: s }))),
         el("button", { type: "submit", class: "primary send", text: "Send" }),
         el("div", { class: "hint" },
-          el("span", {}, el("kbd", { text: "Enter" }), " to send · ", el("kbd", { text: "Shift+Enter" }), " for a new line"),
-          el("span", {}, el("kbd", { text: "Ctrl+S" }), " to steer")),
+          el("span", {}, el("kbd", { text: "Enter" }), " follow-up · ", el("kbd", { text: "Shift+Enter" }), " for a new line"),
+          el("span", {}, el("kbd", { text: "Ctrl/Cmd+S" }), " steer")),
         el("button", { type: "button", class: "sq jump", "aria-label": "Jump to the newest turn", title: "Jump to the newest turn", onclick: () => toNewest(smooth()) }, pict("arrow", 16))),
-      el("div", { class: "small send-note", text: "Each send carries its own ID, so a double click or a retry queues it only once." })),
+      el("div", { class: "small send-note" },
+        el("div", { class: "message-status", role: "status", "aria-live": "polite" }),
+        "Each send carries its own ID and mode, so a double click or a retry queues it only once.")),
     el("aside", {}, readiness(), tasksPanel(), spendPanel(),
       el("section", { class: "section" },
         band("Standing orders", "· " + op.orders.length),
@@ -713,13 +828,21 @@ function unlock() {
 }
 
 function render() {
+  // Reconcile queue rows by ID before protecting the active editor. A stream push
+  // must not hide a promotion or consume the composer's focus and selection.
+  updateQueuedMessages();
+  updateMessageStatus();
   const activeTag = document.activeElement && document.activeElement.tagName;
+  // Keep keyboard focus on stable queue controls as well as on the editor.
+  const queue = document.querySelector("#queued-messages");
+  const timeline = token && view && !ui.reopening && ui.tab === "timeline";
+  if (timeline && queue && queue.contains(document.activeElement)) return;
   // Briefing fields and inputs keep the old protection: never rebuild under them.
   if ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "briefing")) return;
-  // The composer may be rebuilt while focused: an empty field gets its focus back, a
-  // typed draft is only protected while the operator is actually typing in it.
+  // Queue and admission feedback update above without rebuilding a typed draft.
+  // An empty composer keeps the existing full live refresh and gets focus back.
   const taHadFocus = activeTag === "TEXTAREA";
-  if (taHadFocus && ui.draft) return;
+  if (taHadFocus && ui.draft && timeline) return;
   if (taHadFocus) ui.focusComposer = true;
   app.replaceChildren(...(!token ? [unlock()] :
     !list || (!view && !ui.reopening) ? [el("div", { class: "unlock", text: ui.error || "Loading…" })] :
@@ -729,11 +852,17 @@ function render() {
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
   // The timeline opens at its newest turn, as a chat does.
   if (toEnd && view && ui.tab === "timeline") { toEnd = false; toNewest("auto"); }
+  updateMessageStatus();
   measureComposer();
   onScroll();
   const next = document.querySelector("textarea");
   if (ui.focusComposer && next) { next.focus(); ui.focusComposer = false; }
 }
+// Catch Save Page even when Send or a queue control has keyboard focus. The
+// textarea handles its own shortcut first; defaultPrevented avoids a second send.
+addEventListener("keydown", (e) => {
+  if (!e.defaultPrevented && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && token && view && ui.tab === "timeline") { e.preventDefault(); submitMessage("steer"); }
+});
 refresh();
 </script>
 </body>

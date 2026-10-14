@@ -61,7 +61,7 @@ export type Screen = ReturnType<typeof screen>;
 export function screen(view: ConsoleView, width: number, now = new Date()) {
   const today = now.toISOString().slice(0, 10);
   const op = view.operator;
-  const waiting = Object.values(view.events).filter((work) => work.kind === "admitted").length + op.messages.length;
+  const waiting = Object.values(view.events).filter((work) => work.kind === "admitted").length + view.queuedMessages.length;
   const limits = view.spec.limits ?? {};
   const hasLimits = limits.perJobUsd !== undefined || limits.dailyUsd !== undefined;
   const wallet = usdc(view.host?.wallet);
@@ -107,6 +107,7 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
     }),
     turns,
     sidebar: {
+      queued: view.queuedMessages.map(({ requestId, text, mode }) => ({ requestId, text: clean(text), mode, label: mode === "steer" ? "Steer" : "Follow-up" })),
       readiness: [
         { label: "Wallet balance", detail: wallet, ok: !/^0\.00 |unavailable|unknown/.test(wallet) },
         { label: "Wallet unlock file", detail: view.host?.unlockFile ? "present" : "missing · create .taskfast/wallet-password (mode 0400) in the agent folder", ok: Boolean(view.host?.unlockFile) },

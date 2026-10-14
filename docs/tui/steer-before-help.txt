@@ -1,0 +1,36 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop · Your Name (poster) › [1 Timeline] 2 Briefing    ● paused · 3 waiting   spend $0.00 of $50.00   ? help
+ Paused: events are still received and stored. 3 waiting; they run in order when you resume (p).
+┌─ Keys ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1 / 2   Timeline / Briefing                                                                                                    │
+│ j / k   next / previous reply, alert, order or field                                                                           │
+│ g / G   top / bottom                                                                                                           │
+│ tab     next panel                                                                                                             │
+│ < / >   previous / next agent                                                                                                  │
+│ enter   show tool calls (Briefing: edit the field)                                                                             │
+│ r       raw event                                                                                                              │
+│ o       open the task                                                                                                          │
+│ m       write a message (enter sends it once)                                                                                  │
+│ p       pause / resume                                                                                                         │
+│ f       freeze spending (asks y/n) / unfreeze                                                                                  │
+│ c       mark the alert checked                                                                                                 │
+│ R       run an abandoned event again                                                                                           │
+│ a       show alerts (Briefing: add a standing order)                                                                           │
+│ d       Briefing: delete the standing order                                                                                    │
+│ ctrl+s  Briefing: save agent.json and reopen the agent (asks y/n)                                                              │
+│ esc     discard the draft, close a line                                                                                        │
+│ i       show the sidebar                                                                                                       │
+│ ?       this help                                                                                                              │
+│ q       quit the TUI; the agents keep running                                                                                  │
+│ The mouse toggles tool-call badges and scrolls. ? or esc closes this.                                                          │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+│                                                                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ j/k move · enter tool calls · r raw · o open · m message · p pause · f freeze · c checked · tab panel · ? help · q quit

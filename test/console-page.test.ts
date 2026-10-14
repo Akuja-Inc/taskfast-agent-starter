@@ -8,6 +8,11 @@ class FakeNode {
   attributes: Record<string, string> = {};
   children: unknown[] = [];
   listeners: Record<string, ((event: unknown) => void)[]> = {};
+  parentElement: FakeNode | null = null;
+  disabled = false;
+  value = '';
+  selectionStart = 0;
+  selectionEnd = 0;
   style: Record<string, string> = {};
   dataset: Record<string, string> = {};
   classList = { add() {}, remove() {}, toggle() {} };
@@ -16,9 +21,25 @@ class FakeNode {
   getAttribute(key: string) { return key in this.attributes ? this.attributes[key] : null; }
   hasAttribute(key: string) { return key in this.attributes; }
   addEventListener(type: string, fn: (event: unknown) => void) { (this.listeners[type] ??= []).push(fn); }
-  append(...kids: unknown[]) { this.children.push(...kids); }
-  replaceChildren(...kids: unknown[]) { this.children = kids; }
-  remove() {}
+  append(...kids: unknown[]) { for (const kid of kids) { if (kid instanceof FakeNode) { kid.remove(); kid.parentElement = this; } this.children.push(kid); } }
+  replaceChildren(...kids: unknown[]) { for (const kid of [...this.children]) if (kid instanceof FakeNode) kid.remove(); this.children = []; this.append(...kids); }
+  remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter((child) => child !== this); this.parentElement = null; }
+  insertBefore(node: FakeNode, before: unknown) { node.remove(); node.parentElement = this; const index = this.children.indexOf(before); this.children.splice(index < 0 ? this.children.length : index, 0, node); }
+  contains(node: unknown): boolean { return node === this || this.children.some((child) => child instanceof FakeNode && child.contains(node)); }
+  matches(selector: string): boolean {
+    const tag = /^[a-z]+/i.exec(selector)?.[0];
+    const id = /#([\w-]+)/.exec(selector)?.[1];
+    const classes = [...selector.matchAll(/\.([\w-]+)/g)].map((match) => match[1]);
+    return (!tag || this.tagName === tag.toUpperCase()) && (!id || this.getAttribute('id') === id) && classes.every((cls) => (this.getAttribute('class') || '').split(' ').includes(cls));
+  }
+  querySelectorAll(selector: string): FakeNode[] {
+    const parts = selector.split(' '), last = parts.pop()!;
+    return this.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : []).filter((node) => node.matches(last) && (!parts.length || !!node.parentElement?.closest(parts.join(' '))));
+  }
+  querySelector(selector: string): FakeNode | null { return this.querySelectorAll(selector)[0] || null; }
+  closest(selector: string): FakeNode | null { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
+  focus() {}
+  scrollIntoView() {}
   cloneNode() {
     const copy = new FakeNode(this.tagName);
     copy.attributes = { ...this.attributes };
@@ -26,10 +47,11 @@ class FakeNode {
     return copy;
   }
   set textContent(value: string) { this.children = [value]; }
+  get textContent(): string { return this.children.map((child) => child instanceof FakeNode ? child.textContent : String(child)).join(''); }
 }
 
 // Boot the page's inline script against the fake DOM and hand back its render functions.
-const bootPage = () => {
+const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = () => new Promise<never>(() => {})) => {
   const script = PAGE.match(/<script>\n("use strict";[\s\S]*?)<\/script>/)![1];
   const app = new FakeNode("div");
   const storage = { getItem: () => null, setItem() {}, removeItem() {} };
@@ -37,24 +59,179 @@ const bootPage = () => {
     getElementById: () => app,
     createElement: (tag: string) => new FakeNode(tag),
     createElementNS: () => new FakeNode("svg"),
-    activeElement: null,
+    activeElement: null as FakeNode | null,
     body: new FakeNode("body"),
     documentElement: { dataset: {} as Record<string, string>, style: { setProperty() {} }, scrollHeight: 0 },
-    querySelector: () => null,
-    querySelectorAll: () => [],
+    querySelector: (selector: string) => app.querySelector(selector),
+    querySelectorAll: (selector: string) => selector === '.turn[data-i]' ? [] : app.querySelectorAll(selector),
   };
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
     "addEventListener", "ResizeObserver", "fetch", "matchMedia",
-    `${script}\nreturn { header, turnCard, ui, unlock, viaLabel };`,
+    `${script}\nreturn { header, turnCard, timelineTab, render, ui, document, app, unlock, submitMessage, promoteMessage, viaLabel, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop'; following.up = true; } };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
-    () => new Promise(() => {}), () => ({ matches: false }),
-  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; ui: { raw: Set<string> }; unlock: () => FakeNode; viaLabel: (via: string | undefined) => string };
+    fetch, () => ({ matches: false }),
+  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string }; viaLabel: (via: string | undefined) => string };
 };
+
+const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
+const demoView = () => ({
+  operator: { paused: true, frozen: false, messages: [], orders: [] }, queuedMessages: [],
+  events: {}, attention: [], timeline: [], actions: {}, spend: {}, notes: [],
+  spec: { model: 'faux:test', character: { name: 'Demo' }, limits: { dailyUsd: 50 } },
+});
+
+it("Ctrl+S admits a steer and prevents Save Page rather than sending a follow-up", () => {
+  const requests: { path: string; body: string }[] = [];
+  const page = bootPage((path?: unknown, init?: unknown) => {
+    requests.push({ path: String(path), body: (init as { body: string }).body });
+    return new Promise<never>(() => {});
+  });
+  page.setView(demoView());
+  page.ui.draft = 'Hold off on bids';
+  const form = nodes(page.timelineTab()).find((node) => node.tagName === 'FORM')!;
+  const textarea = nodes(form).find((node) => node.tagName === 'TEXTAREA')!;
+  let prevented = false;
+  textarea.listeners.keydown[0]({ key: 's', ctrlKey: true, preventDefault() { prevented = true; }, currentTarget: { form: { requestSubmit() { form.listeners.submit[0]({ preventDefault() {} }); } } } });
+  expect(prevented).toBe(true);
+  expect(requests).toHaveLength(1);
+  expect(JSON.parse(requests[0].body)).toMatchObject({ text: 'Hold off on bids', steer: true });
+});
+
+it("keeps one in-flight admission and its initial mode when the operator changes send keys", () => {
+  const requests: unknown[] = [];
+  const page = bootPage((_path?: unknown, init?: unknown) => {
+    requests.push(JSON.parse((init as { body: string }).body));
+    return new Promise<never>(() => {});
+  });
+  page.setView(demoView());
+  page.ui.draft = 'Same draft';
+  const form = nodes(page.timelineTab()).find((node) => node.tagName === 'FORM')!;
+  const textarea = nodes(form).find((node) => node.tagName === 'TEXTAREA')!;
+  form.listeners.submit[0]({ preventDefault() {} });
+  textarea.listeners.keydown[0]({ key: 's', metaKey: true, preventDefault() {} });
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).not.toHaveProperty('steer');
+});
+
+it("shows the oldest-first mixed queue outside the sticky composer, with Steer only on follow-ups", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), queuedMessages: [
+    { requestId: 'first', text: '<img src=x onerror=alert(1)>', mode: 'followUp' },
+    { requestId: 'second', text: 'Go next', mode: 'steer' },
+  ] });
+  const tab = page.timelineTab();
+  const all = nodes(tab);
+  const queue = all.find((node) => node.getAttribute('id') === 'queued-messages');
+  expect(queue).toBeDefined();
+  expect(nodes(queue!).filter((node) => node.tagName === 'BUTTON')).toHaveLength(1);
+  expect(nodes(queue!).filter((node) => node.getAttribute('class') === 'queue-text').map((node) => node.children)).toEqual([
+    ['<img src=x onerror=alert(1)>'], ['Go next'],
+  ]);
+  expect(nodes(all.find((node) => node.tagName === 'FORM')!).includes(queue!)).toBe(false);
+});
+
+it("counts operator messages already in Pi's inbox in the paused waiting summary", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), events: { event: { kind: 'admitted' } }, queuedMessages: [
+    { requestId: 'first', text: 'Queued follow-up', mode: 'followUp' },
+    { requestId: 'second', text: 'Queued steer', mode: 'steer' },
+  ] });
+  expect(nodes(page.timelineTab()).find((node) => node.getAttribute('class') === 'note')?.textContent).toContain('3 waiting');
+});
+
+it("retains a failed send's ID and mode across retry keys, but edits create a new identity", async () => {
+  const requests: { requestId: string; text: string; steer?: boolean }[] = [];
+  const page = bootPage((_path, init) => { requests.push(JSON.parse((init as { body: string }).body)); return Promise.reject(new Error('offline')); });
+  page.setView(demoView()); page.ui.draft = 'Original';
+  await page.submitMessage('steer'); await page.submitMessage('followUp');
+  expect(requests[1]).toEqual(requests[0]); expect(requests[0].steer).toBe(true);
+  nodes(page.timelineTab()).find((node) => node.tagName === 'TEXTAREA')!.listeners.input[0]({ target: { value: 'Edited' } });
+  await page.submitMessage('followUp');
+  expect(requests[2].requestId).not.toBe(requests[0].requestId); expect(requests[2]).not.toHaveProperty('steer'); expect(page.ui.draft).toBe('Edited');
+});
+
+it("Enter and Send follow up, while Shift+Enter and IME Enter do not submit", () => {
+  const requests: unknown[] = [];
+  const page = bootPage((_path, init) => { requests.push(JSON.parse((init as { body: string }).body)); return new Promise<never>(() => {}); });
+  page.setView(demoView()); page.ui.draft = 'Follow up';
+  const form = nodes(page.timelineTab()).find((node) => node.tagName === 'FORM')!;
+  const textarea = nodes(form).find((node) => node.tagName === 'TEXTAREA')!;
+  const key = (extra: object) => textarea.listeners.keydown[0]({ key: 'Enter', preventDefault() {}, currentTarget: { form: { requestSubmit() { form.listeners.submit[0]({ preventDefault() {} }); } } }, ...extra });
+  key({ shiftKey: true }); key({ isComposing: true }); expect(requests).toHaveLength(0);
+  key({}); form.listeners.submit[0]({ preventDefault() {} });
+  expect(requests).toHaveLength(1); expect(requests[0]).not.toHaveProperty('steer');
+});
+
+it("updates queues while typing without replacing the textarea or stable queue controls", () => {
+  const page = bootPage(), followUp = { requestId: 'first', text: 'Oldest', mode: 'followUp' };
+  page.setView({ ...demoView(), queuedMessages: [followUp] }); page.render();
+  const textarea = page.app.querySelector('textarea')!, originalButton = page.app.querySelector('.queue-promote');
+  page.document.activeElement = textarea; page.ui.draft = 'Typing a new draft'; textarea.value = page.ui.draft; textarea.selectionStart = 4; textarea.selectionEnd = 9;
+  page.setView({ ...demoView(), queuedMessages: [followUp, { requestId: 'second', text: 'New steer', mode: 'steer' }] }); page.render();
+  expect(page.app.querySelectorAll('.queue-row')).toHaveLength(2); expect(page.app.querySelector('.queue-promote')).toBe(originalButton);
+  expect(page.app.querySelector('textarea')).toBe(textarea); expect(page.document.activeElement).toBe(textarea);
+  expect([textarea.value, textarea.selectionStart, textarea.selectionEnd]).toEqual(['Typing a new draft', 4, 9]);
+  page.setView(demoView()); page.render(); expect(page.app.querySelectorAll('.queue-row')).toHaveLength(0);
+  expect(page.app.querySelector('.queue-empty')?.textContent).toBe('No queued messages.');
+});
+
+it("serializes paused promotion and reports placement and stale-row races as notices", async () => {
+  for (const status of [409, 404]) {
+    const requests: string[] = []; let resolve!: (response: Response) => void;
+    const page = bootPage((path, init) => {
+      if ((init as { method: string }).method === 'POST') { requests.push(String(path)); return new Promise<Response>((done) => { resolve = done; }); }
+      return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] })));
+    });
+    page.setView({ ...demoView(), queuedMessages: [{ requestId: 'stable/id', text: 'Visible', mode: 'followUp' }] }); page.render(); page.ui.draft = 'Unrelated draft';
+    const first = page.promoteMessage('stable/id', 'shop'), second = page.promoteMessage('stable/id', 'shop');
+    expect(requests).toEqual(['/api/agents/shop/steer/stable%2Fid']); expect(page.app.querySelector('.queue-promote')?.disabled).toBe(true);
+    resolve(new Response(JSON.stringify({ error: status === 409 ? 'The agent already has this message.' : 'Unknown message' }), { status })); await Promise.all([first, second]);
+    expect(page.app.querySelector('.queue-notice')?.textContent).toBe('The agent already has this message.');
+    expect(page.app.querySelector('.message-status')?.textContent).toBe(''); expect(page.ui.draft).toBe('Unrelated draft');
+  }
+});
+
+it("keeps failed promotions retryable without marking the draft send failed", async () => {
+  let posts = 0;
+  const page = bootPage((_path, init) => { if ((init as { method: string }).method === 'POST') { posts++; return Promise.reject(new Error('offline')); } return new Promise<never>(() => {}); });
+  page.setView({ ...demoView(), queuedMessages: [{ requestId: 'first', text: 'Visible', mode: 'followUp' }] }); page.render();
+  await page.promoteMessage('first', 'shop'); expect(page.app.querySelector('.queue-error')?.textContent).toContain('Could not steer this message. Try again.');
+  expect(page.app.querySelector('.queue-promote')?.disabled).toBe(false); expect(page.app.querySelector('.message-status')?.textContent).toBe('');
+  await page.promoteMessage('first', 'shop'); expect(posts).toBe(2);
+});
+
+it("clears only the admitted draft after 204 and keeps a newer edit intact", async () => {
+  let finish!: (response: Response) => void;
+  const page = bootPage((_path, init) => (init as { method: string }).method === 'POST'
+    ? new Promise<Response>((resolve) => { finish = resolve; })
+    : Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] }))));
+  page.setView(demoView()); page.render();
+  const textarea = page.app.querySelector('textarea')!;
+  page.document.activeElement = textarea; page.ui.draft = 'First'; textarea.value = 'First';
+  const first = page.submitMessage('followUp');
+  textarea.listeners.input[0]({ target: { value: 'Newer edit' } }); textarea.value = 'Newer edit';
+  finish(new Response(null, { status: 204 })); await first;
+  expect(page.ui.draft).toBe('Newer edit'); expect(textarea.value).toBe('Newer edit');
+  const next = page.submitMessage('steer'); finish(new Response(null, { status: 204 })); await next;
+  expect(page.ui.draft).toBe(''); expect(textarea.value).toBe('');
+});
+
+it("does not freeze non-queue live updates when the focused composer has no draft", () => {
+  const page = bootPage(); page.setView(demoView()); page.render();
+  page.document.activeElement = page.app.querySelector('textarea');
+  expect(page.app.querySelector('.note')?.textContent).toContain('Paused.');
+  page.setView({ ...demoView(), operator: { paused: false, frozen: false, messages: [], orders: [] } }); page.render();
+  expect(page.app.querySelector('.note')).toBeNull();
+});
+
+it("pins queue prose below its mode even without a promotion button", () => {
+  expect(PAGE).toContain('.queue-mode, .queue-text { grid-column: 1; }');
+});
 
 it("renders the event turn head as a native button", () => {
   const { turnCard, ui } = bootPage();

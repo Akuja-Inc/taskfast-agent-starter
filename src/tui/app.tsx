@@ -6,7 +6,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@open
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { ConsoleView } from "../console.js";
 import { follow } from "../console-live.js";
-import { FIELDS, fieldValue, initialUi, press, setField, type Effect, type Field, type Ui } from "./keys.js";
+import { actionError, FIELDS, fieldValue, initialUi, messageAttempt, messageBody, press, setField, type Effect, type Field, type MessageAttempt, type MessageMode, type Ui } from "./keys.js";
 import { clean, screen, type Screen } from "./screen.js";
 
 const TONE = { development: "#1d4ed8", staging: "#b45309", production: "#b91c1c" };
@@ -20,12 +20,12 @@ const OK = "#22c55e";
 const SELECTED = "#1f2937";
 const LABEL: Record<Field, string> = { goals: "Goals", temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
 export const HELP: [string, string][] = [
-  ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, order or field"], ["g / G", "top / bottom"],
-  ["tab", "next panel"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
-  ["r", "raw event"], ["o", "open the task"], ["m", "write a message (enter sends it once)"], ["p", "pause / resume"],
+  ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
+  ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
+  ["r", "raw event"], ["o", "open the task"], ["m", "write a message: Enter follow-up / Ctrl+S steer after this tool round"], ["s", "steer the selected queued follow-up (Tab to focus the queue)"], ["p", "pause / resume"],
   ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "run an abandoned event again"],
   ["a", "show alerts (Briefing: add a standing order)"], ["d", "Briefing: delete the standing order"],
-  ["ctrl+s", "Briefing: save agent.json and reopen the agent (asks y/n)"], ["esc", "discard the draft, close a line"],
+  ["ctrl+s", "Timeline composer: steer; Briefing: save and reopen (asks y/n)"], ["esc", "discard the draft, close a line"],
   ["i", "show the sidebar"], ["?", "this help"], ["q", "quit the TUI; the agents keep running"],
 ];
 
@@ -40,6 +40,9 @@ function keyName(e: KeyEvent): string {
   if (e.name === "return" || e.name === "enter") return "enter";
   if (e.sequence.length === 1 && e.sequence >= "!" && e.sequence <= "~") return e.sequence;
   return e.name;
+}
+class ApiError extends Error {
+  constructor(readonly status: number, reason: string) { super(reason); }
 }
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const time = (ms: number) => (ms ? new Date(ms).toTimeString().slice(0, 5) : "");
@@ -56,9 +59,9 @@ export function App(p: AppProps) {
   const [notice, showNotice] = createSignal("");
   const setNotice = (text: string) => showNotice(clean(text));
   const [ui, setUi] = createSignal<Ui>(initialUi());
-  // A message keeps its request ID until it is accepted, so sending the same text again
-  // after a failure queues it once. Different text is a new message with a new ID.
-  let attempt: { text: string; requestId: string } | undefined;
+  // Retries keep identity AND mode. Scope attempts and in-flight guards to the agent.
+  const attempts = new Map<string, MessageAttempt>();
+  const pending = new Set<string>();
   let stop = () => {};
   // Retry and agent switches fire unawaited connects; each is numbered so a stale one
   // can't assign its follow later or overwrite the newer agent's view.
@@ -71,7 +74,7 @@ export function App(p: AppProps) {
     if (!res.ok) {
       let reason = res.statusText;
       try { reason = ((await res.json()) as { error?: string }).error ?? reason; } catch {}
-      throw new Error(reason);
+      throw new ApiError(res.status, reason);
     }
     return res.status === 204 ? null : res.json();
   }
@@ -105,32 +108,50 @@ export function App(p: AppProps) {
   void connect();
 
   async function run(effect: Effect) {
+    if (effect.kind === "notice") return setNotice(effect.text);
+    if (effect.kind === "message") return sendMessage(effect.text, effect.mode);
     if (effect.kind === "quit") { stop(); renderer.destroy(); return p.quit(); }
     if (effect.kind === "open") return p.open(effect.url);
     if (effect.kind === "retry" || effect.kind === "agent") return connect();
     const id = agentId();
     if (!id) return;
+    const actionKey = `${id}/${effect.method}/${effect.action}`;
+    if (pending.has(actionKey)) return;
+    pending.add(actionKey);
     try {
       setNotice("");
       await api(effect.method, `${agentPath(id)}/${effect.action}`, effect.body);
+      if (agentId() !== id) return;
+      if (effect.action.startsWith("steer/")) setNotice("Message set to Steer.");
       if (effect.action === "spec") {
         setUi({ ...ui(), draft: undefined });
         setNotice("Saved. Only this agent reopened.");
       }
-    } catch (error) { setNotice(message(error)); }
+    } catch (error) {
+      if (agentId() === id) setNotice(actionError(effect.action, error instanceof ApiError ? error.status : undefined, message(error)));
+    } finally { pending.delete(actionKey); }
   }
-  async function send(text: string, action: "messages" | "orders") {
+  async function sendMessage(text: string, mode: MessageMode) {
+    const id = agentId();
+    if (!id || !text.trim() || pending.has(`${id}/message`)) return;
+    const attempt = messageAttempt(attempts.get(id), text, mode, crypto.randomUUID());
+    attempts.set(id, attempt);
+    pending.add(`${id}/message`);
+    try {
+      await api("POST", `${agentPath(id)}/messages`, messageBody(attempt));
+      attempts.delete(id);
+      if (agentId() !== id) return;
+      // A user may keep typing during admission. Clear only the accepted draft.
+      if (ui().messageText.trim() === attempt.text) setUi({ ...ui(), editing: undefined, messageText: "" });
+      setNotice(attempt.mode === "steer" ? "Steer queued; read after the current tool round, or on resume." : "Follow-up queued; read on the next run, or on resume.");
+    } catch (error) { if (agentId() === id) setNotice(message(error)); }
+    finally { pending.delete(`${id}/message`); }
+  }
+  async function sendOrder(text: string) {
     const id = agentId();
     if (!id || !text.trim()) return;
-    try {
-      if (action === "orders") await api("POST", `${agentPath(id)}/orders`, { text: text.trim() });
-      else {
-        if (attempt?.text !== text.trim()) attempt = { text: text.trim(), requestId: crypto.randomUUID() };
-        await api("POST", `${agentPath(id)}/messages`, attempt);
-        attempt = undefined;
-        setNotice("Message queued; the agent reads it next.");
-      }
-    } catch (error) { setNotice(message(error)); }
+    try { await api("POST", `${agentPath(id)}/orders`, { text: text.trim() }); }
+    catch (error) { setNotice(message(error)); }
   }
   // Leaves the line after this key event, so its enter isn't also read as a command.
   const done = () => setTimeout(() => setUi({ ...ui(), editing: undefined }), 0);
@@ -138,7 +159,13 @@ export function App(p: AppProps) {
   useKeyboard((event) => {
     const key = keyName(event);
     if (ui().editing) {
-      if (key === "escape") setUi({ ...ui(), editing: undefined });
+      if (ui().editing === "message" && ui().tab === "timeline" && (key === "ctrl+s" || key === "enter")) {
+        // Global listeners run before focused renderables. Consume the shortcut so
+        // OpenTUI neither swallows Ctrl+S nor inserts its control byte into the draft.
+        event.preventDefault();
+        const next = press(ui(), key, view(), list()?.agents.length ?? 0);
+        if (next.effect) void run(next.effect);
+      } else if (key === "escape") { event.preventDefault(); setUi({ ...ui(), editing: undefined }); }
       return;
     }
     const next = press(ui(), key, view(), list()?.agents.length ?? 0);
@@ -153,9 +180,16 @@ export function App(p: AppProps) {
   const items = createMemo(() => (drawn()?.turns ?? []).flatMap((turn) => (turn.replies.length ? turn.replies.map((reply) => reply.key) : [`turn${turn.at}`])));
   const selected = () => items()[Math.max(0, Math.min(ui().reply, items().length - 1))];
   let scroll: ScrollBoxRenderable | undefined;
+  let sidebarScroll: ScrollBoxRenderable | undefined;
   createEffect(() => { const key = selected(); if (key && scroll) scroll.scrollChildIntoView(key); });
+  createEffect(() => {
+    const id = ui().queuedRequestId;
+    const present = drawn()?.sidebar.queued.some((row) => row.requestId === id);
+    if (ui().panel === "queue" && present && sidebarScroll) sidebarScroll.scrollChildIntoView(`queue-${id}`);
+  });
   const agent = () => list()?.agents[ui().agent];
   const draft = () => ui().draft ?? view()?.spec;
+  const queueSelected = (requestId: string) => ui().panel === "queue" && ui().queuedRequestId === requestId;
 
   return (
     <box flexDirection="column" width="100%" height="100%">
@@ -182,7 +216,7 @@ export function App(p: AppProps) {
               <box height={1} flexShrink={0} backgroundColor="#7f1d1d" paddingX={1}><text fg="#ffffff"><b>SPENDING FROZEN</b>{"  post_task and escrow_sign are refused before anything is reserved · f unfreezes"}</text></box>
             </Show>
             <Show when={view()?.operator.paused}>
-              <box height={1} paddingX={1}><text fg={WARN}>{`Paused: events are still received and stored. ${s().state.replace("paused · ", "")}; they run in order when you resume (p).`}</text></box>
+              <box height={1} paddingX={1}><text fg={WARN}>{`Paused: events are still received and stored. ${s().state.replace("paused · ", "")}; steers run before follow-ups on resume (p).`}</text></box>
             </Show>
             <Show when={ui().confirm}>
               {(confirm: () => NonNullable<Ui["confirm"]>) => (
@@ -202,8 +236,8 @@ export function App(p: AppProps) {
               </box>
             </Show>
             <Show when={!ui().help && ui().tab === "timeline"}>
-              <box flexDirection={narrow() ? "column" : "row"} flexGrow={1}>
-                <box flexDirection="column" flexGrow={1}>
+              <box flexDirection={narrow() ? "column" : "row"} flexGrow={1} minHeight={0}>
+                <box flexDirection="column" flexGrow={1} minHeight={5}>
                   <Show when={s().attention.length > 0 && (!narrow() || ui().alerts)}>
                     <box flexDirection="column" flexShrink={0} border borderColor={ui().panel === "attention" ? ACCENT : WARN} title={` Needs attention · ${s().attention.length} `} paddingX={1}>
                       <For each={s().attention}>{(item, at) => (
@@ -255,14 +289,24 @@ export function App(p: AppProps) {
                       </box>
                     )}</For>
                   </scrollbox>
-                  <box height={3} flexShrink={0} border borderColor={ui().editing === "message" ? ACCENT : MUTED} title=" Message " paddingX={1}>
-                    <Show when={ui().editing === "message"} fallback={<text fg={MUTED}>{`m to write to ${clean(view()?.spec.character.name ?? "the agent")}; enter sends it once`}</text>}>
-                      <input focused placeholder="Your message to the agent" onSubmit={(text: unknown) => { void send(String(text), "messages"); done(); }} />
+                  <box height={3} flexShrink={0} border borderColor={ui().editing === "message" ? ACCENT : MUTED} title=" Message · Enter follow-up · Ctrl+S steer " paddingX={1}>
+                    <Show when={ui().editing === "message"} fallback={<text fg={MUTED}>{`m to write to ${clean(view()?.spec.character.name ?? "the agent")}; Enter next run / Ctrl+S after tool round`}</text>}>
+                      <input focused placeholder="Your message to the agent" value={ui().messageText} onInput={(text: string) => setUi({ ...ui(), messageText: text })} />
                     </Show>
                   </box>
                 </box>
                 <Show when={!narrow() || ui().sidebar}>
-                  <box flexDirection="column" flexShrink={0} width={narrow() ? "100%" : 42} border borderColor={ui().panel === "sidebar" ? ACCENT : MUTED} title=" Agent " paddingX={1}>
+                  <scrollbox ref={(box: ScrollBoxRenderable) => { sidebarScroll = box; }} flexShrink={0} height={narrow() ? "50%" : undefined} width={narrow() ? "100%" : 42} border borderColor={ui().panel === "queue" ? ACCENT : MUTED} title=" Agent " paddingX={1}>
+                    <text fg={ui().panel === "queue" ? ACCENT : undefined}><b>{`Queued messages · ${s().sidebar.queued.length}`}</b></text>
+                    <text fg={MUTED}>Tab focus · j/k select · s steer</text>
+                    <For each={s().sidebar.queued} fallback={<text fg={MUTED}>None waiting.</text>}>{(row) => (
+                      <box id={`queue-${row.requestId}`} flexDirection="column" backgroundColor={queueSelected(row.requestId) ? SELECTED : undefined}>
+                        <text><Span fg={ACCENT}>{`${queueSelected(row.requestId) ? "▶ " : "  "}${row.label}`}</Span><Span fg={MUTED}>{row.mode === "followUp" ? " · s to steer" : " · after tool round"}</Span></text>
+                        <text>{row.text}</text>
+                      </box>
+                    )}</For>
+                    <Show when={ui().panel === "queue" && ui().queuedRequestId && !s().sidebar.queued.some((row) => row.requestId === ui().queuedRequestId)}><text fg={MUTED}>Selected message left the queue. j/k selects another.</text></Show>
+                    <text> </text>
                     <text><b>Ready to work? </b><Span fg={s().sidebar.readiness.some((check) => !check.ok) ? WARN : OK}>{(() => { const n = s().sidebar.readiness.filter((check) => !check.ok).length; return n ? `${n} problem${n === 1 ? "" : "s"}` : "yes"; })()}</Span></text>
                     <For each={s().sidebar.readiness}>{(check) => <text><Span fg={check.ok ? OK : WARN}>{check.ok ? "✓ " : "✗ "}</Span>{`${check.label}: `}<Span fg={MUTED}>{check.detail}</Span></text>}</For>
                     <text> </text>
@@ -279,7 +323,7 @@ export function App(p: AppProps) {
                     <text> </text>
                     <text><b>{`Standing orders · ${s().sidebar.orders.length}`}</b></text>
                     <For each={s().sidebar.orders}>{(order) => <text fg={MUTED}>{`• ${order}`}</text>}</For>
-                  </box>
+                  </scrollbox>
                 </Show>
               </box>
             </Show>
@@ -291,7 +335,7 @@ export function App(p: AppProps) {
                       {(order, at) => <text>{`${ui().panel === "orders" && at() === ui().order ? "▶ " : "  "}${at() + 1}. ${order}`}</text>}
                     </For>
                     <Show when={ui().editing === "order"}>
-                      <input focused placeholder="New standing order; enter adds it" onSubmit={(text: unknown) => { void send(String(text), "orders"); done(); }} />
+                      <input focused placeholder="New standing order; enter adds it" onSubmit={(text: unknown) => { void sendOrder(String(text)); done(); }} />
                     </Show>
                   </box>
                   <box flexDirection="column" border borderColor={ui().panel === "fields" ? ACCENT : MUTED} title=" agent.json · enter edit · ctrl+s save & reopen · esc discard " paddingX={1}>
@@ -318,8 +362,8 @@ export function App(p: AppProps) {
               <text fg={notice() ? WARN : MUTED}>{notice() || (ui().tab === "briefing"
                 ? "tab orders/fields · j/k move · a add · d delete · enter edit · ctrl+s save · esc discard · 1 timeline · ? help · q quit"
                 : narrow()
-                ? `i sidebar · a alerts (${s().attention.length}) · j/k move · enter calls · m message · p pause · f freeze · ? help · q quit`
-                : "j/k move · enter tool calls · r raw · o open · m message · p pause · f freeze · c checked · tab panel · ? help · q quit")}</text>
+                ? `i sidebar · Tab queue · s steer · a alerts (${s().attention.length}) · m message · p pause · ? help · q quit`
+                : "j/k move · enter calls · r raw · o open · m message · Tab queue · s steer · p pause · f freeze · ? help · q quit")}</text>
             </box>
           </>
         )}

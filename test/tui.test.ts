@@ -6,7 +6,7 @@ import type { ConsoleView } from "../src/console.js";
 import { initialOperator, MESSAGE_PREFIX } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { buildTimeline } from "../src/core/timeline.js";
-import { initialUi, press, setField, type Effect, type Ui } from "../src/tui/keys.js";
+import { actionError, initialUi, messageAttempt, messageBody, press, setField, type Effect, type Ui } from "../src/tui/keys.js";
 import { parseLink } from "../src/tui/link.js";
 import { clean, screen } from "../src/tui/screen.js";
 
@@ -90,6 +90,86 @@ it("draws a view: banner, state, alerts, badges, task cards, sidebar", () => {
   expect(drawn.sidebar.orders).toEqual(["Keep every job under $15."]);
 });
 
+it("shows queued modes safely and steers only a deliberately selected request ID", () => {
+  const view = fixtureView();
+  view.queuedMessages = [
+    { requestId: "old", text: "Wait\x1b[2J for the answer", mode: "followUp" },
+    { requestId: "chosen", text: "Change direction", mode: "followUp" },
+    { requestId: "direct", text: "Already steering", mode: "steer" },
+  ];
+  const drawn = screen(view, 90, NOW);
+  expect(drawn.sidebar.queued).toEqual([
+    { requestId: "old", text: "Wait for the answer", mode: "followUp", label: "Follow-up" },
+    { requestId: "chosen", text: "Change direction", mode: "followUp", label: "Follow-up" },
+    { requestId: "direct", text: "Already steering", mode: "steer", label: "Steer" },
+  ]);
+  expect(drawn.state).toBe("paused · 4 waiting");
+  const k = keys(view);
+  expect(k.run("s")).toEqual([]);
+  k.run("tab", "tab", "j");
+  expect(k.ui).toMatchObject({ panel: "queue", queuedRequestId: "chosen", sidebar: true });
+  // The earlier row leaves, shifting indices. Selection still names the same message.
+  view.queuedMessages.shift();
+  expect(k.run("s")).toEqual([{ kind: "call", method: "POST", action: "steer/chosen" }]);
+  view.queuedMessages.shift();
+  expect(k.run("s")).toEqual([{ kind: "notice", text: "The agent already has this message." }]); // Never promote the row that took its index.
+  k.run("j");
+  expect(k.ui.queuedRequestId).toBe("direct");
+  expect(k.run("s")).toEqual([]);
+  k.run("i");
+  expect(k.ui).toMatchObject({ panel: "timeline", sidebar: false });
+});
+
+it("navigates a queue loaded after focus without inventing a selection on refresh", () => {
+  const view = fixtureView();
+  const k = keys(view);
+  k.run("tab", "tab");
+  expect(k.ui).toMatchObject({ panel: "queue", sidebar: true });
+  expect(k.ui.queuedRequestId).toBeUndefined();
+  view.queuedMessages = [
+    { requestId: "first", text: "First", mode: "followUp" },
+    { requestId: "second", text: "Second", mode: "followUp" },
+  ];
+  expect(k.run("s")).toEqual([]);
+  k.run("G");
+  expect(k.ui.queuedRequestId).toBe("second");
+  k.run("k");
+  expect(k.ui.queuedRequestId).toBe("first");
+  k.run("j", "g");
+  expect(k.ui.queuedRequestId).toBe("first");
+  view.queuedMessages = [];
+  expect(k.run("s")).toEqual([{ kind: "notice", text: "The agent already has this message." }]);
+  expect(k.ui.queuedRequestId).toBe("first");
+});
+
+it("sends follow-ups with Enter and steers with Ctrl+S only in the Timeline composer", () => {
+  const view = fixtureView();
+  const editing: Ui = { ...initialUi(), editing: "message", messageText: "  Recheck the deadline.  " };
+  expect(press(editing, "enter", view, 1).effect).toEqual({ kind: "message", text: "Recheck the deadline.", mode: "followUp" });
+  expect(press(editing, "ctrl+s", view, 1).effect).toEqual({ kind: "message", text: "Recheck the deadline.", mode: "steer" });
+  expect(press({ ...editing, messageText: " " }, "ctrl+s", view, 1).effect).toBeUndefined();
+  expect(press(initialUi(), "ctrl+s", view, 1).effect).toBeUndefined();
+  expect(press(editing, "s", view, 1).effect).toBeUndefined();
+  const briefing = setField({ ...initialUi(), tab: "briefing" }, view, "dailyUsd", "25");
+  expect(press(briefing, "ctrl+s", view, 1).ui.confirm).toEqual({ kind: "save", lines: ["Daily limit $50.00 → $25.00"] });
+});
+
+it("keeps the attempted message ID and mode on retry, never sends steer:false", () => {
+  const first = messageAttempt(undefined, "  Same message ", "steer", "original");
+  const retry = messageAttempt(first, "Same message", "followUp", "unused");
+  expect(retry).toEqual({ requestId: "original", text: "Same message", mode: "steer" });
+  expect(messageBody(retry)).toEqual({ requestId: "original", text: "Same message", steer: true });
+  const followUp = messageAttempt(undefined, "Next run", "followUp", "next");
+  expect(messageBody(messageAttempt(followUp, "Next run", "steer", "unused"))).toEqual({ requestId: "next", text: "Next run" });
+  expect(messageAttempt(first, "Changed text", "followUp", "new")).toEqual({ requestId: "new", text: "Changed text", mode: "followUp" });
+});
+
+it("turns only promotion 404 and 409 races into the exact late-message notice", () => {
+  for (const status of [404, 409]) expect(actionError("steer/selected-id", status, "Queued message not found.")).toBe("The agent already has this message.");
+  expect(actionError("orders/1", 404, "Order missing")).toBe("Order missing");
+  expect(actionError("steer/selected-id", 500, "Try again")).toBe("Try again");
+});
+
 it("keys replies by turn time and place, so they hold when the transcript window slides", () => {
   const view = fixtureView();
   const slid = screen({ ...view, timeline: view.timeline.slice(1) }, 120, NOW);
@@ -152,7 +232,8 @@ it("turns timeline keys into console actions, and asks y/n before freezing", () 
   expect(k.ui.help).toBe(true);
   k.run("?", "i", "a", "m");
   expect(k.ui).toMatchObject({ help: false, sidebar: true, alerts: true, editing: "message" });
-  expect(k.run("q")).toEqual([{ kind: "quit" }]);
+  expect(k.run("q")).toEqual([]); // Printable input is not a global shortcut.
+  expect(k.run("escape", "q")).toEqual([{ kind: "quit" }]);
 });
 
 it("edits the briefing: orders, fields, and save only after y/n, with spending changes spelled out", () => {
