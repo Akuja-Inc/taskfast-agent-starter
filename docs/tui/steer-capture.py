@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Capture actual OpenTUI output in Zutty/X11, never a reconstructed UI.
 Run from the repository root after pnpm build and pnpm tui:test:
-  python3 docs/tui/steer-capture.py before|after
+  python3 docs/tui/steer-capture.py before|after [source-worktree]
 Needs Bun, tmux, Zutty, X11, xwininfo and ImageMagick import.
 """
 import hashlib
@@ -15,18 +15,19 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+OUTPUT = Path(__file__).resolve().parent
+ROOT = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else OUTPUT.parents[1]
 LABEL = sys.argv[1]
 assert LABEL in ("before", "after")
-SOURCES = ["src/tui/app.tsx", "src/tui/keys.ts", "src/tui/screen.ts", "src/tui/smoke.test.tsx", "test/tui.test.ts", "test/fixtures/tui-host.mjs", "docs/tui/steer-capture.py"]
-if LABEL == "before":
-    subprocess.run(["git", "diff", "--exit-code", "--quiet", "--", *SOURCES[:3]], cwd=ROOT, check=True)
+SOURCES = ["src/tui/app.tsx", "src/tui/keys.ts", "src/tui/screen.ts", "src/tui/smoke.test.tsx", "test/tui.test.ts", "test/fixtures/tui-host.mjs"]
+subprocess.run(["git", "diff", "HEAD", "--exit-code", "--quiet", "--", *SOURCES], cwd=ROOT, check=True)
 provenance = {
-    "sourceBase": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+    "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
     "sourceSha256": {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in SOURCES},
+    "captureScriptSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     "capture": "Unmodified X11 window pixels from Zutty running tmux and Bun/OpenTUI. ImageMagick import -window.",
 }
-(ROOT / "docs/tui" / f"steer-{LABEL}-source.json").write_text(json.dumps(provenance, indent=2) + "\n")
+(OUTPUT / f"steer-{LABEL}-source.json").write_text(json.dumps(provenance, indent=2) + "\n")
 host = subprocess.Popen(["node", "test/fixtures/tui-host.mjs"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
 terminal = None
 session = f"steer-proof-{os.getpid()}"
@@ -83,8 +84,8 @@ try:
         windows = subprocess.check_output(["xwininfo", "-root", "-tree"], text=True)
         window = re.search(r'(0x[0-9a-f]+) "' + re.escape(title) + '"', windows).group(1)
         name = f"steer-{LABEL}-{kind}"
-        subprocess.run(["import", "-window", window, str(ROOT / "docs/tui" / (name + ".png"))], check=True)
-        (ROOT / "docs/tui" / (name + ".txt")).write_text(tmux("capture-pane", "-p", "-t", session))
+        subprocess.run(["import", "-window", window, str(OUTPUT / (name + ".png"))], check=True)
+        (OUTPUT / (name + ".txt")).write_text(tmux("capture-pane", "-p", "-t", session))
         terminal.terminate()
         terminal.wait(timeout=5)
         terminal = None
