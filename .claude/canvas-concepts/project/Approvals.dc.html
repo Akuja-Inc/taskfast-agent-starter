@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Approval gate</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F4F2}
+a{color:#1F5FBF}a:hover{color:#163F80}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F3F4F2; color: #17181A; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; line-height: 1.45">
+  <div style="max-width: 1280px; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px">
+      <div style="flex: 1 1 360px">
+        <div style="font-size: 13px; color: #5A5F66">foo · Rock (poster) · development</div>
+        <h1 style="margin: 4px 0 0; font-size: 28px; font-weight: 600">Waiting for you <span style="display: inline-block; min-width: 32px; text-align: center; font-size: 16px; padding: 2px 10px; border-radius: 999px; background: #B8620A; color: #FFFFFF; vertical-align: middle">3</span></h1>
+      </div>
+      <fieldset style="border: 1px solid #C9CCC6; border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 14px; background: #FFFFFF">
+        <legend style="font-size: 13px; color: #3B3F45; padding: 0 4px">Ask me before</legend>
+        <label style="display: flex; gap: 6px; align-items: center; min-height: 32px"><input type="radio" name="gate"> money only</label>
+        <label style="display: flex; gap: 6px; align-items: center; min-height: 32px"><input type="radio" name="gate" checked> writes and money</label>
+        <label style="display: flex; gap: 6px; align-items: center; min-height: 32px"><input type="radio" name="gate"> nothing</label>
+      </fieldset>
+    </div>
+
+    <article style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: #FBEEE3; color: #8A4205">MONEY</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500">post_task</span>
+        <span style="font-size: 13px; color: #5A5F66">asked [time] · after the 05:48 poll</span>
+      </div>
+      <blockquote style="margin: 0; padding: 10px 14px; background: #F6F7F5; border-radius: 6px; font-size: 14px; color: #3B3F45">Rock: "The wallet is funded now. I'll post one copy-editing job well under the per-job limit."</blockquote>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; font-size: 14px">
+        <div><div style="font-size: 12px; color: #5A5F66">title</div>[Job title Rock proposes]</div>
+        <div><div style="font-size: 12px; color: #5A5F66">budget (paid later through escrow)</div>$[15.00]</div>
+        <div><div style="font-size: 12px; color: #5A5F66">pickup deadline</div>24 hours</div>
+        <div><div style="font-size: 12px; color: #5A5F66">charged now (read from the server)</div>submission fee $[fee]</div>
+      </div>
+      <div style="font-size: 13px; color: #5A5F66">After approval: today $[fee] of $50 · per job $20. Policy still checks both limits before it runs.</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end">
+        <button style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 0; background: #1F5FBF; color: #FFFFFF">Approve</button>
+        <button style="font: inherit; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 1px solid #17181A; background: #FFFFFF; color: #17181A">Deny</button>
+        <label style="flex: 1 1 280px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Reason Rock will see (optional)
+          <input type="text" placeholder="e.g. Ask for 1,500 words, not 2,000" style="font: inherit; font-size: 14px; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; min-height: 44px; box-sizing: border-box">
+        </label>
+      </div>
+    </article>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px">
+      <article style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: #FBEEE3; color: #8A4205">MONEY</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500">escrow_sign</span>
+        </div>
+        <div style="font-size: 14px">Fund escrow for the accepted bid on [task title]: <strong>$[bid price]</strong>, read from the server.</div>
+        <div style="font-size: 13px; color: #5A5F66">Started by event payment_signature_required</div>
+        <div style="display: flex; gap: 10px">
+          <button style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 0; background: #1F5FBF; color: #FFFFFF">Approve</button>
+          <button style="font: inherit; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 1px solid #17181A; background: #FFFFFF; color: #17181A">Deny</button>
+        </div>
+      </article>
+      <article style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: #E3E6EA; color: #2E3338">WRITE</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500">message_send</span>
+        </div>
+        <div style="font-size: 14px">To the worker on [task title]: "[Rock's reply to the worker's question]"</div>
+        <div style="font-size: 13px; color: #5A5F66">Started by event message_received</div>
+        <div style="display: flex; gap: 10px">
+          <button style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 0; background: #1F5FBF; color: #FFFFFF">Approve</button>
+          <button style="font: inherit; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 1px solid #17181A; background: #FFFFFF; color: #17181A">Deny</button>
+        </div>
+      </article>
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 8px">
+      <h2 style="margin: 0; font-size: 16px; font-weight: 600">Decided</h2>
+      <div style="overflow-x: auto; background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px">
+          <thead><tr style="text-align: left; color: #5A5F66; font-size: 12px"><th style="padding: 10px 16px; font-weight: 500">When</th><th style="padding: 10px 16px; font-weight: 500">Action</th><th style="padding: 10px 16px; font-weight: 500">You</th><th style="padding: 10px 16px; font-weight: 500">Outcome</th></tr></thead>
+          <tbody>
+            <tr style="border-top: 1px solid #ECEDEA"><td style="padding: 10px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 13px">[time]</td><td style="padding: 10px 16px">bid_reject · [task title]</td><td style="padding: 10px 16px">approved</td><td style="padding: 10px 16px; color: #1D6B34">ok</td></tr>
+            <tr style="border-top: 1px solid #ECEDEA"><td style="padding: 10px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 13px">[time]</td><td style="padding: 10px 16px">post_task · [earlier title]</td><td style="padding: 10px 16px">denied: "too vague"</td><td style="padding: 10px 16px; color: #5A5F66">refused · spend released</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

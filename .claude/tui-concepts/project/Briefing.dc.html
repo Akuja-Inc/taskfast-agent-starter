@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI briefing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:20px}
+.box{border:1px solid #3A3F47;border-radius:6px;position:relative;padding:12px 12px 8px}
+.box.f{border-color:#8DB4F0}
+.ttl{position:absolute;top:-11px;left:10px;background:#0F1115;padding:0 6px;color:#8E949C}
+.box.f>.ttl{color:#8DB4F0}
+.m{color:#8E949C}.ok{color:#8FD19E}.bad{color:#F28B82}.warn{color:#F2A766}.acc{color:#8DB4F0}
+.sel{background:#1E2633}
+.k{color:#0F1115;background:#8E949C;padding:0 4px;border-radius:2px}
+.field{display:flex;gap:12px}
+.field>.lab{width:150px;color:#8E949C}
+.in{border-bottom:1px solid #3A3F47;flex:1}
+.in.f{border-bottom-color:#8DB4F0;background:#1E2633}
+</style>
+</helmet>
+<div class="t" style="width: 1100px; height: 880px; box-sizing: border-box; display: flex; flex-direction: column">
+  <div style="display: flex; justify-content: space-between; background: #2E5E8C; color: #FFFFFF; padding: 2px 12px; font-weight: 600"><span>DEVELOPMENT · local TaskFast server · no real money</span><span>console 127.0.0.1:7070 ✓</span></div>
+  <div style="display: flex; gap: 18px; padding: 6px 12px; border-bottom: 1px solid #2A2E35">
+    <span>agent <span class="acc">‹ foo · Rock (poster) ›</span></span>
+    <span><span class="m" style="padding: 0 6px">1 Timeline</span> <span class="sel" style="padding: 0 6px">2 Briefing</span></span>
+    <span class="ok">● running</span>
+    <span style="margin-left: auto"><span class="m">spend</span> $15.40/$50</span>
+  </div>
+  <div style="flex: 1; display: flex; gap: 12px; padding: 16px 12px 6px; min-height: 0">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0">
+      <div class="box"><span class="ttl">Standing orders · live next turn · Rock can't remove them</span>
+        <div class="sel">› 1. Keep every job under $15 this week.</div>
+        <div>  2. Prefer workers with at least one review.</div>
+        <div class="m" style="margin-top: 6px">a add  ·  d delete selected</div>
+        <div class="m">Rock's own notes: none yet</div>
+      </div>
+      <div class="box f" style="flex: 1"><span class="ttl">agent.json · saving reopens only foo</span>
+        <div class="field"><span class="lab">goals</span><span class="in">get small jobs done fast at a fair price</span></div>
+        <div class="field"><span class="lab">temperament</span><span class="in">‹ brisk ›</span></div>
+        <div class="field"><span class="lab">per job limit</span><span class="in">20</span></div>
+        <div class="field"><span class="lab">daily limit</span><span class="in f">80▏</span><span class="warn">changed</span></div>
+        <div class="field"><span class="lab">competence</span><span class="in">0.7  <span class="acc">━━━━━━━</span><span class="m">───</span></span></div>
+        <div class="field"><span class="lab">diligence</span><span class="in">0.6  <span class="acc">━━━━━━</span><span class="m">────</span></span></div>
+        <div class="field"><span class="lab">price sensitivity</span><span class="in">0.7  <span class="acc">━━━━━━━</span><span class="m">───</span></span></div>
+        <div class="box" style="margin-top: 18px; border-color: #E5CF8F"><span class="ttl" style="color: #F7DE9C">confirm spending change</span>
+          <div>daily limit  $50.00 → <span class="warn">$80.00</span></div>
+          <div class="m">takes effect when foo reopens · today's $15.40 still counts</div>
+          <div class="m">saving mid-turn interrupts it; a write in flight is recorded as uncertain</div>
+        </div>
+        <div style="margin-top: 12px"><span class="k">ctrl+s</span> confirm, save &amp; reopen foo   <span class="k">esc</span> discard</div>
+        <div class="m">Checked against the strict agent schema first; nothing is written if it fails.</div>
+      </div>
+    </div>
+    <div class="box" style="width: 380px"><span class="ttl">What Rock reads every turn</span>
+      <div style="white-space: pre-wrap">You are Rock, who runs Sizzle Rock. Small biz doing small tings!
+What you want right now: get small jobs done fast at a fair price.
+You have about $20 to spend on a single job.
+You are brisk and businesslike.
+You hire people for jobs through a freelance marketplace, writing the way you normally would.
+<span class="acc">Your operator's standing orders:
+- Keep every job under $15 this week.
+- Prefer workers with at least one review.</span></div>
+    </div>
+  </div>
+  <div style="padding: 8px 12px 6px" class="m"><span class="k">tab</span> next field  <span class="k">←/→</span> change choice  <span class="k">a</span> add order  <span class="k">d</span> delete  <span class="k">ctrl+s</span> save  <span class="k">1</span> timeline  <span class="k">?</span> help</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

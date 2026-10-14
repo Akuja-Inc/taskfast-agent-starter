@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI key help</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:22px}
+.m{color:#8E949C}.acc{color:#8DB4F0}
+.k{display:inline-block;min-width:64px;color:#8DB4F0}
+</style>
+</helmet>
+<div class="t" style="width: 700px; height: 620px; box-sizing: border-box; padding: 28px; display: flex; align-items: center; justify-content: center">
+  <div role="dialog" aria-labelledby="help-title" style="width: 620px; border: 2px solid #8DB4F0; border-radius: 8px; padding: 18px 22px; background: #15181D; display: flex; flex-direction: column; gap: 14px">
+    <div id="help-title" style="font-weight: 600">Keys <span class="m">· esc closes</span></div>
+    <div style="display: flex; gap: 28px">
+      <div style="flex: 1">
+        <div class="m">Move</div>
+        <div><span class="k">1 2</span>Timeline · Briefing</div>
+        <div><span class="k">j k</span>reply down · up</div>
+        <div><span class="k">g G</span>top · bottom</div>
+        <div><span class="k">tab</span>next panel</div>
+        <div><span class="k">‹ ›</span>previous · next agent</div>
+        <div><span class="k">i</span>sidebar on narrow screens</div>
+        <div><span class="k">a</span>alerts</div>
+      </div>
+      <div style="flex: 1">
+        <div class="m">Look</div>
+        <div><span class="k">enter</span>show · hide tool calls</div>
+        <div><span class="k">r</span>raw event</div>
+        <div><span class="k">o</span>open task link</div>
+        <div class="m" style="margin-top: 8px">Steer</div>
+        <div><span class="k">m</span>message the agent</div>
+        <div><span class="k">p</span>pause · resume</div>
+        <div><span class="k">f</span>freeze spending (asks y/n)</div>
+        <div><span class="k">c R</span>mark checked · run again</div>
+      </div>
+    </div>
+    <div class="m">Mouse works too: click a badge, scroll the timeline. <span class="acc">q</span> quits the TUI only; the agents keep running in pnpm agents.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":700,"height":620}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

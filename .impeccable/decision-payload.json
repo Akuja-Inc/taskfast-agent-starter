@@ -1,0 +1,125 @@
+{
+  "title": "Choose the console's visual world",
+  "question": "The roll assigned The Laboratory Notebook. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "The Laboratory Notebook",
+      "kicker": "THE ROLL",
+      "lineage": "the bound, numbered, signed lab notebook",
+      "thesis": "The console as the dated, numbered record of an experiment that spends money: nothing is ever erased, an uncertain action is struck and annotated, and the record keeps its numbering.",
+      "palette": ["#F7F8F6", "#1A1D21", "#2355C4", "#D8DEE4", "#B45309", "#B3261E", "#171B22"],
+      "materials": ["graph-ruled paper", "ruled entry rows", "night slate log"],
+      "viewport": "A fine blue-gray grid grounds the page; every turn is a ruled, numbered row (Nº 0142) with time and state; the uncertain escrow entry is struck through and annotated, never removed; readiness, spend and tasks sit as margin panels; the dark theme is the same notebook kept at night on slate.",
+      "risk": "Reads austere or academic if the grid and numbering become decoration instead of record-keeping.",
+      "raised": [
+        { "from": "emission-line rail", "raise": "State is encoded in form as well as hue: solid, dashed, struck and doubled marks, so state survives colorblindness and print." },
+        { "from": "Emigre specimen", "raise": "One status-mark geometry holds from tag size to banner size; only the scale changes." },
+        { "from": "streaming wall", "raise": "The entry under focus is the brightest thing on the page; routine entries recede by tint, never by blur or shadow." },
+        { "from": "star atlas", "raise": "The dark theme's attention marks use a restrained night-annotation hue that marks without flooding night vision." }
+      ],
+      "html": ".impeccable/mocks/decision/assigned.html"
+    },
+    {
+      "id": "model-pick",
+      "label": "The Departure Check",
+      "kicker": "IMPECCABLE'S PICK",
+      "lineage": "the aviation checklist and pre-flight card",
+      "thesis": "Every screen answers like a checklist: readiness rows with big binary marks, warnings reserved for real danger, and every money change confirmed as a challenge and a response before it counts.",
+      "palette": ["#FAFAF7", "#17181A", "#1D6B34", "#B45309", "#B3261E", "#24262A"],
+      "materials": ["laminated card", "check squares", "section tabs"],
+      "viewport": "Readiness leads as the pre-flight panel with oversized OK and Problem marks; attention items are warning boxes with one action each; the timeline reads as completed check items; Freeze and spending changes confirm as spelled-out challenge/response; the dark theme is the same card stock under cockpit-night light.",
+      "risk": "The checklist-derived ops console is where most runs in this category land; familiar and effective, rarely surprising."
+    },
+    {
+      "id": "challenger-gateboard",
+      "label": "The Gate Board",
+      "verdict": "wins",
+      "lineage": "the airport departure board paired with the boarding pass",
+      "thesis": "A live board of commitments: rows in a fixed tabular rhythm rerank and update in place without losing identity, a changed row holds its alert color until the operator acknowledges it, and settled items drop off the board.",
+      "palette": ["#0B0D10", "#F5F7F9", "#FFD400", "#6B7178", "#1C2127", "#B3261E"],
+      "materials": ["matte board panel", "paper pass segments", "tabular figures"],
+      "viewport": "The timeline is the board: dark matte panel, mono tabular columns (time, kind, detail, state); the uncertain escrow row holds a signal-yellow edge until Mark checked clears it from the attention board; spend and readiness read as pass segments; the world ships both themes natively, the dark board and the paper pass.",
+      "case": "Wins both axes: its core behavior is the product's own (a change holds its alert until acknowledged, rows keep identity as they rerank) and every operator alive has read a departure board; it beats the notebook on audience identification and product clarity.",
+      "risk": "Board chrome (flap-display nostalgia, fake scan blocks) is a costume; only the tabular rhythm and the held-alert behavior may ship.",
+      "hero": "https://impeccable.style/worlds/cards/vernacular-ephemera-boarding-pass-and-gate-board-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/vernacular-ephemera-boarding-pass-and-gate-board.webp",
+      "html": ".impeccable/mocks/decision/challenger-gateboard.html"
+    },
+    {
+      "id": "challenger-lexicon",
+      "label": "The Lexicon Page",
+      "verdict": "competitive",
+      "lineage": "the nineteenth-century dictionary spread",
+      "thesis": "A reference page for a long record: guide words at the head name the span in view, a shoulder margin carries the apparatus, and color is quarantined inside one bordered plate.",
+      "palette": ["#F4EDDE", "#1C1917", "#A33227", "#1F5C46", "#E4D7BE"],
+      "materials": ["uncoated cream stock", "engraved hairlines", "bordered color plate"],
+      "viewport": "Engraving-black text on cream; the header carries guide words naming the first and last turn in view; a shoulder margin holds tags and times so entries stay clean; the environment banner is the page's one bordered color plate; the dark theme is the same page by lamplight.",
+      "case": "Holds product clarity: guide words and the shoulder genuinely serve a long timeline; loses audience identification, since a 19th-century dictionary is not this operator's daily world.",
+      "risk": "Serif UI text taxes scanning, and the antique voice can read as costume the moment a table or form appears.",
+      "hero": "https://impeccable.style/worlds/cards/rw-lexicon-shoulder-and-plate-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/rw-lexicon-shoulder-and-plate.webp",
+      "html": ".impeccable/mocks/decision/challenger-lexicon.html"
+    },
+    {
+      "id": "challenger-emission",
+      "label": "The Emission Rail",
+      "verdict": "declined",
+      "lineage": "the spectrogram plate",
+      "palette": ["#101418", "#EFE9DC", "#FFD400", "#8A94A6"],
+      "materials": ["charcoal continuum", "spectral hairlines"],
+      "case": "Loses both axes: spectrograms are a scientist's instrument, not an operator's world, and seven wavelength hues collide with the money-safety color language.",
+      "kept": "State encoded in form as well as hue, never hue alone.",
+      "hero": "https://impeccable.style/worlds/cards/operate-c-emission-line-rail-hero.webp"
+    },
+    {
+      "id": "challenger-emigre",
+      "label": "The Bitmap Specimen",
+      "verdict": "declined",
+      "lineage": "the Emigre bitmap type specimen",
+      "palette": ["#F5F2EA", "#111111", "#2B4FE0"],
+      "materials": ["newsprint", "halftone dots"],
+      "case": "Loses both axes: coarse bitmap display faces tax every label on a working screen, and the audience reads records, not type specimens.",
+      "kept": "One status-mark geometry at every scale.",
+      "hero": "https://impeccable.style/worlds/cards/emigre-bitmap-specimen-hero.webp"
+    },
+    {
+      "id": "challenger-streamwall",
+      "label": "The Title-Card Wall",
+      "verdict": "declined",
+      "lineage": "the streaming catalog wall",
+      "palette": ["#14161A", "#E8E8E8", "#3B82F6"],
+      "materials": ["poster tiles", "dimmed wall"],
+      "case": "Loses both axes: poster tiles need artwork the marketplace never supplies, and tile-by-tile focus fights the at-a-glance record.",
+      "kept": "Focus carried by light: the lit row wins, the rest recede.",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-streaming-title-card-wall-hero.webp"
+    },
+    {
+      "id": "challenger-staratlas",
+      "label": "The Star Atlas",
+      "verdict": "declined",
+      "lineage": "the celestial chart under red flashlight",
+      "palette": ["#0A1021", "#F2F2E9", "#FF4D2E", "#FFB36B"],
+      "materials": ["night chart", "chalk dots"],
+      "case": "Loses both axes: a coordinate sky charts objects in space while the console charts commitments in time, and operators do not navigate by constellations.",
+      "kept": "A restrained night-annotation hue for attention in the dark theme.",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-star-atlas-hero.webp"
+    }
+  ],
+  "reroll": {
+    "registers": ["safer", "bolder"]
+  },
+  "buildPath": {
+    "value": "code"
+  },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "The modern ops dashboard, played straight: neutral ground, near-black text, one blue accent, standard cards and tables at Linear/Stripe craft, with a first-class dark mode.",
+    "palette": ["#FFFFFF", "#111827", "#2563EB", "#0B0F19"],
+    "materials": ["clean grid", "standard cards", "first-class dark mode"],
+    "viewport": "The arrangement every operator expects: top bar, attention alert, timeline table, sidebar stat cards, executed at full craft in both themes.",
+    "risk": "Indistinguishable from the competition by design."
+  },
+  "steer": true
+}

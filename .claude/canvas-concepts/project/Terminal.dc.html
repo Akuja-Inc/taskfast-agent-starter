@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Terminal tail and steer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+</style>
+</helmet>
+<div style="width: 1280px; height: 980px; box-sizing: border-box; padding: 40px; background: #E7E8E4; display: flex; flex-direction: column; gap: 24px; font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.6">
+  <section aria-label="Watch pane" style="flex: 1 1 auto; background: #111315; color: #D7DADF; border-radius: 10px; padding: 20px 24px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; white-space: pre">
+    <div style="color: #8E949C">$ pnpm watch foo --env development</div>
+    <div style="color: #F3F4F2; font-weight: 500; padding: 6px 0 10px; border-bottom: 1px solid #2A2D31; margin-bottom: 8px">foo · Rock (poster) · local │ spend $0.00 / $50 today │ per job $20 │ wallet 0 USDC │ usage $0.0015</div>
+    <div><span style="color: #8E949C">05:33:21</span>  <span style="color: #C9B6F2">POLL </span>  Check your marketplace work in your poster role and pursue your current goals…</div>
+    <div><span style="color: #8E949C">05:33:22</span>  <span style="color: #F3F4F2">Rock </span>  I'll check my current state and tasks first.</div>
+    <div><span style="color: #8E949C">05:33:22</span>  <span style="color: #8E949C"> tool</span>    me {}                         <span style="color: #8FD19E">ok</span>       61ms</div>
+    <div><span style="color: #8E949C">05:33:22</span>  <span style="color: #8E949C"> tool</span>    wallet_balance {}             <span style="color: #8FD19E">ok</span>       94ms</div>
+    <div><span style="color: #8E949C">05:33:22</span>  <span style="color: #8E949C"> tool</span>    task_list {}                  <span style="color: #8FD19E">ok</span>       80ms</div>
+    <div><span style="color: #8E949C">05:33:22</span>  <span style="color: #8E949C"> tool</span>    bid_list {}                   <span style="color: #8FD19E">ok</span>       77ms</div>
+    <div><span style="color: #8E949C">05:33:24</span>  <span style="color: #F3F4F2">Rock </span>  Wallet is unfunded (0 USDC), so I can't fund escrow on any task I post.</div>
+    <div><span style="color: #8E949C">05:33:24</span>  <span style="color: #8E949C"> tool</span>    discover {"limit":20}         <span style="color: #8FD19E">ok</span>       2 tasks</div>
+    <div><span style="color: #8E949C">05:33:24</span>  <span style="color: #8E949C"> tool</span>    task_list {"kind":"poster"}   <span style="color: #F2A766; font-weight: 500">FAILED</span>   invalid value 'poster' [mine, queue, posted]</div>
+    <div><span style="color: #8E949C">05:33:26</span>  <span style="color: #8E949C"> tool</span>    task_list {"kind":"posted"}   <span style="color: #8FD19E">ok</span>       0 tasks</div>
+    <div><span style="color: #8E949C">05:33:28</span>  <span style="color: #F3F4F2">Rock </span>  Wallet unfunded, so I can't post until it's funded. No posted tasks, no bids.</div>
+    <div style="color: #8E949C">          ── turn $0.0015 · 10,098 tokens ──</div>
+    <div><span style="color: #8E949C">[time]  </span>  <span style="color: #8DB4F0">YOU  </span>  The wallet is funded now. Post one copy-editing job under $15.</div>
+    <div><span style="color: #8E949C">[time]  </span>  <span style="color: #F2C14E">EVENT</span>  message_received  [task title]</div>
+    <div style="color: #8E949C; margin-top: auto">following…  (q quit · f filter · / search)</div>
+  </section>
+
+  <section aria-label="Steer pane" style="flex: 0 0 auto; background: #111315; color: #D7DADF; border-radius: 10px; padding: 20px 24px; display: flex; flex-direction: column; gap: 2px">
+    <div style="color: #8E949C">$ pnpm steer foo "The wallet is funded now. Post one copy-editing job under $15."</div>
+    <div>queued as operator input · Rock reads it on the next turn</div>
+    <div style="color: #8E949C; margin-top: 10px">$ pnpm steer foo --note "Keep every job under $15 this week"</div>
+    <div>note 0 added · in Rock's prompt from the next turn</div>
+    <div style="color: #8E949C; margin-top: 10px">$ pnpm steer foo --pause</div>
+    <div>paused · polls and events are stored, not run, until <span style="color: #F3F4F2">--resume</span></div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

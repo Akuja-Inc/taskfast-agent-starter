@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TaskFast Console — The Lexicon Page</title>
+<style>
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:#F4EDDE;color:#1C1917;font:14px/1.5 Georgia,"Times New Roman",serif}
+*{box-sizing:border-box;margin:0}
+.sc{font-variant:small-caps;letter-spacing:.14em}
+button,select,textarea{font:inherit;color:inherit}
+select,button,textarea{background:#FBF7EC;border:1px solid #1C1917;padding:4px 10px}
+.plate{margin:12px 28px 10px;border:3px double #2E5E8C;color:#2E5E8C;text-align:center;padding:4px 0;font-size:12.5px}
+.mast{margin:0 28px;border-top:1px solid #1C1917;border-bottom:3px double #1C1917;padding:9px 0 8px;display:flex;align-items:baseline;justify-content:space-between}
+.gw{font-size:17px}
+.kick{text-align:center;color:#2E5E8C;font-size:12px}
+h1{font-size:27px;font-weight:normal;letter-spacing:.03em;text-align:center}
+.bar{margin:0 28px;padding:7px 0;border-bottom:1px solid #C9BCA0;display:flex;align-items:center;gap:14px;font-size:13.5px}
+.tabs span{padding:2px 4px;margin-right:10px;color:#6B5F4A}
+.tabs .on{color:#1C1917;font-weight:bold;border-bottom:2px solid #1C1917}
+.bar .sp{flex:1}
+.run{color:#1D6B34}
+main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px;margin:13px 28px}
+h2.sec{font-size:15.5px;font-weight:normal;display:flex;align-items:center;gap:12px;margin-bottom:4px}
+h2.sec:after{content:"";flex:1;border-top:1px solid #C9BCA0}
+.row{display:grid;grid-template-columns:104px minmax(0,1fr);gap:20px;border-top:1px solid #C9BCA0;padding:9px 0 11px}
+.sh{text-align:right;padding-top:1px}
+.sh b{display:block;font-size:12.5px}
+.sh time{font-size:11.5px;color:#6B5F4A}
+.entry{max-width:66ch}
+.eid{font-size:11.5px;color:#6B5F4A}
+.chk{margin-top:5px;font-size:12.5px;padding:2px 9px}
+.chip{display:inline-block;border:1px solid #C9BCA0;background:#FBF7EC;padding:0 8px;margin:4px 6px 2px 0;font-size:11.5px}
+.task{border:1px solid #C9BCA0;border-left:3px double #1C1917;background:#FBF7EC;padding:4px 10px;margin:5px 0;font-size:13px}
+.said{margin-top:1px}
+.amber{color:#9A6208}.madder{color:#A33227}.ok{color:#1D6B34}
+form{margin-top:12px;border-top:3px double #C9BCA0;padding-top:9px}
+form label{display:block;margin-bottom:4px;font-size:13px}
+textarea{width:min(66ch,100%);height:50px;display:block;margin-bottom:6px}
+.primary{background:#1C1917;color:#F4EDDE;padding:4px 18px}
+.side section{border-top:1px solid #1C1917;border-bottom:3px double #C9BCA0;padding:7px 0 9px;margin-bottom:14px}
+.side h2{font-size:14.5px;font-weight:normal;display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.side h2 em{font-style:normal;font-size:12px}
+.li{display:flex;gap:8px;border-top:1px dotted #C9BCA0;padding:3px 0;font-size:12.5px;align-items:baseline}
+.li .t{flex:1}
+.li b{font-size:11.5px}
+.spend{font-size:22px;margin:3px 0 1px}
+.note{font-size:12px}
+.side a{color:#1C1917;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="plate sc">Development · local TaskFast server · no real money</div>
+<header class="mast">
+  <span class="gw sc">escrow</span>
+  <div>
+    <div class="kick sc">The TaskFast Agent Console</div>
+    <h1>127.0.0.1:7171</h1>
+  </div>
+  <span class="gw sc">task_submit</span>
+</header>
+<div class="bar">
+  <select><option>scratch · Your Name (poster)</option></select>
+  <nav class="tabs"><span class="on">Timeline</span><span>Briefing</span></nav>
+  <span class="sp"></span>
+  <span class="run">● running</span>
+  <button>Freeze spending</button>
+  <button>Pause</button>
+</div>
+<main>
+  <div>
+    <h2 class="sec sc">Needs your attention · 2</h2>
+    <div class="row">
+      <aside class="sh"><b class="sc amber">uncertain</b></aside>
+      <div class="entry">
+        <div class="eid">escrow:22222222-2222-4222-8222-222222222222</div>
+        <p>$15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server: check the task on TaskFast, then mark it checked.</p>
+        <button class="chk">Mark checked</button>
+      </div>
+    </div>
+    <div class="row">
+      <aside class="sh"><b class="sc madder">dead-lettered</b></aside>
+      <div class="entry">
+        <div class="eid">no event name</div>
+        <p>The stream gave up on this event at 2026-10-13T14:09:13.178Z and acknowledged it, so the server will not send it again.</p>
+        <button class="chk">Mark checked</button>
+      </div>
+    </div>
+    <div class="row">
+      <aside class="sh"><b class="sc">poll</b><time>2:09 pm</time></aside>
+      <div class="entry">
+        <p>Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.</p>
+        <span class="chip">4 tool calls · <span class="madder">1 failed</span></span>
+        <p class="said"><b>Your Name</b> — Nothing posted yet and the wallet is empty, so I'll wait.</p>
+      </div>
+    </div>
+    <div class="row">
+      <aside class="sh"><b class="sc">you</b><time>2:09 pm</time></aside>
+      <div class="entry">
+        <p>The wallet is funded now. Post one copy-editing job under $15.</p>
+        <span class="chip">1 tool call</span>
+        <div class="task"><span class="sc">post_task</span> · Copy-edit a product page · assigned · budget $15.00</div>
+        <p class="said"><b>Your Name</b> — Posted it. I'll look at bids on the next check-in.</p>
+      </div>
+    </div>
+    <div class="row">
+      <aside class="sh"><b class="sc">event</b><time>2:09 pm</time></aside>
+      <div class="entry">
+        <p>payment_signature_required · task 11111111-1111-4111-8111-111111111111</p>
+        <span class="chip">Raw event</span><span class="chip">1 tool call · <span class="amber">1 uncertain</span></span>
+        <div class="task"><span class="sc">escrow_sign</span> · Copy-edit a product page · assigned · budget $15.00</div>
+        <p class="said"><b>Your Name</b> — Escrow signing timed out; I won't retry it.</p>
+      </div>
+    </div>
+    <form>
+      <label class="sc" for="m">Message Your Name</label>
+      <textarea id="m"></textarea>
+      <button class="primary">Send</button>
+    </form>
+  </div>
+  <aside class="side">
+    <section>
+      <h2 class="sc">Ready to work? <em class="madder">2 problems</em></h2>
+      <div class="li"><b class="sc madder">problem</b><span class="t">Wallet balance</span><span>0.00 USDC</span></div>
+      <div class="li"><b class="sc madder">problem</b><span class="t">Wallet unlock file</span><span>missing</span></div>
+      <div class="li"><b class="sc ok">ok</b><span class="t">Event stream</span><span>connected</span></div>
+      <div class="li"><b class="sc ok">ok</b><span class="t">Model</span><span>anthropic:claude-haiku-5-5</span></div>
+      <div class="li"><b class="sc ok">ok</b><span class="t">Spending limits</span><span>$20.00 per job · $50.00 per day</span></div>
+    </section>
+    <section>
+      <h2 class="sc">Tasks</h2>
+      <div class="li"><b class="sc">posted</b><span class="t">Copy-edit a product page · assigned · budget $15.00</span><span>1</span></div>
+      <div class="li"><b class="sc">bidding</b><span class="t"></span><span>0</span></div>
+      <div class="li"><b class="sc">working on</b><span class="t"></span><span>0</span></div>
+    </section>
+    <section>
+      <h2 class="sc">Spend today (UTC)</h2>
+      <div class="spend">$15.40 <span style="font-size:14px">of $50.00</span></div>
+      <div class="note amber">Includes $15.00 uncertain</div>
+    </section>
+    <section>
+      <h2 class="sc">Standing orders · 1</h2>
+      <p style="font-size:13px">Keep every job under $15 this week.</p>
+      <a href="#" class="sc">Edit in Briefing</a>
+    </section>
+  </aside>
+</main>
+</body>
+</html>

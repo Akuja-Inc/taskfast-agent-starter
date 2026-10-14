@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TaskFast console · The Departure Check</title>
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:#FAFAF7;color:#17181A;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.banner{background:#2E5E8C;color:#fff;text-align:center;font-size:12px;letter-spacing:.1em;padding:9px 0}
+.top{display:flex;align-items:center;gap:14px;padding:11px 20px;background:#fff;border-bottom:1px solid #E3E0D2}
+.host{font-size:13px;color:#5A5C60}
+.agent{font:inherit;padding:6px 10px;border:1px solid #C9C6B8;border-radius:6px;background:#FAFAF7;color:#17181A}
+.tabs{display:flex;gap:4px}
+.tab{padding:7px 12px;color:#5A5C60;border-bottom:2px solid transparent}
+.tab.on{color:#17181A;font-weight:700;border-bottom-color:#17181A}
+.status{margin-left:auto;display:flex;align-items:center;gap:7px;color:#1D6B34;font-weight:700;font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;background:#1D6B34}
+.btn{font:inherit;font-size:13px;padding:7px 14px;border:1px solid #17181A;border-radius:6px;background:#fff;color:#17181A}
+.btn.primary{background:#17181A;color:#fff}
+.btn.amber{border-color:#B45309;color:#B45309;flex:none}
+main{display:flex;gap:16px;padding:16px 20px;align-items:flex-start}
+.feed{flex:1;min-width:0}
+aside{width:400px;flex:none}
+.card{background:#fff;border:1px solid #E0DDCE;border-radius:8px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(23,24,26,.04)}
+h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
+.warn{display:flex;align-items:center;gap:14px;border:1px solid #B45309;background:#FDF6EC;border-radius:6px;padding:11px 14px;margin-bottom:10px}
+.warn:last-child{margin-bottom:0}
+.warn>div{flex:1}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:4px}
+.tag.amber{background:#B45309;color:#fff}
+.tag.line{border:1px solid #8A8C90;color:#3C3E42;background:#fff}
+.id{font-size:12px;color:#5A5C60;margin-left:8px}
+.warn p{font-size:13px;margin-top:4px}
+.turn{display:flex;gap:12px;padding:13px 0;border-top:1px solid #EEECE2}
+.turn:first-child{padding-top:0;border-top:0}
+.turn:last-child{padding-bottom:0}
+.check{flex:none;width:18px;height:18px;border-radius:4px;background:#1D6B34;color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.thead{display:flex;align-items:center;gap:10px}
+.time{font-size:12px;color:#8A8C90}
+.tbody{font-size:13.5px;margin-top:5px}
+.reply{margin-top:7px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{font-size:11.5px;padding:2px 9px;border:1px solid #C9C6B8;border-radius:999px;color:#3C3E42;white-space:nowrap}
+.chip.amber{border-color:#B45309;color:#B45309;font-weight:600}
+.task{border:1px solid #E0DDCE;border-left:3px solid #17181A;border-radius:5px;background:#FAFAF7;padding:5px 10px;font-size:12.5px}
+.who{font-weight:700}
+label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
+textarea{width:100%;height:48px;border:1px solid #C9C6B8;border-radius:6px;background:#FAFAF7;padding:8px 10px;font:inherit;resize:none}
+.sendrow{display:flex;align-items:center;gap:14px;margin-top:9px}
+.confirm{font-size:11.5px;color:#5A5C60;display:flex;align-items:center;gap:8px}
+.yes{width:54px;padding:3px 7px;border:1px solid #C9C6B8;border-radius:4px;background:#fff;font:inherit;font-size:11.5px;color:#8A8C90}
+.count{color:#B45309}
+.row{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #EEECE2}
+.row:first-of-type{border-top:0}
+.glyph{flex:none;width:32px;height:32px;border-radius:6px;color:#fff;font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.glyph.ok{background:#1D6B34}
+.glyph.bad{background:#B45309}
+.rname{font-weight:600;font-size:13.5px}
+.rval{margin-left:auto;font-size:12.5px;color:#5A5C60;text-align:right}
+.trow{display:flex;justify-content:space-between;font-size:13px;padding:6px 0}
+.tsub{font-size:12.5px;color:#5A5C60;border-left:3px solid #C9C6B8;padding:2px 0 2px 9px;margin:0 0 6px}
+.spend{font-size:22px;font-weight:700}
+.of{font-size:14px;font-weight:600;color:#5A5C60}
+.meter{height:6px;background:#EEECE2;border-radius:3px;margin:10px 0 8px}
+.meter i{display:block;height:100%;width:31%;background:#1D6B34;border-radius:3px}
+.note{font-size:12px;color:#B45309;font-weight:600}
+.orders p{font-size:13px;margin-bottom:7px}
+.orders a{color:#17181A;font-size:12.5px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="banner">DEVELOPMENT · local TaskFast server · no real money</div>
+<header class="top">
+  <span class="host mono">127.0.0.1:7171</span>
+  <select class="agent"><option>scratch · Your Name (poster)</option></select>
+  <nav class="tabs"><span class="tab on">Timeline</span><span class="tab">Briefing</span></nav>
+  <span class="status"><span class="dot"></span>running</span>
+  <button class="btn">Freeze spending</button>
+  <button class="btn">Pause</button>
+</header>
+<main>
+<div class="feed">
+  <section class="card">
+    <h2>Needs your attention · 2</h2>
+    <div class="warn">
+      <div><span class="tag amber">UNCERTAIN</span><span class="id mono">escrow:22222222-2222-4222-8222-222222222222</span>
+        <p>$15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server: check the task on TaskFast, then mark it checked.</p></div>
+      <button class="btn amber">Mark checked</button>
+    </div>
+    <div class="warn">
+      <div><span class="tag amber">DEAD-LETTERED</span><span class="id">no event name</span>
+        <p>The stream gave up on this event at <span class="mono">2026-10-13T14:09:13.178Z</span> and acknowledged it, so the server will not send it again.</p></div>
+      <button class="btn amber">Mark checked</button>
+    </div>
+  </section>
+  <section class="card">
+    <div class="turn">
+      <span class="check">✓</span>
+      <div>
+        <div class="thead"><span class="tag line">POLL</span><span class="time mono">2:09:13 PM</span></div>
+        <p class="tbody">Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.</p>
+        <div class="reply"><span class="chip">4 tool calls · 1 failed</span><span><span class="who">Your Name</span> — Nothing posted yet and the wallet is empty, so I'll wait.</span></div>
+      </div>
+    </div>
+    <div class="turn">
+      <span class="check">✓</span>
+      <div>
+        <div class="thead"><span class="tag line">YOU</span><span class="time mono">2:09:13 PM</span></div>
+        <p class="tbody">The wallet is funded now. Post one copy-editing job under $15.</p>
+        <div class="reply"><span class="chip">1 tool call</span><span class="task"><b class="mono">POST_TASK</b> · Copy-edit a product page · assigned · budget $15.00</span></div>
+        <div class="reply"><span class="who">Your Name</span> — Posted it. I'll look at bids on the next check-in.</div>
+      </div>
+    </div>
+    <div class="turn">
+      <span class="check">✓</span>
+      <div>
+        <div class="thead"><span class="tag line">EVENT</span><span class="time mono">2:09:13 PM</span></div>
+        <p class="tbody"><span class="mono">payment_signature_required · task 11111111-1111-4111-8111-111111111111</span> <span class="chip">Raw event</span></p>
+        <div class="reply"><span class="chip amber">1 tool call · 1 uncertain</span><span class="task"><b class="mono">ESCROW_SIGN</b> · Copy-edit a product page · assigned · budget $15.00</span></div>
+        <div class="reply"><span class="who">Your Name</span> — Escrow signing timed out; I won't retry it.</div>
+      </div>
+    </div>
+  </section>
+  <section class="card">
+    <label for="msg">Message Your Name</label>
+    <textarea id="msg"></textarea>
+    <div class="sendrow">
+      <button class="btn primary">Send</button>
+      <span class="confirm mono">CONFIRM: daily limit $50.00 → $40.00 · type yes to apply <input class="yes" placeholder="yes"></span>
+    </div>
+  </section>
+</div>
+<aside>
+  <section class="card">
+    <h2>Ready to work? · <span class="count">2 problems</span></h2>
+    <div class="row"><span class="glyph bad">!</span><span class="rname">Wallet balance</span><span class="rval">0.00 USDC</span></div>
+    <div class="row"><span class="glyph bad">!</span><span class="rname">Wallet unlock file</span><span class="rval">missing</span></div>
+    <div class="row"><span class="glyph ok">✓</span><span class="rname">Event stream</span><span class="rval">connected</span></div>
+    <div class="row"><span class="glyph ok">✓</span><span class="rname">Model</span><span class="rval mono">anthropic:claude-haiku-5-5</span></div>
+    <div class="row"><span class="glyph ok">✓</span><span class="rname">Spending limits</span><span class="rval">$20.00 per job · $50.00 per day</span></div>
+  </section>
+  <section class="card">
+    <h2>Tasks</h2>
+    <div class="trow"><b>POSTED</b><span>1</span></div>
+    <p class="tsub">Copy-edit a product page · assigned · budget $15.00</p>
+    <div class="trow"><b>BIDDING</b><span>0</span></div>
+    <div class="trow"><b>WORKING ON</b><span>0</span></div>
+  </section>
+  <section class="card">
+    <h2>Spend today (UTC)</h2>
+    <div class="spend">$15.40 <span class="of">of $50.00</span></div>
+    <div class="meter"><i></i></div>
+    <div class="note">Includes $15.00 uncertain</div>
+  </section>
+  <section class="card orders">
+    <h2>Standing orders · 1</h2>
+    <p>Keep every job under $15 this week.</p>
+    <a href="#">Edit in Briefing</a>
+  </section>
+</aside>
+</main>
+</body>
+</html>

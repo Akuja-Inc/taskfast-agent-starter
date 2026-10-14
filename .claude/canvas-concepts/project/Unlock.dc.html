@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Unlock console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F4F2}
+a{color:#1F5FBF}a:hover{color:#163F80}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F3F4F2; color: #17181A; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; line-height: 1.45">
+  <div role="status" style="background: #2E5E8C; color: #FFFFFF; font-size: 13px; font-weight: 600; letter-spacing: .04em">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 6px 24px">DEVELOPMENT · local TaskFast server · no real money</div>
+  </div>
+  <div style="max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <svg aria-hidden="true" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#17181A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      <h1 style="margin: 0; font-size: 28px; font-weight: 600">Unlock the console</h1>
+      <p style="margin: 0; color: #3B3F45">When <code style="font-family: 'IBM Plex Mono', monospace">pnpm agents</code> starts, it prints a console link with a one-time token. Open that link, or paste the token here.</p>
+    </div>
+    <div style="background: #17181A; color: #D7DADF; border-radius: 8px; padding: 14px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere">running 2 agent(s) on local: foo, tap
+console: http://127.0.0.1:7070/#token=[token]</div>
+    <form style="display: flex; flex-direction: column; gap: 12px">
+      <label style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 500">Console token
+        <input type="password" autocomplete="off" style="font: inherit; font-family: 'IBM Plex Mono', monospace; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; min-height: 44px; box-sizing: border-box">
+      </label>
+      <button type="submit" style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 0; background: #1F5FBF; color: #FFFFFF; align-self: flex-start">Unlock</button>
+    </form>
+    <p style="margin: 0; font-size: 13px; color: #5A5F66">Requests without this token, or from a page not served at 127.0.0.1:7070, are refused. That stops other websites open in your browser from steering Rock or spending money. A new token is issued each time the host starts.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

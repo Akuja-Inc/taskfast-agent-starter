@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Web console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F4F2}
+a{color:#1F5FBF}a:hover{color:#163F80}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F3F4F2; color: #17181A; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; line-height: 1.45">
+  <header style="background: #17181A; color: #F3F4F2">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 14px">127.0.0.1:7070</div>
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 14px">Agent
+        <select style="font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid #4A4E55; background: #24262A; color: #F3F4F2; min-height: 40px">
+          <option>foo · Rock (poster)</option>
+          <option>tap</option>
+        </select>
+      </label>
+      <span style="font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #2E3A2F; color: #BFE3C2">idle · next poll 05:48</span>
+      <span style="font-size: 13px; color: #B9BDC3">development · local</span>
+      <div style="margin-left: auto; display: flex; gap: 8px">
+        <button style="font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #4A4E55; background: transparent; color: #F3F4F2">Pause</button>
+        <button style="font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 6px; border: 0; background: #F3F4F2; color: #17181A; font-weight: 600">Run now</button>
+      </div>
+    </div>
+  </header>
+
+  <div style="max-width: 1280px; margin: 0 auto; padding: 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+    <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 600">Timeline</h1>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; font-size: 13px">
+          <button style="font: inherit; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #17181A; background: #17181A; color: #F3F4F2">All</button>
+          <button style="font: inherit; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #C9CCC6; background: #FFFFFF; color: #17181A">Polls</button>
+          <button style="font: inherit; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #C9CCC6; background: #FFFFFF; color: #17181A">Events</button>
+          <button style="font: inherit; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #C9CCC6; background: #FFFFFF; color: #17181A">My messages</button>
+          <button style="font: inherit; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #C9CCC6; background: #FFFFFF; color: #17181A">Writes &amp; money</button>
+        </div>
+      </div>
+
+      <article style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; overflow: hidden">
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid #ECEDEA">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: .04em; padding: 3px 8px; border-radius: 4px; background: #E3E6EA; color: #2E3338">POLL</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #5A5F66">05:33:21</span>
+          <span style="font-size: 14px; color: #3B3F45">Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price.</span>
+        </div>
+        <div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+          <p style="margin: 0"><strong>Rock</strong> — I'll check my current state and tasks first.</p>
+          <div style="display: flex; flex-direction: column; gap: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 13px">
+            <div style="display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #F6F7F5"><span style="flex: 1">me {}</span><span style="color: #1D6B34">ok</span><span style="color: #5A5F66; width: 48px; text-align: right">61ms</span></div>
+            <div style="display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #F6F7F5"><span style="flex: 1">wallet_balance {}</span><span style="color: #1D6B34">ok</span><span style="color: #5A5F66; width: 48px; text-align: right">94ms</span></div>
+            <div style="display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #F6F7F5"><span style="flex: 1">task_list {}</span><span style="color: #1D6B34">ok</span><span style="color: #5A5F66; width: 48px; text-align: right">80ms</span></div>
+            <div style="display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #F6F7F5"><span style="flex: 1">bid_list {}</span><span style="color: #1D6B34">ok</span><span style="color: #5A5F66; width: 48px; text-align: right">77ms</span></div>
+          </div>
+          <p style="margin: 0"><strong>Rock</strong> — Wallet is unfunded (0 USDC), so I can't fund escrow on any task I post. Let me check my marketplace overview anyway.</p>
+          <div style="display: flex; flex-direction: column; gap: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 13px">
+            <div style="display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #F6F7F5"><span style="flex: 1">discover {"limit":20}</span><span style="color: #1D6B34">ok · 2 tasks</span><span style="color: #5A5F66; width: 48px; text-align: right">88ms</span></div>
+            <details style="padding: 6px 10px; border-radius: 6px; background: #FBEEE3">
+              <summary style="display: flex; gap: 12px; cursor: pointer"><span style="flex: 1">task_list {"kind":"poster"}</span><span style="color: #9A4A06; font-weight: 500">failed</span><span style="color: #5A5F66; width: 48px; text-align: right">40ms</span></summary>
+              <div style="margin-top: 6px; color: #3B3F45; white-space: pre-wrap">error: invalid value 'poster' for '--kind &lt;KIND&gt;'  [possible values: mine, queue, posted]</div>
+            </details>
+            <div style="display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #F6F7F5"><span style="flex: 1">task_list {"kind":"posted"}</span><span style="color: #1D6B34">ok · 0 tasks</span><span style="color: #5A5F66; width: 48px; text-align: right">78ms</span></div>
+          </div>
+          <p style="margin: 0"><strong>Rock</strong> — Wallet unfunded, so I can't post until it's funded. No posted tasks, no bids.</p>
+          <div style="font-size: 13px; color: #5A5F66">Turn cost $0.0015 · 10,098 tokens · deepseek-flash</div>
+        </div>
+      </article>
+
+      <article style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; overflow: hidden">
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 18px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: .04em; padding: 3px 8px; border-radius: 4px; background: #DCE7F7; color: #163F80">YOU</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #5A5F66">[time]</span>
+          <span style="font-size: 14px; color: #3B3F45">[Your message, queued as an operator input, appears here before Rock's next turn]</span>
+        </div>
+      </article>
+
+      <form style="background: #FFFFFF; border: 1px solid #17181A; border-radius: 10px; padding: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end">
+        <label style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Message Rock
+          <textarea rows="2" placeholder="e.g. The wallet is funded now. Post one copy-editing job under $15." style="font: inherit; font-size: 15px; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; resize: vertical"></textarea>
+        </label>
+        <button type="submit" style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 20px; border-radius: 6px; border: 0; background: #1F5FBF; color: #FFFFFF">Send</button>
+      </form>
+      <div style="font-size: 13px; color: #5A5F66; margin-top: -8px">Delivered as Rock's next input. Money still goes through the policy limits; you can't set an amount here.</div>
+    </main>
+
+    <aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 16px 18px">
+        <h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600">Spend today (UTC)</h2>
+        <div style="font-size: 26px; font-weight: 600">$0.00 <span style="font-size: 15px; font-weight: 400; color: #5A5F66">of $50</span></div>
+        <div style="height: 8px; border-radius: 4px; background: #ECEDEA; margin: 10px 0 8px"><div style="width: 1%; height: 8px; border-radius: 4px; background: #1F5FBF"></div></div>
+        <div style="font-size: 13px; color: #5A5F66">Per job limit $20 · wallet 0 USDC</div>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 16px 18px">
+        <h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600">Action ledger</h2>
+        <div style="font-size: 14px; color: #5A5F66">No writes yet. Posts, bids and escrow show here as reserved → ok / failed / uncertain.</div>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 600">Notes in Rock's prompt</h2>
+        <div style="font-size: 14px; color: #5A5F66">None yet. Rock's own <code style="font-family: 'IBM Plex Mono', monospace">remember</code> notes and yours are read on every turn.</div>
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Add a note
+          <input type="text" placeholder="e.g. Keep every job under $15 this week" style="font: inherit; font-size: 14px; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; min-height: 44px; box-sizing: border-box">
+        </label>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 16px 18px">
+        <h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600">Model usage</h2>
+        <div style="font-size: 14px">$0.0015 total · 10,098 tokens</div>
+        <div style="font-size: 13px; color: #5A5F66">deepseek / deepseek-flash</div>
+      </section>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+[
+  { "prompt": "Redesign the budget card on the agent console so the remaining spend reads at a glance.", "should_trigger": true, "why": "A visual redesign of a console component." },
+  { "prompt": "Audit the console page for contrast and keyboard access in the light theme.", "should_trigger": true, "why": "A UI accessibility and theming audit." },
+  { "prompt": "The approvals panel looks bland. Make it bolder without breaking the airport sign system.", "should_trigger": true, "why": "Making an existing interface bolder within its design system." },
+  { "prompt": "Polish the empty state the console shows before the agent has any orders.", "should_trigger": true, "why": "Polishing an empty state." },
+  { "prompt": "Update DESIGN.md so it matches the console we actually shipped.", "should_trigger": true, "why": "Recording the design system from the shipped interface." },
+  { "prompt": "Open a PR for my console-page changes and fill in the whole template.", "should_trigger": false, "why": "Opening a PR for finished work: ship-pr." },
+  { "prompt": "Give my agent a daily spend cap of $25.", "should_trigger": false, "why": "Agent configuration: setting-up-an-agent." },
+  { "prompt": "Add a tool so the agent can filter discover by price range.", "should_trigger": false, "why": "Changing the agent's tools: changing-an-agent-tool." },
+  { "prompt": "pnpm agents says the store is already owned; fix it.", "should_trigger": false, "why": "A running-agent problem with no UI: running-an-agent." },
+  { "prompt": "deliver() acknowledges an event twice after a restart. Find out why.", "should_trigger": false, "why": "Backend event admission, not a frontend interface." }
+]

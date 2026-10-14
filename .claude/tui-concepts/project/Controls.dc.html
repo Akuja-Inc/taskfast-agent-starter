@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI pause and freeze</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:20px}
+.box{border:1px solid #3A3F47;border-radius:6px;position:relative;padding:12px 12px 8px}
+.ttl{position:absolute;top:-11px;left:10px;background:#0F1115;padding:0 6px;color:#8E949C}
+.m{color:#8E949C}.ok{color:#8FD19E}.bad{color:#F28B82}.warn{color:#F2A766}.acc{color:#8DB4F0}.ev{color:#F2C14E}.poll{color:#C9B6F2}
+.sel{background:#1E2633}
+.k{color:#0F1115;background:#8E949C;padding:0 4px;border-radius:2px}
+</style>
+</helmet>
+<div class="t" style="width: 1100px; height: 880px; box-sizing: border-box; display: flex; flex-direction: column; position: relative">
+  <div style="display: flex; justify-content: space-between; background: #2E5E8C; color: #FFFFFF; padding: 2px 12px; font-weight: 600"><span>DEVELOPMENT · local TaskFast server · no real money</span><span>console 127.0.0.1:7070 ✓</span></div>
+  <div style="display: flex; gap: 18px; padding: 6px 12px; border-bottom: 1px solid #2A2E35">
+    <span>agent <span class="acc">‹ foo · Rock (poster) ›</span></span>
+    <span><span class="sel" style="padding: 0 6px">1 Timeline</span> <span class="m" style="padding: 0 6px">2 Briefing</span></span>
+    <span style="color: #F7DE9C">⏸ paused · 3 waiting</span>
+    <span style="margin-left: auto"><span class="m">spend</span> $15.40/$50</span>
+  </div>
+  <div style="padding: 6px 12px; background: #3A2F12; color: #F7DE9C">⏸ Paused. Events are still received and stored, so nothing is lost. 3 waiting; they run in order on resume (p).</div>
+  <div style="flex: 1; display: flex; gap: 12px; padding: 16px 12px 6px; min-height: 0; opacity: .35">
+    <div class="box" style="flex: 1"><span class="ttl">Timeline</span>
+      <div><span class="poll">POLL </span> <span class="m">05:33:21</span>  Check your marketplace work…</div>
+      <div>  <b>Rock</b>  Wallet unfunded, so I can't post until it's funded. [▸ 4 tool calls · 1 failed]</div>
+      <div style="margin-top: 12px"><span class="acc">YOU  </span> <span class="m">05:41:02</span>  The wallet is funded now. Post one job under $15.</div>
+      <div>  <b>Rock</b>  Posted it. [▸ 2 tool calls]</div>
+      <div style="margin-top: 12px"><span class="ev">EVENT</span> <span class="m">06:10:05</span>  message_received · Copy-edit a product page <span class="m">(stored, waiting)</span></div>
+      <div style="margin-top: 12px"><span class="ev">EVENT</span> <span class="m">06:12:31</span>  message_received · Copy-edit a product page <span class="m">(stored, waiting)</span></div>
+    </div>
+    <div style="width: 300px" class="box"><span class="ttl">Ready? <span class="warn">2 problems</span></span>
+      <div><span class="bad">✗</span> wallet  <span class="m">0.00 USDC</span></div>
+      <div><span class="bad">✗</span> unlock file  <span class="m">missing</span></div>
+      <div><span class="ok">✓</span> stream  <span class="m">connected</span></div>
+    </div>
+  </div>
+  <div style="padding: 2px 12px 6px" class="m"><span class="k">y</span> freeze  <span class="k">n</span> cancel</div>
+  <div role="dialog" aria-labelledby="freeze-title" style="position: absolute; left: 270px; top: 300px; width: 560px; background: #15181D; border: 2px solid #F28B82; border-radius: 8px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+    <div id="freeze-title" class="bad" style="font-weight: 600">Freeze spending for foo?</div>
+    <div>post_task and escrow_sign will be refused before anything is reserved.</div>
+    <div class="m">Reads, messages and answering events continue. An action already reserved finishes.</div>
+    <div style="margin-top: 6px"><span class="k" style="background: #F28B82">y</span> freeze    <span class="k">n</span> cancel</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

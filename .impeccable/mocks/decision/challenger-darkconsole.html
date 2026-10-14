@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Graphite Console — TaskFast</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#0D1117;--panel:#151A22;--seam:#262C36;--text:#E6EDF3;--muted:#8B949E;--blue:#79C0FF;--green:#56D364;--amber:#D29922;--red:#F85149}
+*{box-sizing:border-box}
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:var(--bg);color:var(--text);font:13px/1.5 "Inter",sans-serif;font-feature-settings:"tnum"}
+.mono{font-family:"JetBrains Mono",monospace;font-feature-settings:"tnum"}
+.env{background:#2E5E8C;color:#fff;font:600 11px/1 "JetBrains Mono",monospace;letter-spacing:.08em;padding:9px 16px;text-align:center}
+header{display:flex;align-items:center;gap:16px;padding:0 16px;height:52px;border-bottom:1px solid var(--seam);background:var(--panel)}
+.host{font:600 13px "JetBrains Mono",monospace}
+select{background:var(--bg);color:var(--text);border:1px solid var(--seam);border-radius:4px;padding:5px 8px;font:12px "JetBrains Mono",monospace}
+.tabs{display:flex;gap:2px;margin-left:8px}
+.tab{padding:6px 12px;font:600 11px "Inter",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid transparent;border-radius:4px 4px 0 0}
+.tab.on{color:var(--blue);border-color:var(--seam);border-bottom-color:var(--panel);background:var(--bg)}
+.status{color:var(--green);font:600 11px "JetBrains Mono",monospace;letter-spacing:.08em;text-transform:uppercase}
+.spacer{flex:1}
+.btn{font:600 12px "Inter",sans-serif;padding:6px 14px;border-radius:4px;border:1px solid var(--seam);background:var(--bg);color:var(--text)}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#0D1117}
+.freeze-zone{display:flex;align-items:center;gap:10px;padding:0 24px}
+.freeze{background:none;border:1px solid var(--red);color:var(--red);font:600 12px "Inter",sans-serif;padding:6px 14px;border-radius:4px;opacity:.75}
+.freeze-note{font:10px "JetBrains Mono",monospace;color:var(--muted)}
+main{display:grid;grid-template-columns:1fr 340px;height:calc(900px - 86px)}
+.feed{border-right:1px solid var(--seam);overflow:hidden}
+.panel{background:var(--panel);border-bottom:1px solid var(--seam);padding:14px 16px}
+.ptitle{font:600 10px "JetBrains Mono",monospace;letter-spacing:.14em;text-transform:uppercase;font-variant:small-caps;color:var(--muted);margin:0 0 10px}
+.row{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--seam)}
+.row:first-of-type{border-top:none}
+.tag{font:700 10px "JetBrains Mono",monospace;letter-spacing:.06em;padding:2px 7px;border-radius:3px;white-space:nowrap}
+.tag.amber{color:var(--amber);border:1px solid var(--amber)}
+.tag.red{color:var(--red);border:1px solid var(--red)}
+.tag.blue{color:var(--blue);border:1px solid var(--seam)}
+.tag.green{color:var(--green);border:1px solid var(--seam)}
+.tag.you{color:var(--text);border:1px solid var(--blue)}
+.time{font:11px "JetBrains Mono",monospace;color:var(--muted);white-space:nowrap}
+.body{flex:1;min-width:0}
+.id{font:10px "JetBrains Mono",monospace;color:var(--muted)}
+.chip{display:inline-block;font:10px "JetBrains Mono",monospace;color:var(--muted);border:1px solid var(--seam);border-radius:3px;padding:1px 6px;margin:4px 0}
+.chip b{font-weight:700}
+.chip .bad{color:var(--red)}
+.chip .warn{color:var(--amber)}
+.taskcard{display:inline-block;font:11px "JetBrains Mono",monospace;border:1px solid var(--seam);border-left:2px solid var(--blue);background:var(--bg);border-radius:3px;padding:4px 8px;margin:4px 0;color:var(--text)}
+.taskcard.warn{border-left-color:var(--amber)}
+.act{font:600 11px "Inter",sans-serif;padding:4px 10px;border-radius:4px;border:1px solid var(--amber);background:none;color:var(--amber);white-space:nowrap}
+.reply{color:var(--muted)}
+.reply b{color:var(--text);font-weight:600}
+form.panel{border-bottom:1px solid var(--seam)}
+label{display:block;font:600 10px "JetBrains Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+textarea{width:100%;height:52px;background:var(--bg);border:1px solid var(--seam);border-radius:4px;color:var(--text);font:12px "Inter",sans-serif;padding:8px;resize:none}
+.side{display:flex;flex-direction:column}
+.side .panel{flex:0 0 auto}
+.side .panel.grow{flex:1 1 auto}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:4px 0;font:12px "JetBrains Mono",monospace;border-top:1px solid var(--seam)}
+.kv:first-of-type{border-top:none}
+.ok{color:var(--green)}
+.prob{color:var(--red)}
+.link{color:var(--blue);text-decoration:none;font:11px "Inter",sans-serif}
+.big{font:700 18px "JetBrains Mono",monospace}
+.note{font:11px "Inter",sans-serif;color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="env">DEVELOPMENT &middot; local TaskFast server &middot; no real money</div>
+<header>
+<span class="host mono">127.0.0.1:7171</span>
+<select><option>scratch &middot; Your Name (poster)</option></select>
+<nav class="tabs"><span class="tab on">Timeline</span><span class="tab">Briefing</span></nav>
+<span class="status">&#9679; running</span>
+<span class="spacer"></span>
+<span class="freeze-zone"><button class="freeze">Freeze spending</button><span class="freeze-note">arms on deliberate focus</span></span>
+<button class="btn">Pause</button>
+</header>
+<main>
+<section class="feed">
+<div class="panel">
+<h2 class="ptitle">Needs your attention &middot; 2</h2>
+<div class="row"><span class="tag amber">UNCERTAIN</span><div class="body"><span class="id">escrow:22222222-2222-4222-8222-222222222222</span><br>$15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server: check the task on TaskFast, then mark it checked.</div><button class="act">Mark checked</button></div>
+<div class="row"><span class="tag red">DEAD-LETTERED</span><div class="body"><span class="id">no event name</span><br>The stream gave up on this event at 2026-10-13T14:09:13.178Z and acknowledged it, so the server will not send it again.</div><button class="act">Mark checked</button></div>
+</div>
+<div class="panel">
+<h2 class="ptitle">Timeline</h2>
+<div class="row"><span class="tag blue">POLL</span><span class="time">2:09:13 PM</span><div class="body">Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.<br><span class="chip">4 tool calls &middot; <b class="bad">1 failed</b></span><br><span class="reply"><b>Your Name</b> — Nothing posted yet and the wallet is empty, so I'll wait.</span></div></div>
+<div class="row"><span class="tag you">YOU</span><span class="time">2:09:13 PM</span><div class="body">The wallet is funded now. Post one copy-editing job under $15.<br><span class="chip">1 tool call</span><br><span class="taskcard">POST_TASK &middot; Copy-edit a product page &middot; assigned &middot; budget $15.00</span><br><span class="reply"><b>Your Name</b> — Posted it. I'll look at bids on the next check-in.</span></div></div>
+<div class="row"><span class="tag green">EVENT</span><span class="time">2:09:13 PM</span><div class="body">payment_signature_required &middot; task 11111111-1111-4111-8111-111111111111 <span class="chip">Raw event</span><br><span class="chip">1 tool call &middot; <b class="warn">1 uncertain</b></span><br><span class="taskcard warn">ESCROW_SIGN &middot; Copy-edit a product page &middot; assigned &middot; budget $15.00</span><br><span class="reply"><b>Your Name</b> — Escrow signing timed out; I won't retry it.</span></div></div>
+</div>
+<form class="panel">
+<label for="msg">Message Your Name</label>
+<textarea id="msg" placeholder="Steer the agent…"></textarea>
+<div style="margin-top:8px;text-align:right"><button class="btn primary" type="button">Send</button></div>
+</form>
+</section>
+<aside class="side">
+<div class="panel">
+<h2 class="ptitle">Ready to work? &middot; 2 problems</h2>
+<div class="kv"><span><span class="prob">Problem</span> &middot; Wallet balance</span><span class="prob">0.00 USDC</span></div>
+<div class="kv"><span><span class="prob">Problem</span> &middot; Wallet unlock file</span><span class="prob">missing</span></div>
+<div class="kv"><span><span class="ok">OK</span> &middot; Event stream</span><span>connected</span></div>
+<div class="kv"><span><span class="ok">OK</span> &middot; Model</span><span>anthropic:claude-haiku-5-5</span></div>
+<div class="kv"><span><span class="ok">OK</span> &middot; Spending limits</span><span>$20.00/job &middot; $50.00/day</span></div>
+</div>
+<div class="panel">
+<h2 class="ptitle">Tasks</h2>
+<div class="kv"><span>POSTED &middot; 1</span><span style="color:var(--muted)">Copy-edit a product page &middot; assigned &middot; $15.00</span></div>
+<div class="kv"><span>BIDDING</span><span>0</span></div>
+<div class="kv"><span>WORKING ON</span><span>0</span></div>
+</div>
+<div class="panel">
+<h2 class="ptitle">Spend today (UTC)</h2>
+<div class="big">$15.40 <span style="color:var(--muted);font-weight:400">of $50.00</span></div>
+<div class="note">Includes $15.00 uncertain</div>
+</div>
+<div class="panel grow">
+<h2 class="ptitle">Standing orders &middot; 1</h2>
+<p style="margin:0 0 6px">Keep every job under $15 this week.</p>
+<a class="link" href="#">Edit in Briefing</a>
+</div>
+</aside>
+</main>
+</body>
+</html>

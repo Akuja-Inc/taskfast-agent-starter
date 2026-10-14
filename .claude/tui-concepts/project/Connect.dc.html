@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI connect</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:22px}
+.m{color:#8E949C}.bad{color:#F28B82}.acc{color:#8DB4F0}
+</style>
+</helmet>
+<div class="t" style="width: 720px; height: 420px; box-sizing: border-box; padding: 40px; display: flex; flex-direction: column; gap: 14px">
+  <div class="m">$ pnpm tui</div>
+  <div class="bad" style="font-weight: 600">✗ Can't reach the agent console at 127.0.0.1:7070</div>
+  <div>Start the host with the console, then pass the link it prints:</div>
+  <div style="padding: 10px 14px; background: #15181D; border-radius: 6px; white-space: pre">pnpm agents --env development --console
+pnpm tui 'http://127.0.0.1:7070/#token=…'</div>
+  <div class="m">Or set TASKFAST_CONSOLE_URL. The token changes every time the host starts; a refused token shows this screen again.</div>
+  <div><span class="acc">r</span> retry   <span class="acc">q</span> quit</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":720,"height":420}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
