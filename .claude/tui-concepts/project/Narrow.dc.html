@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI 80 columns</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:20px}
+.box{border:1px solid #3A3F47;border-radius:6px;position:relative;padding:12px 10px 8px}
+.box.f{border-color:#8DB4F0}
+.ttl{position:absolute;top:-11px;left:10px;background:#0F1115;padding:0 6px;color:#8E949C}
+.box.f>.ttl{color:#8DB4F0}
+.m{color:#8E949C}.ok{color:#8FD19E}.bad{color:#F28B82}.warn{color:#F2A766}.acc{color:#8DB4F0}.ev{color:#F2C14E}.poll{color:#C9B6F2}
+.sel{background:#1E2633}
+.k{color:#0F1115;background:#8E949C;padding:0 4px;border-radius:2px}
+</style>
+</helmet>
+<div class="t" style="width: 700px; height: 880px; box-sizing: border-box; display: flex; flex-direction: column">
+  <div style="background: #2E5E8C; color: #FFFFFF; padding: 2px 10px; font-weight: 600">DEVELOPMENT · no real money</div>
+  <div style="display: flex; gap: 12px; padding: 6px 10px; border-bottom: 1px solid #2A2E35">
+    <span class="acc">foo</span>
+    <span><span class="sel" style="padding: 0 4px">1 Timeline</span> <span class="m">2 Brief</span></span>
+    <span class="ok">● run</span>
+    <span style="margin-left: auto">$15.40/$50</span>
+  </div>
+  <div style="padding: 4px 10px; background: #3A2A12; color: #F2A766">⚠ 2 need attention · ready: 2 problems   <span class="m">a / i</span></div>
+  <div style="flex: 1; padding: 16px 10px 6px; min-height: 0; display: flex">
+    <div class="box f" style="flex: 1; overflow: hidden"><span class="ttl">Timeline</span>
+      <div><span class="poll">POLL</span> <span class="m">05:33</span> Check your marketplace work…</div>
+      <div style="padding-left: 4px">Rock  Wallet unfunded, so I can't post</div>
+      <div style="padding-left: 4px">      until it's funded.</div>
+      <div style="padding-left: 52px" class="acc">[▸ 4 calls · <span class="warn">1 failed</span>]</div>
+      <div style="margin-top: 10px"><span class="acc">YOU </span> <span class="m">05:41</span> The wallet is funded now. Post</div>
+      <div style="padding-left: 52px">one copy-editing job under $15.</div>
+      <div class="sel" style="padding-left: 4px; border-left: 2px solid #8DB4F0">Rock  Posted it. I'll look at bids on the</div>
+      <div class="sel" style="padding-left: 4px; border-left: 2px solid #8DB4F0">      next check-in. <span class="acc">[▸ 2 calls]</span></div>
+      <div style="padding-left: 52px"><span class="m">↳</span> <u class="acc">Copy-edit a product page</u></div>
+      <div style="padding-left: 52px" class="m">  open · $15.00</div>
+      <div style="margin-top: 10px"><span class="ev">EVNT</span> <span class="m">05:52</span> payment_signature_required</div>
+      <div style="padding-left: 4px">Rock  Escrow signing timed out; I won't</div>
+      <div style="padding-left: 4px">      retry it. <span class="acc">[▸ 1 call · <span class="warn">1 uncertain</span>]</span></div>
+    </div>
+  </div>
+  <div class="box" style="margin: 10px 10px 4px"><span class="ttl">Message</span><span class="acc">›</span> <span class="m">m to type</span></div>
+  <div style="padding: 2px 10px 6px" class="m"><span class="k">a</span> alerts <span class="k">i</span> info <span class="k">enter</span> calls <span class="k">?</span> help <span class="k">q</span> quit</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":700,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TaskFast Console · Split-Flap Concourse</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&display=swap">
+<style>
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:#0B0B09;color:#F4F1E8;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+.env{display:flex;align-items:center;gap:10px;height:30px;padding:0 14px;background:#2A2D31;border-bottom:2px solid #000;font:500 11px "Oswald",ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase}
+.env i{width:9px;height:9px;background:#2E5E8C;box-shadow:0 0 0 1px #000}
+.top{display:flex;align-items:center;gap:12px;height:54px;padding:0 14px;background:#0E0E0C;border-bottom:1px solid #2A2D31}
+.host{color:#8B8578;font:12px ui-monospace,monospace}
+select{background:#141412;color:#F4F1E8;border:1px solid #3A3D41;padding:5px 8px;font:12px system-ui}
+.tabs{display:flex;align-self:stretch;margin-left:6px}
+.tab{display:flex;align-items:center;padding:0 14px;color:#8B8578;font:500 13px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em;border-bottom:2px solid transparent}
+.tab.on{color:#F4F1E8;border-bottom-color:#F4F1E8;background:#141412}
+.run{margin-left:auto;display:flex;align-items:center;gap:7px;color:#56D364;font:500 12px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.14em}
+.dot{width:8px;height:8px;border-radius:50%;background:#56D364;box-shadow:0 0 6px rgba(86,211,100,.8);flex:none}
+.dot.a{background:#FFB300;box-shadow:0 0 6px rgba(255,179,0,.8)}
+.btn{background:none;border:1px solid #8B8578;color:#F4F1E8;padding:6px 12px;font:500 12px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
+.btn.red{border-color:#B3261E;color:#B3261E}
+.btn.amber{border-color:#FFB300;color:#FFB300}
+.btn.sm{padding:3px 9px;font-size:11px}
+.btn.solid{background:#F4F1E8;border-color:#F4F1E8;color:#0B0B09}
+main{display:grid;grid-template-columns:1fr 344px;gap:14px;padding:14px}
+.attn{display:flex;align-items:center;gap:9px;margin:0 1px 7px;font:600 15px "Oswald",ui-monospace,monospace;letter-spacing:.18em;text-transform:uppercase}
+.board{border:1px solid #34373B;background:#0E0E0C}
+.brow{display:grid;grid-template-columns:92px 128px 1fr 148px 102px;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid #242628;font:400 13px/1.4 "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.05em;background-image:repeating-linear-gradient(90deg,rgba(244,241,232,.05) 0 1px,transparent 1px 9px)}
+.brow.bhead{padding:5px 12px;border-top:none;background:#101010;color:#8B8578;font-size:11px;letter-spacing:.24em}
+.t{color:#8B8578}
+.k{font-weight:500}
+.s{color:#8B8578;letter-spacing:.1em}
+.s.a{color:#FFB300}
+.det{font-size:12px}
+.rep{display:block;margin-top:3px;color:#8B8578;font:12px/1.4 system-ui;text-transform:none;letter-spacing:0}
+.rep b{color:#F4F1E8;font-weight:600}
+.dim{opacity:.4}
+.tcard{display:inline-block;margin-right:6px;padding:1px 6px;border:1px solid #3A3D41;color:#F4F1E8;font:500 11px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.06em}
+.tcard.a{border-color:#FFB300;color:#FFB300}
+.chip{display:inline-block;margin-left:6px;padding:0 8px;border:1px solid #3A3D41;border-radius:9px;color:#8B8578;font-size:11px}
+.held{background:rgba(255,179,0,.07);box-shadow:inset 3px 0 0 #FFB300}
+.held .k{color:#FFB300}
+.held .s{color:#FFB300;font-weight:600}
+.dead{box-shadow:inset 3px 0 0 rgba(179,38,30,.7);color:rgba(179,38,30,.85)}
+.dead .t,.dead .rep{color:rgba(179,38,30,.6)}
+.dead .rep b{color:rgba(179,38,30,.85)}
+.msg{margin-top:14px;border:1px solid #34373B;background:#0E0E0C;padding:10px 12px}
+.msg label{display:block;margin-bottom:6px;color:#8B8578;font:500 12px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.14em}
+.mrow{display:flex;gap:10px}
+textarea{flex:1;height:54px;resize:none;background:#0B0B09;border:1px solid #3A3D41;color:#F4F1E8;padding:8px;font:13px system-ui}
+.card{border:1px solid #34373B;background:#0E0E0C;margin-bottom:14px}
+.ch{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#2A2D31;font:600 13px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.14em}
+.ch span{color:#CFC9BA;font-weight:500;font-size:11px}
+.ch span.w{color:#FFB300}
+.cb{padding:8px 12px}
+.lamp{display:grid;grid-template-columns:10px 58px 1fr auto;gap:8px;align-items:center;padding:3px 0;font-size:12px}
+.lamp em{font:500 10px "Oswald",ui-monospace,monospace;font-style:normal;letter-spacing:.12em;text-transform:uppercase}
+.lamp em.ok{color:#56D364}
+.lamp em.pb{color:#FFB300}
+.lamp .v{color:#8B8578;text-align:right}
+.tk{display:grid;grid-template-columns:104px 20px 1fr;gap:8px;padding:3px 0;font:500 12px "Oswald",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}
+.tk b{font-weight:600}
+.tk small{color:#8B8578;font:12px system-ui;text-transform:none;letter-spacing:0}
+.big{font:600 26px "Oswald",ui-monospace,monospace}
+.big span{color:#8B8578;font-size:13px;font-weight:500;letter-spacing:.1em}
+.meter{height:6px;background:#2A2D31;margin:7px 0 5px}
+.meter i{display:block;height:100%;width:31%;background:#F4F1E8}
+.note{color:#FFB300;font-size:11px}
+.so{margin-bottom:5px;font-size:12px}
+a{color:#8B8578;font-size:12px}
+</style>
+</head>
+<body>
+<div class="env"><i></i>DEVELOPMENT · local TaskFast server · no real money</div>
+<div class="top">
+<span class="host">127.0.0.1:7171</span>
+<select aria-label="Agent"><option>scratch · Your Name (poster)</option></select>
+<nav class="tabs"><span class="tab on">Timeline</span><span class="tab">Briefing</span></nav>
+<span class="run"><span class="dot"></span>running</span>
+<button class="btn red">Freeze spending</button>
+<button class="btn">Pause</button>
+</div>
+<main>
+<section>
+<h1 class="attn"><span class="dot a"></span>Needs your attention · 2</h1>
+<div class="board">
+<div class="brow bhead"><span>Time</span><span>Kind</span><span>Detail</span><span>State</span><span></span></div>
+<div class="brow held">
+<span class="t"><span>2:09</span><span class="dim">:13</span><span> PM</span></span>
+<span class="k"><span>Uncer</span><span class="dim">tain</span></span>
+<span class="det"><span>escrow:22222222-2222-</span><span class="dim">4222-8222-222222222222</span><br><span>$15.00 is counted as spent</span><span class="dim"> and the agent will not retry it.</span><span> The command may or may not</span><span class="dim"> have reached the server:</span><span> check the task on TaskFast,</span><span class="dim"> then mark it checked.</span></span>
+<span class="s">Held</span>
+<button class="btn sm amber">Mark checked</button>
+</div>
+<div class="brow dead">
+<span class="t">2:09:13 PM</span>
+<span class="k">Dead-lettered</span>
+<span class="det">No event name<span class="rep">The stream gave up on this event at 2026-10-13T14:09:13.178Z and acknowledged it, so the server will not send it again.</span></span>
+<span class="s">Dead</span>
+<button class="btn sm">Mark checked</button>
+</div>
+<div class="brow">
+<span class="t">2:09:13 PM</span>
+<span class="k">Poll</span>
+<span class="det">Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.<span class="rep"><b>Your Name</b> — Nothing posted yet and the wallet is empty, so I'll wait.</span></span>
+<span class="s">4 tool calls · 1 failed</span>
+<span></span>
+</div>
+<div class="brow">
+<span class="t">2:09:13 PM</span>
+<span class="k">You</span>
+<span class="det">The wallet is funded now. Post one copy-editing job under $15.<span class="rep"><span class="tcard">POST_TASK · Copy-edit a product page · assigned · budget $15.00</span><b>Your Name</b> — Posted it. I'll look at bids on the next check-in.</span></span>
+<span class="s">1 tool call</span>
+<span></span>
+</div>
+<div class="brow">
+<span class="t">2:09:13 PM</span>
+<span class="k">Event</span>
+<span class="det">payment_signature_required · task 11111111-1111-4111-8111-111111111111<span class="chip">Raw event</span><span class="rep"><span class="tcard a">ESCROW_SIGN · Copy-edit a product page · assigned · budget $15.00</span><b>Your Name</b> — Escrow signing timed out; I won't retry it.</span></span>
+<span class="s a">1 tool call · 1 uncertain</span>
+<span></span>
+</div>
+</div>
+<form class="msg">
+<label for="m">Message Your Name</label>
+<div class="mrow"><textarea id="m" placeholder="Steer Your Name before its next check-in…"></textarea><button class="btn solid" type="button">Send</button></div>
+</form>
+</section>
+<aside>
+<div class="card">
+<div class="ch">Ready to work?<span class="w">2 problems</span></div>
+<div class="cb">
+<div class="lamp"><span class="dot a"></span><em class="pb">Problem</em>Wallet balance<span class="v">0.00 USDC</span></div>
+<div class="lamp"><span class="dot a"></span><em class="pb">Problem</em>Wallet unlock file<span class="v">missing</span></div>
+<div class="lamp"><span class="dot"></span><em class="ok">OK</em>Event stream<span class="v">connected</span></div>
+<div class="lamp"><span class="dot"></span><em class="ok">OK</em>Model<span class="v">anthropic:claude-haiku-5-5</span></div>
+<div class="lamp"><span class="dot"></span><em class="ok">OK</em>Spending limits<span class="v">$20.00 per job · $50.00 per day</span></div>
+</div>
+</div>
+<div class="card">
+<div class="ch">Tasks</div>
+<div class="cb">
+<div class="tk">Posted<b>1</b><small>Copy-edit a product page · assigned · budget $15.00</small></div>
+<div class="tk">Bidding<b>0</b><small></small></div>
+<div class="tk">Working on<b>0</b><small></small></div>
+</div>
+</div>
+<div class="card">
+<div class="ch">Spend today (UTC)</div>
+<div class="cb"><div class="big">$15.40 <span>of $50.00</span></div>
+<div class="meter"><i></i></div>
+<div class="note">Includes $15.00 uncertain</div></div>
+</div>
+<div class="card">
+<div class="ch">Standing orders<span>· 1</span></div>
+<div class="cb"><div class="so">"Keep every job under $15 this week."</div>
+<a href="#">Edit in Briefing</a></div>
+</div>
+</aside>
+</main>
+</body>
+</html>

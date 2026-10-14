@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI timeline</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:20px}
+.box{border:1px solid #3A3F47;border-radius:6px;position:relative;padding:12px 12px 8px}
+.box.f{border-color:#8DB4F0}
+.ttl{position:absolute;top:-11px;left:10px;background:#0F1115;padding:0 6px;color:#8E949C}
+.box.f>.ttl{color:#8DB4F0}
+.m{color:#8E949C}.ok{color:#8FD19E}.bad{color:#F28B82}.warn{color:#F2A766}.acc{color:#8DB4F0}.ev{color:#F2C14E}.poll{color:#C9B6F2}
+.sel{background:#1E2633}
+.k{color:#0F1115;background:#8E949C;padding:0 4px;border-radius:2px}
+.badge{font:inherit;background:none;border:0;padding:0;color:#8DB4F0;cursor:pointer}
+.badge .n{color:#F2A766}
+</style>
+</helmet>
+<div class="t" style="width: 1100px; height: 880px; box-sizing: border-box; display: flex; flex-direction: column">
+  <div style="display: flex; justify-content: space-between; background: #2E5E8C; color: #FFFFFF; padding: 2px 12px; font-weight: 600"><span>DEVELOPMENT · local TaskFast server · no real money</span><span>console 127.0.0.1:7070 ✓</span></div>
+  <div style="display: flex; gap: 18px; padding: 6px 12px; border-bottom: 1px solid #2A2E35">
+    <span>agent <span class="acc">‹ foo · Rock (poster) ›</span></span>
+    <span><span class="sel" style="padding: 0 6px">1 Timeline</span> <span class="m" style="padding: 0 6px">2 Briefing</span></span>
+    <span class="ok">● running</span>
+    <span class="m">next check-in 05:48</span>
+    <span style="margin-left: auto"><span class="m">spend</span> $15.40/$50</span>
+  </div>
+  <div style="flex: 1; display: flex; gap: 12px; padding: 16px 12px 6px; min-height: 0">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0">
+      <div class="box" style="border-color: #F2A766"><span class="ttl warn">Needs attention · 2</span>
+        <div><span class="warn">UNCERTAIN </span> escrow_sign · Copy-edit a product page <span class="m">· $15.00 counted as spent</span></div>
+        <div class="m">           may or may not have reached the server · o open task · c mark checked</div>
+        <div style="margin-top: 6px"><span class="bad">ABANDONED </span> payment_signature_required · 6 attempts · last error: provider 401</div>
+        <div class="m">           R run again · r raw event</div>
+      </div>
+      <div class="box f" style="flex: 1; overflow: hidden"><span class="ttl">Timeline</span>
+        <div><span class="poll">POLL </span> <span class="m">05:33:21</span>  Check your marketplace work in your poster role…</div>
+        <div class="sel" style="padding-left: 4px; border-left: 2px solid #8DB4F0">  <b>Rock</b>  I'll check my current state and tasks first.
+          <button class="badge" onClick="{{t1}}" aria-expanded="{{o1}}">[{{a1}} 4 tool calls · <span class="n">1 failed</span>]</button></div>
+        <sc-if value="{{o1}}" hint-placeholder-val="{{false}}">
+          <div style="padding-left: 40px">
+            <div><span class="ok">✓</span> me {}</div>
+            <div><span class="ok">✓</span> wallet_balance {}</div>
+            <div class="warn">✗ task_list {"kind":"poster"}  invalid value 'poster' [mine, queue, posted]</div>
+            <div><span class="ok">✓</span> task_list {"kind":"posted"}</div>
+          </div>
+        </sc-if>
+        <div style="padding-left: 6px">  <b>Rock</b>  Wallet unfunded, so I can't post until it's funded.</div>
+        <div style="margin-top: 12px"><span class="acc">YOU  </span> <span class="m">05:41:02</span>  The wallet is funded now. Post one copy-editing job under $15.</div>
+        <div style="padding-left: 6px">  <b>Rock</b>  Posted it. I'll look at bids on the next check-in.
+          <button class="badge" onClick="{{t2}}" aria-expanded="{{o2}}">[{{a2}} 2 tool calls]</button></div>
+        <sc-if value="{{o2}}" hint-placeholder-val="{{false}}">
+          <div style="padding-left: 40px">
+            <div><span class="ok">✓</span> wallet_balance {}</div>
+            <div><span class="ok">✓</span> post_task {"title":"Copy-edit a product page","budget":"15.00"}  fee $0.40</div>
+          </div>
+        </sc-if>
+        <div style="padding-left: 40px"><span class="m">↳ task</span> <u class="acc">Copy-edit a product page</u> <span class="m">· open · budget $15.00 · pickup by 14:00</span></div>
+        <div style="margin-top: 12px"><span class="ev">EVENT</span> <span class="m">05:52:40</span>  payment_signature_required · Copy-edit a product page <span class="m">[r raw]</span></div>
+        <div style="padding-left: 6px">  <b>Rock</b>  Escrow signing timed out; I won't retry it.
+          <button class="badge" onClick="{{t3}}" aria-expanded="{{o3}}">[{{a3}} 1 tool call · <span class="n">1 uncertain</span>]</button></div>
+        <sc-if value="{{o3}}" hint-placeholder-val="{{false}}">
+          <div style="padding-left: 40px" class="warn">? escrow_sign {"task_id":"1111…","bid_id":"2222…"}  timed out</div>
+        </sc-if>
+        <div style="padding-left: 40px"><span class="m">↳ task</span> <u class="acc">Copy-edit a product page</u> <span class="m">· assigned · budget $15.00</span></div>
+      </div>
+    </div>
+    <div style="width: 300px; display: flex; flex-direction: column; gap: 16px">
+      <div class="box"><span class="ttl">Ready? <span class="warn">2 problems</span></span>
+        <div><span class="bad">✗</span> wallet  <span class="m">0.00 USDC</span></div>
+        <div><span class="bad">✗</span> unlock file  <span class="m">missing</span></div>
+        <div><span class="ok">✓</span> stream  <span class="m">connected</span></div>
+        <div><span class="ok">✓</span> model  <span class="m">deepseek-flash</span></div>
+        <div><span class="ok">✓</span> limits  <span class="m">$20/job · $50/day</span></div>
+      </div>
+      <div class="box"><span class="ttl">Tasks</span>
+        <div class="m">POSTED · 1</div>
+        <div><u class="acc">Copy-edit a product page</u></div>
+        <div class="m">  assigned · $15.00</div>
+        <div class="m" style="margin-top: 4px">BIDDING · 0   WORKING · 0</div>
+      </div>
+      <div class="box"><span class="ttl">Spend today (UTC)</span>
+        <div>$15.40 <span class="m">of $50.00</span></div>
+        <div><span class="acc">███████</span><span class="m">░░░░░░░░░░░░░░░</span></div>
+        <div class="m">incl. $15.00 uncertain</div>
+      </div>
+      <div class="box"><span class="ttl">Standing orders · 1</span>
+        <div>Keep every job under $15 this week.</div>
+      </div>
+    </div>
+  </div>
+  <div class="box" style="margin: 10px 12px 4px"><span class="ttl">Message Rock</span><span class="acc">›</span> <span class="m">press m to type · enter sends once</span></div>
+  <div style="padding: 2px 12px 6px" class="m"><span class="k">j/k</span> move  <span class="k">enter</span> tool calls  <span class="k">o</span> open task  <span class="k">m</span> message  <span class="k">p</span> pause  <span class="k">f</span> freeze  <span class="k">c</span> checked  <span class="k">?</span> help  <span class="k">q</span> quit</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var s = this.state || {};
+    var self = this;
+    function flip(key) { return function () { var p = {}; p[key] = !s[key]; self.setState(p); }; }
+    return {
+      o1: !!s.o1, o2: !!s.o2, o3: !!s.o3,
+      a1: s.o1 ? '▾' : '▸', a2: s.o2 ? '▾' : '▸', a3: s.o3 ? '▾' : '▸',
+      t1: flip('o1'), t2: flip('o2'), t3: flip('o3')
+    };
+  }
+}
+</script>
+</body>
+</html>

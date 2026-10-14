@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TaskFast console — The Yellow Signage</title>
+<style>
+*{box-sizing:border-box}
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:#F2F2EF;color:#0B0B0B;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.42;font-variant-numeric:tabular-nums}
+.env{background:#2E5E8C;color:#fff;text-align:center;font-size:13px;letter-spacing:.05em;padding:7px 0}
+.top{display:flex;align-items:center;gap:12px;background:#fff;border-bottom:3px solid #0B0B0B;padding:10px 20px}
+.host{font-size:17px;font-weight:800}
+select{font:inherit;padding:5px 8px;border:2px solid #0B0B0B;background:#fff;border-radius:0}
+.tabs{display:flex;gap:2px;margin-left:8px}
+.tab{padding:6px 14px;border:2px solid #0B0B0B;background:#fff;font-weight:600}
+.tab.on{background:#0B0B0B;color:#fff}
+.status{margin-left:auto;display:flex;align-items:center;gap:7px;color:#5E5E56}
+.dot{width:9px;height:9px;border-radius:50%;background:#1F7A38}
+.btn{font:inherit;font-weight:600;padding:6px 14px;background:#fff;border:2px solid #0B0B0B;border-radius:0;cursor:pointer}
+.btn.primary{background:#0B0B0B;color:#fff}
+main{display:grid;grid-template-columns:1fr 424px;gap:18px;padding:16px 20px;align-items:start}
+.band{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;background:#FFCC00;color:#0B0B0B;border:2px solid #0B0B0B;padding:7px 14px;font-size:17px;font-weight:800;letter-spacing:.05em}
+.band b{font-size:19px}
+.panel{background:#fff;border:2px solid #0B0B0B;border-top:none;padding:10px 14px;margin-bottom:14px}
+.sq{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;background:#0B0B0B;color:#fff;font-weight:800;font-size:15px}
+.gate{display:flex;align-items:center;gap:16px}
+.big{font-size:88px;font-weight:800;line-height:.92;letter-spacing:-.03em}
+.gate h2{margin:0;font-size:21px}
+.gate p{margin:2px 0 0;color:#5E5E56}
+.item{display:flex;gap:12px;align-items:flex-start;border-top:2px solid #0B0B0B;padding:8px 0 2px;margin-top:8px}
+.item .body{flex:1}
+.item p{margin:4px 0 0}
+.tag{display:inline-block;background:#0B0B0B;color:#fff;font-size:11px;font-weight:800;letter-spacing:.08em;padding:3px 8px;text-transform:uppercase;vertical-align:2px}
+.tag.amber{background:#B45309}
+.tag.red{background:#B91C1C}
+code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;color:#5E5E56;margin-left:6px}
+.turn{background:#fff;border:2px solid #0B0B0B;padding:9px 14px;margin-bottom:10px}
+.meta{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+time{color:#5E5E56;font-size:12.5px}
+.said{margin:0}
+.reply{border-top:1px solid #D8D8D2;margin-top:6px;padding-top:6px}
+.reply p{margin:6px 0 0}
+.chip{display:inline-block;border:1.5px solid #0B0B0B;background:#fff;padding:2px 9px;font-size:12px;font-weight:600}
+.chip.warn{border-color:#B45309;color:#B45309}
+.task{display:flex;align-items:center;gap:10px;border:1.5px solid #0B0B0B;background:#F2F2EF;padding:8px 10px;margin:8px 0 2px;font-weight:600}
+.msg label{display:block;font-weight:700;margin-bottom:6px}
+.msg textarea{width:100%;font:inherit;border:2px solid #0B0B0B;border-radius:0;padding:8px;resize:none;background:#fff}
+.msg .row{display:flex;justify-content:flex-end;margin-top:8px}
+.ready{list-style:none;margin:0;padding:0}
+.ready li{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #E2E2DC;font-size:13.5px}
+.ready li:last-child{border-bottom:none}
+.ok{color:#1F7A38;font-weight:700}
+.prob{color:#B45309;font-weight:700}
+.trow{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid #E2E2DC;font-weight:600}
+.trow .n{font-size:20px;font-weight:800;min-width:20px;text-align:right}
+.trow .arrow{margin-left:auto;font-weight:800}
+.tsub{margin:0 0 6px 28px;color:#5E5E56;font-size:13px}
+.spend .gate{gap:12px}
+.big2{font-size:66px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.of{color:#5E5E56;margin:4px 0 0}
+.note{color:#B45309;font-weight:700;margin:6px 0 0}
+.muted{color:#5E5E56}
+a{color:#0B0B0B;font-weight:700}
+</style>
+</head>
+<body>
+<div class="env">DEVELOPMENT · local TaskFast server · no real money</div>
+<header class="top">
+  <div class="host">127.0.0.1:7171</div>
+  <select><option>scratch · Your Name (poster)</option></select>
+  <nav class="tabs"><span class="tab on">Timeline</span><span class="tab">Briefing</span></nav>
+  <div class="status"><span class="dot"></span>running</div>
+  <button class="btn">Freeze spending</button>
+  <button class="btn">Pause</button>
+</header>
+<main>
+  <section>
+    <div class="band"><span>TIMELINE · 3 TURNS</span><b>→</b></div>
+    <div class="panel">
+      <div class="gate"><span class="big">2</span><div><h2>Needs your attention</h2><p>Uncertain spend and a dead-lettered event wait on you.</p></div></div>
+      <div class="item">
+        <span class="sq">!</span>
+        <div class="body"><span class="tag amber">Uncertain</span><code>escrow:22222222-2222-4222-8222-222222222222</code>
+          <p>$15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server: check the task on TaskFast, then mark it checked.</p></div>
+        <button class="btn">Mark checked</button>
+      </div>
+      <div class="item">
+        <span class="sq">!</span>
+        <div class="body"><span class="tag red">Dead-lettered</span><code>no event name</code>
+          <p>The stream gave up on this event at 2026-10-13T14:09:13.178Z and acknowledged it, so the server will not send it again.</p></div>
+        <button class="btn">Mark checked</button>
+      </div>
+    </div>
+    <article class="turn">
+      <div class="meta"><span class="tag">Poll</span><time>2:09:13 PM</time></div>
+      <p class="said">Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.</p>
+      <div class="reply"><span class="chip">4 tool calls · 1 failed</span>
+        <p><b>Your Name</b> — Nothing posted yet and the wallet is empty, so I'll wait.</p></div>
+    </article>
+    <article class="turn">
+      <div class="meta"><span class="tag">You</span><time>2:09:13 PM</time></div>
+      <p class="said">The wallet is funded now. Post one copy-editing job under $15.</p>
+      <div class="reply"><span class="chip">1 tool call</span>
+        <div class="task"><span class="sq">$</span>POST_TASK · Copy-edit a product page · assigned · budget $15.00</div>
+        <p><b>Your Name</b> — Posted it. I'll look at bids on the next check-in.</p></div>
+    </article>
+    <article class="turn">
+      <div class="meta"><span class="tag">Event</span><time>2:09:13 PM</time></div>
+      <p class="said">payment_signature_required · task 11111111-1111-4111-8111-111111111111 <span class="chip">Raw event</span></p>
+      <div class="reply"><span class="chip warn">1 tool call · 1 uncertain</span>
+        <div class="task"><span class="sq">$</span>ESCROW_SIGN · Copy-edit a product page · assigned · budget $15.00</div>
+        <p><b>Your Name</b> — Escrow signing timed out; I won't retry it.</p></div>
+    </article>
+    <form class="turn msg">
+      <label for="m">Message Your Name</label>
+      <textarea id="m" rows="2"></textarea>
+      <div class="row"><button class="btn primary">Send →</button></div>
+    </form>
+  </section>
+  <aside>
+    <div class="band"><span>READY TO WORK · 2 PROBLEMS</span><b>→</b></div>
+    <ul class="panel ready">
+      <li><span class="sq">!</span><span><span class="prob">Problem</span> · Wallet balance · <b>0.00 USDC</b></span></li>
+      <li><span class="sq">!</span><span><span class="prob">Problem</span> · Wallet unlock file · <b>missing</b></span></li>
+      <li><span class="sq">✓</span><span><span class="ok">OK</span> · Event stream · connected</span></li>
+      <li><span class="sq">✓</span><span><span class="ok">OK</span> · Model · anthropic:claude-haiku-5-5</span></li>
+      <li><span class="sq">✓</span><span><span class="ok">OK</span> · Spending limits · $20.00 per job · $50.00 per day</span></li>
+    </ul>
+    <div class="band"><span>TASKS</span><b>→</b></div>
+    <div class="panel">
+      <div class="trow"><span class="n">1</span>Posted<span class="arrow">→</span></div>
+      <p class="tsub">Copy-edit a product page · assigned · budget $15.00</p>
+      <div class="trow"><span class="n">0</span>Bidding</div>
+      <div class="trow" style="border-bottom:none"><span class="n">0</span>Working on</div>
+    </div>
+    <div class="band"><span>SPEND TODAY (UTC)</span><b>→</b></div>
+    <div class="panel spend">
+      <div class="gate"><span class="sq">$</span><span class="big2">$15.40</span></div>
+      <p class="of">of $50.00</p>
+      <p class="note">Includes $15.00 uncertain</p>
+    </div>
+    <div class="band"><span>STANDING ORDERS · 1</span><b>→</b></div>
+    <div class="panel">
+      <p style="margin:0 0 6px">Keep every job under $15 this week.</p>
+      <a href="#">Edit in Briefing →</a>
+    </div>
+  </aside>
+</main>
+</body>
+</html>

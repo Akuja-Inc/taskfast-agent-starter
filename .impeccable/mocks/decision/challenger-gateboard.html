@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TaskFast Console · Gate Board</title>
+<style>
+:root{--board:#0B0D10;--line:#22262C;--edge:#39404A;--paper:#F5F7F9;--ink:#1C2127;--mute:#6B7178;--dmute:#9AA0A8;--yellow:#FFD400;--amberd:#E5A33C;--amber:#8F6400;--green:#1D6B34;--greend:#4CAA6B;--red:#B3261E}
+*{box-sizing:border-box;margin:0}
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;background:var(--board);color:var(--paper);font-size:13px;line-height:1.45}
+.env{background:#2E5E8C;color:#fff;font-size:12px;letter-spacing:.05em;padding:7px 18px}
+header{display:flex;align-items:center;gap:16px;padding:11px 18px;border-bottom:1px solid var(--line)}
+.host{font-size:14px;font-weight:700;letter-spacing:.03em}
+select{background:#14181D;color:var(--paper);border:1px solid var(--edge);border-radius:3px;font:inherit;font-size:12px;padding:5px 8px}
+.tabs{display:flex;gap:4px}
+.tab{padding:6px 14px;border-radius:3px;color:var(--dmute);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.tab.on{background:var(--paper);color:var(--ink);font-weight:700}
+.status{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--greend);font-size:12px;letter-spacing:.08em}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--greend)}
+.btn{background:none;border:1px solid #4A515B;color:var(--paper);border-radius:3px;font:inherit;font-size:12px;padding:6px 13px;letter-spacing:.04em}
+main{display:grid;grid-template-columns:1fr 400px;height:calc(900px - 83px)}
+.left{display:flex;flex-direction:column;border-right:1px solid var(--line);min-width:0}
+.board{flex:1;overflow:hidden;padding-top:10px}
+.cols,.row{display:grid;grid-template-columns:112px 130px 1fr 168px;gap:14px}
+.cols{color:var(--mute);font-size:11px;letter-spacing:.16em;padding:5px 14px 7px;border-bottom:1px solid var(--line)}
+.gate{font-size:12px;letter-spacing:.18em;padding:11px 14px 8px;display:flex;align-items:center;gap:10px}
+.gate::before{content:"";width:10px;height:10px;background:var(--yellow)}
+.gate.muted{color:var(--dmute)}
+.gate.muted::before{background:var(--edge)}
+.row{padding:10px 14px;border-bottom:1px solid var(--line);border-left:4px solid transparent}
+.row.held{border-left-color:var(--yellow)}
+.tag{display:inline-block;border:1px solid #4A515B;color:var(--dmute);border-radius:2px;padding:2px 7px;font-size:11px;letter-spacing:.08em;white-space:nowrap}
+.tag.warn{border-color:var(--amberd);color:var(--amberd)}
+.st{font-size:12px;letter-spacing:.05em}
+.st.hold{color:var(--amberd);font-weight:700}
+.st.ok{color:var(--greend)}
+.st .btn{margin-top:7px;padding:5px 10px;font-size:11px}
+.time{color:var(--dmute);padding-top:2px}
+.reply{color:var(--dmute);margin-top:5px}
+.who{color:var(--paper);font-weight:700}
+.chip{border:1px solid var(--edge);border-radius:10px;padding:1px 8px;font-size:11px;color:var(--dmute);margin-right:6px;white-space:nowrap}
+.red{color:var(--red);font-weight:700}
+.amb{color:var(--amberd);font-weight:700}
+.task{display:inline-block;border:1px solid var(--edge);border-radius:3px;padding:4px 9px;margin:6px 6px 2px 0;color:var(--paper);font-size:12px}
+.task.hold{border-left:3px solid var(--yellow)}
+.side{background:var(--paper);color:var(--ink);padding:18px 22px;overflow:hidden}
+.card{padding:14px 0;border-top:2px dashed #C9CDD2}
+.card:first-child{border-top:none;padding-top:0}
+.lab{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);margin-bottom:10px}
+.r{display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:12px}
+.r b{margin-left:auto}
+.badge{font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:1px 6px;border-radius:2px;border:1px solid;white-space:nowrap}
+.badge.p{color:var(--amber);border-color:var(--amber)}
+.badge.o{color:var(--green);border-color:var(--green)}
+.big{font-size:44px;font-weight:700;letter-spacing:-.01em}
+.big small{font-size:16px;color:var(--mute);font-weight:400}
+.bar{height:6px;background:#DFE3E7;border-radius:3px;margin-top:9px}
+.bar i{display:block;height:6px;width:31%;background:var(--ink);border-radius:3px}
+.note{color:var(--amber);font-size:12px;margin-top:6px}
+.link{color:var(--ink);font-size:12px;text-decoration:underline;display:inline-block;margin-top:6px}
+.code{margin-top:14px;padding-top:10px;border-top:2px dashed #C9CDD2;font-size:11px;color:var(--mute);letter-spacing:.14em;text-align:center}
+.msg{background:var(--paper);color:var(--ink);padding:12px 20px;display:flex;gap:14px;align-items:flex-end;border-top:1px solid var(--line)}
+.field{flex:1;display:flex;flex-direction:column}
+.field .lab{margin-bottom:6px}
+textarea{height:54px;resize:none;border:1px solid #B9BEC4;border-radius:3px;font:inherit;font-size:13px;padding:8px 10px;background:#fff;color:var(--ink)}
+.send{background:var(--ink);color:var(--paper);border:none;border-radius:3px;font:inherit;font-weight:700;padding:11px 28px;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div class="env">DEVELOPMENT · local TaskFast server · no real money</div>
+<header>
+  <span class="host">127.0.0.1:7171</span>
+  <select><option>scratch · Your Name (poster)</option></select>
+  <nav class="tabs"><span class="tab on">Timeline</span><span class="tab">Briefing</span></nav>
+  <span class="status"><span class="dot"></span>running</span>
+  <button class="btn">Freeze spending</button>
+  <button class="btn">Pause</button>
+</header>
+<main>
+  <section class="left">
+    <div class="board">
+      <div class="cols"><span>TIME</span><span>KIND</span><span>DETAIL</span><span>STATE</span></div>
+      <div class="gate">NEEDS YOUR ATTENTION · 2</div>
+      <div class="row held">
+        <span class="time">2:09:13 PM</span>
+        <span><span class="tag warn">UNCERTAIN</span></span>
+        <span><span class="t">escrow:22222222-2222-4222-8222-222222222222 — $15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server: check the task on TaskFast, then mark it checked.</span></span>
+        <span class="st hold">HELD · needs check<br><button class="btn">Mark checked</button></span>
+      </div>
+      <div class="row held">
+        <span class="time">2:09:13 PM</span>
+        <span><span class="tag warn">DEAD-LETTERED</span></span>
+        <span><span class="t">no event name — The stream gave up on this event at 2026-10-13T14:09:13.178Z and acknowledged it, so the server will not send it again.</span></span>
+        <span class="st hold">HELD · won't resend<br><button class="btn">Mark checked</button></span>
+      </div>
+      <div class="gate muted">ALL TURNS · 3</div>
+      <div class="row">
+        <span class="time">2:09:13 PM</span>
+        <span><span class="tag">POLL</span></span>
+        <span><span class="t">Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.</span>
+        <div class="reply"><span class="chip">4 tool calls · <b class="red">1 failed</b></span><span class="who">Your Name</span> — Nothing posted yet and the wallet is empty, so I'll wait.</div></span>
+        <span class="st ok">OK · idle</span>
+      </div>
+      <div class="row">
+        <span class="time">2:09:13 PM</span>
+        <span><span class="tag">YOU</span></span>
+        <span><span class="t">The wallet is funded now. Post one copy-editing job under $15.</span>
+        <div class="reply"><span class="chip">1 tool call</span><span class="task">POST_TASK · Copy-edit a product page · assigned · budget $15.00</span><br><span class="who">Your Name</span> — Posted it. I'll look at bids on the next check-in.</div></span>
+        <span class="st ok">OK · posted</span>
+      </div>
+      <div class="row held">
+        <span class="time">2:09:13 PM</span>
+        <span><span class="tag">EVENT</span></span>
+        <span><span class="t">payment_signature_required · task 11111111-1111-4111-8111-111111111111</span> <span class="chip">Raw event</span>
+        <div class="reply"><span class="chip">1 tool call · <b class="amb">1 uncertain</b></span><span class="task hold">ESCROW_SIGN · Copy-edit a product page · assigned · budget $15.00</span><br><span class="who">Your Name</span> — Escrow signing timed out; I won't retry it.</div></span>
+        <span class="st hold">HELD · needs check</span>
+      </div>
+    </div>
+    <div class="msg">
+      <div class="field"><span class="lab">Message Your Name</span><textarea placeholder="Give the agent its next instruction…"></textarea></div>
+      <button class="send">Send</button>
+    </div>
+  </section>
+  <aside class="side">
+    <div class="card">
+      <div class="lab">Ready to work? · 2 problems</div>
+      <div class="r"><span class="badge p">Problem</span><span>Wallet balance</span><b>0.00 USDC</b></div>
+      <div class="r"><span class="badge p">Problem</span><span>Wallet unlock file</span><b>missing</b></div>
+      <div class="r"><span class="badge o">OK</span><span>Event stream</span><b>connected</b></div>
+      <div class="r"><span class="badge o">OK</span><span>Model</span><b>anthropic:claude-haiku-5-5</b></div>
+      <div class="r"><span class="badge o">OK</span><span>Spending limits</span><b>$20.00 per job · $50.00 per day</b></div>
+    </div>
+    <div class="card">
+      <div class="lab">Tasks</div>
+      <div class="r"><span>POSTED</span><b>1</b></div>
+      <div class="r"><span style="padding-left:14px">Copy-edit a product page · assigned · budget $15.00</span></div>
+      <div class="r"><span>BIDDING</span><b>0</b></div>
+      <div class="r"><span>WORKING ON</span><b>0</b></div>
+    </div>
+    <div class="card">
+      <div class="lab">Spend today (UTC)</div>
+      <div class="big">$15.40 <small>of $50.00</small></div>
+      <div class="bar"><i></i></div>
+      <div class="note">Includes $15.00 uncertain</div>
+    </div>
+    <div class="card">
+      <div class="lab">Standing orders · 1</div>
+      <div class="r"><span>Keep every job under $15 this week.</span></div>
+      <a class="link">Edit in Briefing</a>
+    </div>
+    <div class="code">TF·7171 · LOCAL GATE 01 · ||| || |||| | ||</div>
+  </aside>
+</main>
+</body>
+</html>

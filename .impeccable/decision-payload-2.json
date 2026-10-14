@@ -1,0 +1,109 @@
+{
+  "title": "Choose the console's visual world · hand 2 (bolder)",
+  "question": "Bolder hand, as steered. The deal leads with the split-flap concourse board. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "challenger-splitflap",
+      "label": "The Split-Flap Concourse",
+      "kicker": "THE ROLL",
+      "verdict": "wins",
+      "lineage": "the rail concourse split-flap board at rush hour",
+      "thesis": "The console as a live concourse board: matte black rows of fixed character cells in white condensed caps, columns that never move, and when the stream changes a row its new state cascades across the cells so the change itself is visible.",
+      "palette": ["#0B0B09", "#F4F1E8", "#FFB300", "#8B8578", "#B3261E", "#2A2D31"],
+      "materials": ["matte flap cells", "brushed steel frame", "amber state lamps"],
+      "viewport": "Timeline as the board: ruled rows of flap cells (time · kind · detail · state), condensed caps; the uncertain escrow row relit amber and re-flapped to HELD until Mark checked drops it off; live updates cascade per character over the stream; readiness, spend and tasks as steel-framed status boards; the dark theme is the board's home, the light theme inverts to the printed timetable.",
+      "case": "Beats every challenger on both axes: a live event stream feeding time-ranked rows with in-place state changes is exactly this product, and everyone alive has read a concourse board.",
+      "risk": "Cousin to the gate board from the first hand, in mechanical-analog form; split-flap nostalgia (clack noise, flap shading everywhere) is one step from costume, so the cascade marks real change only.",
+      "raised": [
+        { "from": "Labanotation", "raise": "The turn the agent is working right now carries a pale band across its full row, so \"working now\" reads without a spinner." },
+        { "from": "vertical video", "raise": "An opened detail (raw event, tool calls) takes the whole stage and closes with one gesture, never a cramped inline peek." }
+      ],
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse.webp",
+      "html": ".impeccable/mocks/decision/challenger-splitflap.html"
+    },
+    {
+      "id": "challenger-acetate",
+      "label": "The Acetate Manual",
+      "verdict": "competitive",
+      "lineage": "the boxed-software reference manual with punched acetate leaves",
+      "thesis": "The console as the boxed reference manual: saturated section boards under milk acetate, a stepped tab rail down the fore-edge showing each section's extent, and every dead-lettered event arriving as an errata slip in held-out vermilion.",
+      "palette": ["#F5F1E6", "#1C1A16", "#F2C14E", "#E4572E", "#3E7C4F", "#2A5DAA", "#B02E24"],
+      "materials": ["milk acetate", "board section hues", "punched leaves"],
+      "viewport": "Timeline and Briefing as board-colored tabs on a stepped fore-edge rail; pages in a serif text face with condensed grotesque heads and mono machine voice; the dead-lettered event lies over the page as a vermilion errata slip; state changes move in 90ms two-frame steps, never fades; the dark theme is the same boards under low lamplight.",
+      "case": "Holds product clarity: the tab rail makes each section's extent visible and the errata slip is the dead-letter file exactly; loses audience identification, since the boxed manual is an archivist's object.",
+      "risk": "Layered acetate over saturated boards can drown a working screen in object-craft; one board hue owns one section and vermilion never appears outside errors.",
+      "hero": "https://impeccable.style/worlds/cards/rw-manual-acetate-tab-board-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/rw-manual-acetate-tab-board.webp",
+      "html": ".impeccable/mocks/decision/challenger-acetate.html"
+    },
+    {
+      "id": "challenger-darkconsole",
+      "label": "The Graphite Console",
+      "verdict": "competitive",
+      "lineage": "the dark-first developer working surface",
+      "thesis": "Graphite panels divided by one-pixel seams, syntax-derived accents for state only, and money-dangerous actions given deliberate isolation: outline and disarmed until deliberately focused.",
+      "palette": ["#0D1117", "#E6EDF3", "#79C0FF", "#8B949E", "#D29922", "#F85149"],
+      "materials": ["graphite panels", "hairline seams", "focus-gated danger"],
+      "viewport": "Panels tile and persist: timeline, readiness, spend, tasks each own a panel that updates in place; Freeze spending sits apart from every neighbor, outline-only until armed by deliberate focus; state colors ride as syntax accents; the light theme is the same panel grammar inverted to paper.",
+      "case": "Holds product clarity: persistent panels and focus-gated destructive actions are the money-safety model rendered as chrome; loses audience identification beyond developer habits.",
+      "risk": "This is the category's own canon in a bolder suit; its distinctiveness is discipline, not difference.",
+      "hero": "https://impeccable.style/worlds/cards/digital-design-canon-dark-first-developer-console-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/digital-design-canon-dark-first-developer-console.webp",
+      "html": ".impeccable/mocks/decision/challenger-darkconsole.html"
+    },
+    {
+      "id": "challenger-wayfinding",
+      "label": "The Yellow Signage",
+      "verdict": "competitive",
+      "lineage": "the international airport sign system",
+      "thesis": "Overhead sign bands for a working page: saturated yellow bands hang over each section and persist while it scrolls, black humanist sans with one message per band, white state pictograms on black squares, money figures at gate-number scale.",
+      "palette": ["#FFCC00", "#0B0B0B", "#FFFFFF", "#5E5E56", "#B3261E"],
+      "materials": ["yellow sign bands", "pictogram squares", "monumental numerals"],
+      "viewport": "Sticky yellow bands crown TIMELINE, READINESS, TASKS and SPEND; one message per band; the attention section's band carries its count in monumental numerals; the environment warning becomes the terminal-wide band; the dark theme is the same signage at night.",
+      "case": "Holds audience identification: everyone has made a connection under these bands; the grammar lends navigation more than record-keeping, so it trails the leader on product clarity.",
+      "risk": "Yellow reserved for wayfinding collides with amber money warnings unless the two palettes are kept strictly separate.",
+      "hero": "https://impeccable.style/worlds/cards/wayfinding-cartography-signage-terminal-yellow-wayfinding-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/wayfinding-cartography-signage-terminal-yellow-wayfinding.webp",
+      "html": ".impeccable/mocks/decision/challenger-wayfinding.html"
+    },
+    {
+      "id": "challenger-labanotation",
+      "label": "The Dance Score",
+      "verdict": "declined",
+      "lineage": "Labanotation, the choreographer's staff",
+      "palette": ["#FBFAF7", "#111111", "#9AA0A6"],
+      "materials": ["score paper", "symbol blocks"],
+      "case": "Loses both axes: a choreographer's score is not an operator's world, and duration-shaped blocks fit a dance, not a ledger of marketplace turns.",
+      "kept": "The in-progress beat banded pale across the full staff width.",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-labanotation-hero.webp"
+    },
+    {
+      "id": "challenger-verticalvideo",
+      "label": "The Vertical Feed",
+      "verdict": "declined",
+      "lineage": "the full-screen vertical video feed",
+      "palette": ["#000000", "#FFFFFF", "#FF3B5C"],
+      "materials": ["full-bleed media", "glyph rail"],
+      "case": "Loses both axes: one turn per viewport destroys the at-a-glance record that monitoring exists for, whatever its pull as a consumer habit.",
+      "kept": "An opened detail takes the whole stage and closes with one gesture.",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-vertical-video-feed-surface-hero.webp"
+    }
+  ],
+  "reroll": {
+    "registers": ["safer", "bolder"]
+  },
+  "buildPath": {
+    "value": "code"
+  },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "The modern ops dashboard, played straight: neutral ground, near-black text, one blue accent, standard cards and tables at Linear/Stripe craft, with a first-class dark mode.",
+    "palette": ["#FFFFFF", "#111827", "#2563EB", "#0B0F19"],
+    "materials": ["clean grid", "standard cards", "first-class dark mode"],
+    "viewport": "The arrangement every operator expects: top bar, attention alert, timeline table, sidebar stat cards, executed at full craft in both themes.",
+    "risk": "Indistinguishable from the competition by design."
+  },
+  "steer": true
+}

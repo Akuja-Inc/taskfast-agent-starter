@@ -1,0 +1,14 @@
+{"v":3,"createdOnFiles":{"v":1,"at":"2026-10-13T14:10:00Z"},"title":"Agent TUI Prototype","launch":{"view":"canvas"},"pages":[],"boards":{
+"Main.dc.html":{"x":0,"y":0,"w":1100,"h":880,"title":"1 · Timeline (badges collapsed)","is_interactive":true},
+"Expanded.dc.html":{"x":1180,"y":0,"w":1100,"h":880,"title":"2 · Reply focused, tool calls + raw event open"},
+"Controls.dc.html":{"x":2360,"y":0,"w":1100,"h":880,"title":"3 · Paused, freeze confirm"},
+"Briefing.dc.html":{"x":0,"y":1000,"w":1100,"h":880,"title":"4 · Briefing tab"},
+"Narrow.dc.html":{"x":1180,"y":1000,"w":700,"h":880,"title":"5 · 80 columns"},
+"Help.dc.html":{"x":1960,"y":1000,"w":700,"h":620,"title":"6 · Key help (?)"},
+"Connect.dc.html":{"x":2740,"y":1000,"w":720,"h":420,"title":"7 · Can't reach the console"}
+},"order":["Main.dc.html","Expanded.dc.html","Controls.dc.html","Briefing.dc.html","Narrow.dc.html","Help.dc.html","Connect.dc.html"],"notes":{
+"title":{"x":0,"y":-300,"text":"Agent TUI (OpenTUI + Solid) — the #16 console, in the terminal","kind":"title1","maxW":3460},
+"arch":{"x":0,"y":2000,"w":640,"maxH":520,"fill":"blue","text":"How it fits\n• A separate client: `pnpm tui <console link>` (or TASKFAST_CONSOLE_URL). It talks to the host's console API from PR #17 over 127.0.0.1 with the same token. It never opens a store or an event stream, same as the web page.\n• OpenTUI's Solid renderer needs Bun (README: `bun index.tsx`, bunfig preload `@opentui/solid/preload`; native core in Zig). The host stays on Node 24, so Bun becomes a dev/tool dependency for the TUI only.\n• Built from OpenTUI elements: <box> panels with titles, <scrollbox> timeline, <input> message line, <textarea>/<select> in Briefing, <tab_select> for tabs; keys via useKeyboard; layout follows useTerminalDimensions.\n• Same data and actions as the web console: timeline, alerts, readiness, tasks, spend, orders, pause, freeze, message, mark checked, run again, save & reopen."},
+"keys":{"x":720,"y":2000,"w":560,"maxH":520,"fill":"green","text":"Keys\n1 / 2  Timeline / Briefing\nj k  move between replies · g G top / bottom\nenter  show / hide the reply's tool calls\nr  raw event (on an event turn)\no  open the task link (OSC 8 hyperlink, else print the URL)\nm  focus the message line · enter sends · esc leaves\np  pause / resume · f freeze (asks y/n) / unfreeze\nc  mark checked · R run again (on an alert)\nTab  next panel · ? help · q quit\nMouse: click badges, scroll the timeline."},
+"open":{"x":1360,"y":2000,"w":600,"maxH":520,"fill":"orange","text":"Choices to approve\n1. Separate Bun client of the PR #17 API (recommended) vs. running the TUI inside the Node host (not possible: OpenTUI Solid needs Bun).\n2. Polling every 2 s, like the web page, vs. adding a server-sent event stream to the console API first.\n3. Freeze and Save ask y/n in the TUI; pause does not.\n4. Below 100 columns the sidebar folds away (i toggles it), screen 5."}
+},"designSystems":[]}

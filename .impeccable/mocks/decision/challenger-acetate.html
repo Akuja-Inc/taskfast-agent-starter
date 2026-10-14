@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Challenger: The Acetate Manual</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&display=swap">
+<style>
+:root{--ink:#1C1A16;--paper:#FCFAF1;--yellow:#F2C14E;--grass:#3E7C4F;--teal:#2A8C8C;--ultra:#2A5DAA;--amber:#B45309;--verm:#B02E24;--mut:#6B6455;--rule:#C9C2AE}
+*{box-sizing:border-box}
+html,body{width:1440px;height:900px;overflow:hidden;margin:0}
+body{background:#F5F1E6;color:var(--ink);font:14px/1.45 Georgia,serif}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+h1,h2,h3,.os{font-family:Oswald,'Arial Narrow',sans-serif;text-transform:uppercase;letter-spacing:.14em;margin:0}
+.env{background:#2E5E8C;color:#fff;font:500 11px Oswald,sans-serif;letter-spacing:.2em;text-transform:uppercase;text-align:center;padding:7px 0}
+.book{position:relative;margin:12px 54px 0 16px;background:var(--yellow);height:862px;padding:10px 34px 12px 12px}
+.leaf{position:relative;background:var(--paper);height:100%;transform:translate(-2px,-2px);box-shadow:7px 0 0 rgba(28,26,22,.28);padding:0 24px;overflow:hidden}
+.rail{position:absolute;right:-30px;top:26px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;z-index:3}
+.tab{writing-mode:vertical-rl;font:500 11px Oswald,sans-serif;letter-spacing:.24em;text-align:center;color:#fff;width:30px;height:70px;border-radius:0 5px 5px 0;box-shadow:3px 3px 0 rgba(28,26,22,.3);padding:10px 0}
+.tl{background:var(--yellow);color:var(--ink);width:46px;height:196px;font-size:13px;box-shadow:4px 3px 0 rgba(28,26,22,.35)}
+.br{background:#E4572E;height:120px}
+.g{background:var(--grass)}.te{background:var(--teal)}.ul{background:var(--ultra)}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px 0 10px;border-bottom:2px solid var(--ink)}
+.hd h1{font-size:17px;font-weight:600}
+.host{color:var(--mut);margin-left:10px}
+.sel{font:13px Georgia,serif;color:var(--ink);border:1.5px solid var(--ink);background:var(--paper);padding:5px 6px}
+.hd-r{display:flex;align-items:center;gap:8px}
+.run{color:var(--grass);font:600 11px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-right:4px}
+.btn{font:500 11px Oswald,sans-serif;letter-spacing:.12em;text-transform:uppercase;border:1.5px solid var(--ink);background:var(--paper);color:var(--ink);padding:6px 14px;cursor:pointer}
+.btn.pri{background:var(--ink);color:#F5F1E6}
+.btn.dan{border-color:var(--verm);color:var(--verm)}
+.btn.sm{padding:3px 10px;font-size:10px}
+.cols{display:flex;gap:26px;padding-top:13px}
+main{flex:1;min-width:0}
+aside{width:332px;flex:none}
+.sh{font-size:14px;font-weight:600;border-bottom:1px solid var(--ink);padding-bottom:4px;margin:0 0 8px}
+.tag{display:inline-block;font:600 10px Oswald,sans-serif;letter-spacing:.12em;padding:2px 7px;background:var(--amber);color:#fff}
+.unc{border:1.5px solid var(--amber);background:#FDF6E8;padding:8px 12px}
+.unc p,.errata p{margin:5px 0 7px;font-size:13px}
+.errata{position:relative;z-index:2;transform:rotate(-1deg);margin:10px 4px -40px 30px;background:var(--verm);color:#fff;padding:10px 16px;box-shadow:4px 4px 0 rgba(28,26,22,.35)}
+.errata .tag{background:#fff;color:var(--verm)}
+.errata .btn{border-color:#fff;color:#fff;background:transparent}
+.turns{border-top:2px solid var(--ink);padding-top:34px}
+.turn{display:flex;gap:14px;padding:9px 0;border-top:1px solid var(--rule)}
+.meta{width:92px;flex:none}
+.tg{display:inline-block;font:500 10px Oswald,sans-serif;letter-spacing:.14em;border:1.3px solid var(--ink);padding:2px 7px}
+.time{display:block;color:var(--mut);margin-top:4px}
+.body p{margin:0 0 4px;font-size:13px}
+.rep{border-left:2px solid var(--rule);padding-left:12px;margin-top:4px}
+.chip{display:inline-block;font:10px ui-monospace,Menlo,monospace;border:1px solid var(--ink);border-radius:9px;padding:1px 8px;margin-bottom:4px}
+.chip.bad{border-color:var(--verm);color:var(--verm)}
+.chip.war{border-color:var(--amber);color:var(--amber)}
+.task{border:1.3px solid var(--ink);background:#F5F1E6;padding:5px 10px;margin:2px 0 5px;font:11px ui-monospace,Menlo,monospace}
+.task b{font:600 11px Oswald,sans-serif;letter-spacing:.1em}
+.msg{margin-top:10px;border-top:2px solid var(--ink);padding-top:9px}
+.msg label{display:block;font:600 12px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px}
+textarea{width:100%;height:52px;border:1.5px solid var(--ink);background:#fff;font:13px Georgia,serif;padding:6px 8px;resize:none}
+.msg .btn.pri{margin-top:7px}
+.card{border:1.5px solid var(--ink);background:var(--paper);box-shadow:3px 3px 0 rgba(28,26,22,.18);padding:8px 12px 10px;margin-bottom:12px}
+.card h3{font-size:12.5px;font-weight:600;border-bottom:1px solid var(--ink);padding-bottom:3px;margin-bottom:5px}
+.row{display:flex;gap:8px;align-items:baseline;padding:3px 0;border-top:1px dotted var(--rule);font-size:12.5px}
+.row .nm{flex:1}
+.st{font:600 9.5px Oswald,sans-serif;letter-spacing:.1em;text-transform:uppercase;width:56px;flex:none}
+.st.ok{color:var(--grass)}.st.prob{color:var(--amber)}
+.big{font:600 21px Oswald,sans-serif;letter-spacing:.04em;margin:2px 0}
+.note{color:var(--amber);font-size:12px}
+.ord p{margin:2px 0 6px;font-size:13px}
+.ord a{color:var(--ultra);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="env">DEVELOPMENT · local TaskFast server · no real money</div>
+<div class="book">
+  <div class="rail">
+    <div class="tab tl">TIMELINE</div>
+    <div class="tab br">BRIEFING</div>
+    <div class="tab g">TASKS</div>
+    <div class="tab te">SPEND</div>
+    <div class="tab ul">LEDGER</div>
+  </div>
+  <div class="leaf">
+    <header class="hd">
+      <div><h1>TaskFast Console<span class="host mono">127.0.0.1:7171</span></h1></div>
+      <div class="hd-r">
+        <select class="sel"><option>scratch · Your Name (poster)</option></select>
+        <span class="run">● running</span>
+        <button class="btn dan">Freeze spending</button>
+        <button class="btn">Pause</button>
+      </div>
+    </header>
+    <div class="cols">
+      <main>
+        <h2 class="sh">Needs your attention · 2</h2>
+        <div class="unc">
+          <span class="tag">UNCERTAIN</span> <code>escrow:22222222-2222-4222-8222-222222222222</code>
+          <p>$15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server: check the task on TaskFast, then mark it checked.</p>
+          <button class="btn sm">Mark checked</button>
+        </div>
+        <div class="errata">
+          <span class="tag">DEAD-LETTERED</span> <span class="mono">no event name</span>
+          <p>The stream gave up on this event at 2026-10-13T14:09:13.178Z and acknowledged it, so the server will not send it again.</p>
+          <button class="btn sm">Mark checked</button>
+        </div>
+        <div class="turns">
+          <div class="turn">
+            <div class="meta"><span class="tg">POLL</span><span class="time mono">2:09:13 PM</span></div>
+            <div class="body"><p>Check your marketplace work in your poster role and pursue your current goals: get small jobs done fast at a fair price. Read current state before acting; do not repeat uncertain writes.</p>
+            <div class="rep"><span class="chip bad">4 tool calls · 1 failed</span><p>Your Name — Nothing posted yet and the wallet is empty, so I'll wait.</p></div></div>
+          </div>
+          <div class="turn">
+            <div class="meta"><span class="tg">YOU</span><span class="time mono">2:09:13 PM</span></div>
+            <div class="body"><p>The wallet is funded now. Post one copy-editing job under $15.</p>
+            <div class="rep"><span class="chip">1 tool call</span><div class="task"><b>POST_TASK</b> · Copy-edit a product page · assigned · budget $15.00</div><p>Your Name — Posted it. I'll look at bids on the next check-in.</p></div></div>
+          </div>
+          <div class="turn">
+            <div class="meta"><span class="tg">EVENT</span><span class="time mono">2:09:13 PM</span></div>
+            <div class="body"><p><span class="mono">payment_signature_required · task 11111111-1111-4111-8111-111111111111</span> <span class="chip">Raw event</span></p>
+            <div class="rep"><span class="chip war">1 tool call · 1 uncertain</span><div class="task"><b>ESCROW_SIGN</b> · Copy-edit a product page · assigned · budget $15.00</div><p>Your Name — Escrow signing timed out; I won't retry it.</p></div></div>
+          </div>
+        </div>
+        <form class="msg">
+          <label for="m">Message Your Name</label>
+          <textarea id="m"></textarea>
+          <button class="btn pri" type="button">Send</button>
+        </form>
+      </main>
+      <aside>
+        <div class="card"><h3>Ready to work? 2 problems</h3>
+          <div class="row"><span class="st prob">Problem</span><span class="nm">Wallet balance</span><span class="mono">0.00 USDC</span></div>
+          <div class="row"><span class="st prob">Problem</span><span class="nm">Wallet unlock file</span><span class="mono">missing</span></div>
+          <div class="row"><span class="st ok">OK</span><span class="nm">Event stream</span><span class="mono">connected</span></div>
+          <div class="row"><span class="st ok">OK</span><span class="nm">Model</span><span class="mono">anthropic:claude-haiku-5-5</span></div>
+          <div class="row"><span class="st ok">OK</span><span class="nm">Spending limits</span><span class="mono">$20.00 per job · $50.00 per day</span></div>
+        </div>
+        <div class="card"><h3>Tasks</h3>
+          <div class="row"><span class="nm os" style="font-size:11px">POSTED · 1</span><span class="mono">Copy-edit a product page · assigned · budget $15.00</span></div>
+          <div class="row"><span class="nm os" style="font-size:11px">BIDDING · 0</span></div>
+          <div class="row"><span class="nm os" style="font-size:11px">WORKING ON · 0</span></div>
+        </div>
+        <div class="card"><h3>Spend today (UTC)</h3>
+          <div class="big">$15.40 of $50.00</div>
+          <div class="note">Includes $15.00 uncertain</div>
+        </div>
+        <div class="card ord"><h3>Standing orders · 1</h3>
+          <p>Keep every job under $15 this week.</p>
+          <a href="#">Edit in Briefing</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+</body>
+</html>

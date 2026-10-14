@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TUI reply expanded</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1115}
+a{color:#8DB4F0}a:hover{color:#B9D0F5}
+.t{background:#0F1115;color:#D7DADF;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:20px}
+.box{border:1px solid #3A3F47;border-radius:6px;position:relative;padding:12px 12px 8px}
+.box.f{border-color:#8DB4F0}
+.ttl{position:absolute;top:-11px;left:10px;background:#0F1115;padding:0 6px;color:#8E949C}
+.box.f>.ttl{color:#8DB4F0}
+.m{color:#8E949C}.ok{color:#8FD19E}.bad{color:#F28B82}.warn{color:#F2A766}.acc{color:#8DB4F0}.ev{color:#F2C14E}.poll{color:#C9B6F2}
+.sel{background:#1E2633}
+.k{color:#0F1115;background:#8E949C;padding:0 4px;border-radius:2px}
+</style>
+</helmet>
+<div class="t" style="width: 1100px; height: 880px; box-sizing: border-box; display: flex; flex-direction: column">
+  <div style="display: flex; justify-content: space-between; background: #2E5E8C; color: #FFFFFF; padding: 2px 12px; font-weight: 600"><span>DEVELOPMENT · local TaskFast server · no real money</span><span>console 127.0.0.1:7070 ✓</span></div>
+  <div style="display: flex; gap: 18px; padding: 6px 12px; border-bottom: 1px solid #2A2E35">
+    <span>agent <span class="acc">‹ foo · Rock (poster) ›</span></span>
+    <span><span class="sel" style="padding: 0 6px">1 Timeline</span> <span class="m" style="padding: 0 6px">2 Briefing</span></span>
+    <span class="ok">● running</span>
+    <span style="margin-left: auto"><span class="m">spend</span> $15.40/$50</span>
+  </div>
+  <div style="flex: 1; display: flex; gap: 12px; padding: 16px 12px 6px; min-height: 0">
+    <div class="box f" style="flex: 1; overflow: hidden"><span class="ttl">Timeline · reply 3 of 5</span>
+      <div class="m"><span class="poll">POLL </span> 05:33:21  Check your marketplace work…  <span>[▸ 4 tool calls · 1 failed]</span></div>
+      <div style="margin-top: 10px" class="m"><span class="acc">YOU  </span> 05:41:02  The wallet is funded now. Post one copy-editing job under $15.</div>
+      <div class="m" style="padding-left: 6px">  Rock  Posted it. I'll look at bids on the next check-in. [▸ 2 tool calls]</div>
+      <div style="margin-top: 10px"><span class="ev">EVENT</span> <span class="m">05:52:40</span>  payment_signature_required · Copy-edit a product page <span class="acc">[▾ raw]</span></div>
+      <div class="box" style="margin: 14px 0 10px 40px; background: #161A20"><span class="ttl" style="background: #0F1115">raw event · plain text</span>
+        <div style="white-space: pre">{
+  "event_id": "evt-1",
+  "event": "payment_signature_required",
+  "task_id": "11111111-1111-4111-8111-111111111111",
+  "data": { "bid_id": "22222222-…", "note": "&lt;b&gt;urgent&lt;/b&gt;" }
+}</div>
+      </div>
+      <div class="sel" style="padding-left: 4px; border-left: 2px solid #8DB4F0">  <b>Rock</b>  Escrow signing timed out; I won't retry it. <span class="acc">[▾ 2 tool calls · <span class="warn">1 uncertain</span>]</span></div>
+      <div style="padding-left: 40px; margin-top: 4px">
+        <div><span class="ok">✓</span> task_bids {"task_id":"1111…"}                       <span class="m">ok · 84ms</span></div>
+        <div class="warn">? escrow_sign {"task_id":"1111…","bid_id":"2222…"}   uncertain · 30s</div>
+        <div class="m" style="padding-left: 18px">timed out waiting for the signing service</div>
+        <div class="m" style="padding-left: 18px">$15.00 counted as spent · never retried · see Needs attention</div>
+      </div>
+      <div class="box" style="margin: 16px 0 0 40px; border-color: #36507A"><span class="ttl acc">task · o opens</span>
+        <div><u class="acc">Copy-edit a product page</u>  <span class="m">http://localhost:4000/tasks/1111…</span></div>
+        <div class="m">assigned · budget $15.00 · due Oct 15, 17:00</div>
+      </div>
+    </div>
+  </div>
+  <div class="box" style="margin: 10px 12px 4px"><span class="ttl">Message Rock</span><span class="acc">›</span> <span class="m">press m to type · enter sends once</span></div>
+  <div style="padding: 2px 12px 6px" class="m"><span class="k">enter</span> hide calls  <span class="k">r</span> raw event  <span class="k">o</span> open task  <span class="k">j/k</span> move  <span class="k">i</span> sidebar  <span class="k">?</span> help</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Console briefing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F4F2}
+a{color:#1F5FBF}a:hover{color:#163F80}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F3F4F2; color: #17181A; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; line-height: 1.45">
+<!--header:start-->
+  <div role="status" style="background: {{envBg}}; color: {{envFg}}; font-size: 13px; font-weight: 600; letter-spacing: .04em">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 6px 24px">{{envLabel}}</div>
+  </div>
+  <header style="background: #17181A; color: #F3F4F2">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 10px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px">
+      <div style="display: flex; align-items: center; gap: 8px; font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 14px">127.0.0.1:7070
+        <span style="display: flex; align-items: center; gap: 4px; font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 400; padding: 2px 8px; border-radius: 999px; border: 1px solid #4A4E55; color: #D7DADF">
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          token ok
+        </span>
+      </div>
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 14px">Agent
+        <select style="font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid #4A4E55; background: #24262A; color: #F3F4F2; min-height: 40px">
+          <option>foo · Rock (poster)</option>
+          <option>tap</option>
+        </select>
+      </label>
+      <nav aria-label="Console" style="display: flex; gap: 4px">
+        <a href="Console.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 6px; color: #F3F4F2; text-decoration: none">Timeline</a>
+        <a href="Briefing.dc.html" aria-current="page" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 6px; background: #F3F4F2; color: #17181A; font-weight: 600; text-decoration: none">Briefing</a>
+      </nav>
+      <span style="font-size: 13px; padding: 4px 10px; border-radius: 999px; background: {{statusBg}}; color: {{statusFg}}">{{statusLabel}}</span>
+      <div style="margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px">
+        <button onClick="{{toggleFreeze}}" aria-pressed="{{frozen}}" style="font: inherit; font-size: 14px; min-height: 44px; padding: 0 14px; border-radius: 6px; border: 1px solid #E07A70; background: {{freezeBg}}; color: #F3F4F2; cursor: pointer">{{freezeLabel}}</button>
+        <button onClick="{{togglePause}}" aria-pressed="{{paused}}" style="font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #4A4E55; background: transparent; color: #F3F4F2; cursor: pointer">{{pauseLabel}}</button>
+        <button style="font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 6px; border: 0; background: #F3F4F2; color: #17181A; font-weight: 600">Run now</button>
+      </div>
+    </div>
+  </header>
+  <sc-if value="{{frozen}}" hint-placeholder-val="{{false}}">
+    <div role="alert" style="background: #FBE4E1; color: #6E1A13; border-bottom: 1px solid #E8B4AE">
+      <div style="max-width: 1280px; margin: 0 auto; padding: 10px 24px; font-size: 14px"><strong>Spending is frozen.</strong> post_task and escrow_sign are refused before anything is reserved. Rock keeps reading, messaging and answering events.</div>
+    </div>
+  </sc-if>
+<!--header:end-->
+  <div style="max-width: 1280px; margin: 0 auto; padding: 32px 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+    <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+      <div>
+        <div style="font-size: 13px; color: #5A5F66">foo · Rock (poster) · development</div>
+        <h1 style="margin: 4px 0 0; font-size: 28px; font-weight: 600">How Rock is briefed</h1>
+      </div>
+
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px">
+          <h2 style="margin: 0; font-size: 17px; font-weight: 600">Standing orders</h2>
+          <span style="font-size: 13px; color: #1D6B34">live from the next turn · Rock can't forget these</span>
+        </div>
+        <ol style="margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px">
+          <li><div style="display: flex; gap: 12px; align-items: center; justify-content: space-between">Keep every job under $15 this week.<button aria-label="Remove order 1" style="font: inherit; font-size: 13px; min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #C9CCC6; background: #FFFFFF">Remove</button></div></li>
+          <li><div style="display: flex; gap: 12px; align-items: center; justify-content: space-between">Prefer workers with at least one review.<button aria-label="Remove order 2" style="font: inherit; font-size: 13px; min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #C9CCC6; background: #FFFFFF">Remove</button></div></li>
+        </ol>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end">
+          <label style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">New order
+            <input type="text" placeholder="e.g. Don't post on weekends" style="font: inherit; font-size: 14px; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; min-height: 44px; box-sizing: border-box">
+          </label>
+          <button style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 0; background: #1F5FBF; color: #FFFFFF">Add</button>
+        </div>
+        <div style="font-size: 13px; color: #5A5F66">Rock's own notes (from <code style="font-family: 'IBM Plex Mono', monospace">remember</code>): none yet.</div>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px">
+          <h2 style="margin: 0; font-size: 17px; font-weight: 600">agent.json</h2>
+          <span style="font-size: 13px; color: #8A4205">read when foo opens · saving reopens foo only</span>
+        </div>
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Goals
+          <textarea rows="2" style="font: inherit; font-size: 15px; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; resize: vertical">get small jobs done fast at a fair price</textarea>
+        </label>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px">
+          <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Temperament
+            <select style="font: inherit; font-size: 14px; padding: 8px; border: 1px solid #C9CCC6; border-radius: 6px; min-height: 44px; background: #FFFFFF"><option>patient</option><option selected>brisk</option><option>exacting</option><option>easygoing</option><option>curt</option></select>
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Per job limit ($)
+            <input type="number" value="20" style="font: inherit; font-size: 14px; padding: 10px; border: 1px solid #C9CCC6; border-radius: 6px; min-height: 44px; box-sizing: border-box">
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Daily limit ($) · changed
+            <input type="number" value="80" style="font: inherit; font-size: 14px; padding: 10px; border: 2px solid #B8620A; border-radius: 6px; min-height: 44px; box-sizing: border-box">
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Competence 0.7
+            <input type="range" min="0" max="1" step="0.1" value="0.7">
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Diligence 0.6
+            <input type="range" min="0" max="1" step="0.1" value="0.6">
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #3B3F45">Price sensitivity 0.7
+            <input type="range" min="0" max="1" step="0.1" value="0.7">
+          </label>
+        </div>
+        <div role="group" aria-labelledby="confirm" style="padding: 12px 14px; border: 1px solid #E8C9A6; background: #FDF6EE; border-radius: 8px; display: flex; flex-direction: column; gap: 6px">
+          <div id="confirm" style="font-weight: 600">Confirm spending change</div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">Daily limit  $50 → $80</div>
+          <div style="font-size: 13px; color: #3B3F45">Takes effect when foo reopens. The $[15.40] already counted today still counts toward the new limit.</div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <button style="font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 0; background: #17181A; color: #FFFFFF">Save &amp; reopen foo</button>
+          <button style="font: inherit; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 1px solid #C9CCC6; background: #FFFFFF; color: #17181A">Discard</button>
+        </div>
+        <div style="font-size: 13px; color: #5A5F66">Checked against the strict agent schema first; nothing is written if it fails. Only foo closes and reopens (stream, then store); tap keeps running. Events that arrive meanwhile wait on the server until foo's stream reconnects.</div>
+      </section>
+    </main>
+
+    <aside style="flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+      <section style="background: #17181A; color: #E4E6E9; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: #FFFFFF">What Rock reads every turn</h2>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap">You are Rock, who runs Sizzle Rock. Small biz doing small tings!
+What you want right now: get small jobs done fast at a fair price.
+You have about $20 to spend on a single job.
+You are brisk and businesslike.
+You hire people for jobs through a freelance marketplace, writing the way you normally would.
+<span style="color: #8DB4F0">Your operator's orders:
+0: Keep every job under $15 this week.
+1: Prefer workers with at least one review.</span></div>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #DCDED9; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 600">Recent activity</h2>
+        <div style="font-size: 14px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #5A5F66">05:33</span> Poll: 7 reads, 1 failed (task_list kind), no writes</div>
+        <div style="font-size: 14px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #5A5F66">05:33</span> Rock: wallet unfunded, so it can't post</div>
+        <a href="Console.dc.html" style="font-size: 14px">Open the full timeline</a>
+      </section>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"env":{"editor":"enum","options":["development","staging","production"],"default":"development"},"$preview":{"width":1280,"height":1100}}'>
+// header:start
+var ENVS = {
+  development: { bg: '#2E5E8C', fg: '#FFFFFF', label: 'DEVELOPMENT · local TaskFast server · no real money' },
+  staging: { bg: '#F2C14E', fg: '#2B2000', label: 'STAGING · testnet funds' },
+  production: { bg: '#B3261E', fg: '#FFFFFF', label: 'PRODUCTION · real money · every post and escrow spends USDC' }
+};
+function headerVals(self) {
+  var s = self.state || {};
+  var env = ENVS[self.props.env] || ENVS.development;
+  var paused = !!s.paused;
+  var frozen = !!s.frozen;
+  return {
+    envBg: env.bg, envFg: env.fg, envLabel: env.label,
+    paused: paused, frozen: frozen,
+    pauseLabel: paused ? 'Resume' : 'Pause',
+    statusLabel: paused ? 'paused · 3 events waiting' : 'idle · next check-in 05:48',
+    statusBg: paused ? '#4A3A12' : '#2E3A2F',
+    statusFg: paused ? '#F7DE9C' : '#BFE3C2',
+    freezeLabel: frozen ? 'Unfreeze spending' : 'Freeze spending',
+    freezeBg: frozen ? '#B3261E' : 'transparent',
+    togglePause: function () { self.setState({ paused: !paused }); },
+    toggleFreeze: function () { self.setState({ frozen: !frozen }); }
+  };
+}
+// header:end
+class Component extends DCLogic {
+  renderVals() {
+    return headerVals(this);
+  }
+}
+</script>
+</body>
+</html>
