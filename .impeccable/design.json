@@ -1,0 +1,713 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T03:49:24Z",
+  "title": "Design System: TaskFast agent console",
+  "extensions": {
+    "colorMeta": {
+      "schiphol-yellow": {
+        "role": "primary",
+        "displayName": "Schiphol Yellow",
+        "canonical": "#FFCC00",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 90.4)",
+          "oklch(26.4% 0.054 90.4)",
+          "oklch(37.9% 0.078 90.4)",
+          "oklch(49.3% 0.101 90.4)",
+          "oklch(60.7% 0.124 90.4)",
+          "oklch(72.1% 0.147 90.4)",
+          "oklch(83.6% 0.171 90.4)",
+          "oklch(95.0% 0.065 90.4)"
+        ]
+      },
+      "sign-black": {
+        "role": "neutral",
+        "displayName": "Sign Black",
+        "canonical": "#0B0B0B",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 89.9)",
+          "oklch(26.4% 0.000 89.9)",
+          "oklch(37.9% 0.000 89.9)",
+          "oklch(49.3% 0.000 89.9)",
+          "oklch(60.7% 0.000 89.9)",
+          "oklch(72.1% 0.000 89.9)",
+          "oklch(83.6% 0.000 89.9)",
+          "oklch(95.0% 0.000 89.9)"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "#F2F2EF",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 106.5)",
+          "oklch(26.4% 0.004 106.5)",
+          "oklch(37.9% 0.004 106.5)",
+          "oklch(49.3% 0.004 106.5)",
+          "oklch(60.7% 0.004 106.5)",
+          "oklch(72.1% 0.004 106.5)",
+          "oklch(83.6% 0.004 106.5)",
+          "oklch(95.0% 0.004 106.5)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 89.9)",
+          "oklch(26.4% 0.000 89.9)",
+          "oklch(37.9% 0.000 89.9)",
+          "oklch(49.3% 0.000 89.9)",
+          "oklch(60.7% 0.000 89.9)",
+          "oklch(72.1% 0.000 89.9)",
+          "oklch(83.6% 0.000 89.9)",
+          "oklch(95.0% 0.000 89.9)"
+        ]
+      },
+      "soft-ink": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "#3D3D38",
+        "tonalRamp": [
+          "oklch(15.0% 0.008 106.8)",
+          "oklch(26.4% 0.008 106.8)",
+          "oklch(37.9% 0.008 106.8)",
+          "oklch(49.3% 0.008 106.8)",
+          "oklch(60.7% 0.008 106.8)",
+          "oklch(72.1% 0.008 106.8)",
+          "oklch(83.6% 0.008 106.8)",
+          "oklch(95.0% 0.008 106.8)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#5E5E56",
+        "tonalRamp": [
+          "oklch(15.0% 0.013 106.9)",
+          "oklch(26.4% 0.013 106.9)",
+          "oklch(37.9% 0.013 106.9)",
+          "oklch(49.3% 0.013 106.9)",
+          "oklch(60.7% 0.013 106.9)",
+          "oklch(72.1% 0.013 106.9)",
+          "oklch(83.6% 0.013 106.9)",
+          "oklch(95.0% 0.013 106.9)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "rgba(11,11,11,.72)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 89.9)",
+          "oklch(26.4% 0.000 89.9)",
+          "oklch(37.9% 0.000 89.9)",
+          "oklch(49.3% 0.000 89.9)",
+          "oklch(60.7% 0.000 89.9)",
+          "oklch(72.1% 0.000 89.9)",
+          "oklch(83.6% 0.000 89.9)",
+          "oklch(95.0% 0.000 89.9)"
+        ]
+      },
+      "agent-ultramarine": {
+        "role": "secondary",
+        "displayName": "Agent Ultramarine",
+        "canonical": "#1D4ED8",
+        "tonalRamp": [
+          "oklch(15.0% 0.105 264.4)",
+          "oklch(26.4% 0.183 264.4)",
+          "oklch(37.9% 0.217 264.4)",
+          "oklch(49.3% 0.217 264.4)",
+          "oklch(60.7% 0.212 264.4)",
+          "oklch(72.1% 0.144 264.4)",
+          "oklch(83.6% 0.081 264.4)",
+          "oklch(95.0% 0.024 264.4)"
+        ]
+      },
+      "cli-violet": {
+        "role": "secondary",
+        "displayName": "CLI Violet",
+        "canonical": "#7C3AED",
+        "tonalRamp": [
+          "oklch(15.0% 0.085 293.0)",
+          "oklch(26.4% 0.147 293.0)",
+          "oklch(37.9% 0.211 293.0)",
+          "oklch(49.3% 0.247 293.0)",
+          "oklch(60.7% 0.236 293.0)",
+          "oklch(72.1% 0.160 293.0)",
+          "oklch(83.6% 0.090 293.0)",
+          "oklch(95.0% 0.026 293.0)"
+        ]
+      },
+      "money-green": {
+        "role": "secondary",
+        "displayName": "Money Green",
+        "canonical": "#1D6B34",
+        "tonalRamp": [
+          "oklch(15.0% 0.043 149.2)",
+          "oklch(26.4% 0.075 149.2)",
+          "oklch(37.9% 0.107 149.2)",
+          "oklch(49.3% 0.114 149.2)",
+          "oklch(60.7% 0.114 149.2)",
+          "oklch(72.1% 0.114 149.2)",
+          "oklch(83.6% 0.114 149.2)",
+          "oklch(95.0% 0.084 149.2)"
+        ]
+      },
+      "money-amber": {
+        "role": "secondary",
+        "displayName": "Money Amber",
+        "canonical": "#B45309",
+        "tonalRamp": [
+          "oklch(15.0% 0.042 49.0)",
+          "oklch(26.4% 0.071 49.0)",
+          "oklch(37.9% 0.102 49.0)",
+          "oklch(49.3% 0.132 49.0)",
+          "oklch(60.7% 0.146 49.0)",
+          "oklch(72.1% 0.146 49.0)",
+          "oklch(83.6% 0.100 49.0)",
+          "oklch(95.0% 0.028 49.0)"
+        ]
+      },
+      "amber-tint": {
+        "role": "neutral",
+        "displayName": "Amber Tint",
+        "canonical": "#FDF3E3",
+        "tonalRamp": [
+          "oklch(15.0% 0.024 79.7)",
+          "oklch(26.4% 0.024 79.7)",
+          "oklch(37.9% 0.024 79.7)",
+          "oklch(49.3% 0.024 79.7)",
+          "oklch(60.7% 0.024 79.7)",
+          "oklch(72.1% 0.024 79.7)",
+          "oklch(83.6% 0.024 79.7)",
+          "oklch(95.0% 0.024 79.7)"
+        ]
+      },
+      "money-red": {
+        "role": "secondary",
+        "displayName": "Money Red",
+        "canonical": "#B3261E",
+        "tonalRamp": [
+          "oklch(15.0% 0.063 28.7)",
+          "oklch(26.4% 0.109 28.7)",
+          "oklch(37.9% 0.155 28.7)",
+          "oklch(49.3% 0.178 28.7)",
+          "oklch(60.7% 0.178 28.7)",
+          "oklch(72.1% 0.173 28.7)",
+          "oklch(83.6% 0.091 28.7)",
+          "oklch(95.0% 0.025 28.7)"
+        ]
+      },
+      "code-ink": {
+        "role": "neutral",
+        "displayName": "Code Ink",
+        "canonical": "#E9E7DC",
+        "tonalRamp": [
+          "oklch(15.0% 0.015 98.3)",
+          "oklch(26.4% 0.015 98.3)",
+          "oklch(37.9% 0.015 98.3)",
+          "oklch(49.3% 0.015 98.3)",
+          "oklch(60.7% 0.015 98.3)",
+          "oklch(72.1% 0.015 98.3)",
+          "oklch(83.6% 0.015 98.3)",
+          "oklch(95.0% 0.015 98.3)"
+        ]
+      },
+      "env-local": {
+        "role": "tertiary",
+        "displayName": "Local Blue",
+        "canonical": "#2E5E8C",
+        "tonalRamp": [
+          "oklch(15.0% 0.043 249.5)",
+          "oklch(26.4% 0.074 249.5)",
+          "oklch(37.9% 0.091 249.5)",
+          "oklch(49.3% 0.091 249.5)",
+          "oklch(60.7% 0.091 249.5)",
+          "oklch(72.1% 0.091 249.5)",
+          "oklch(83.6% 0.085 249.5)",
+          "oklch(95.0% 0.025 249.5)"
+        ]
+      },
+      "env-staging": {
+        "role": "tertiary",
+        "displayName": "Staging Amber",
+        "canonical": "#F2C14E",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 85.4)",
+          "oklch(26.4% 0.055 85.4)",
+          "oklch(37.9% 0.078 85.4)",
+          "oklch(49.3% 0.101 85.4)",
+          "oklch(60.7% 0.124 85.4)",
+          "oklch(72.1% 0.141 85.4)",
+          "oklch(83.6% 0.141 85.4)",
+          "oklch(95.0% 0.054 85.4)"
+        ]
+      },
+      "staging-ink": {
+        "role": "tertiary",
+        "displayName": "Staging Ink",
+        "canonical": "#2B2000",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 90.0)",
+          "oklch(26.4% 0.051 90.0)",
+          "oklch(37.9% 0.051 90.0)",
+          "oklch(49.3% 0.051 90.0)",
+          "oklch(60.7% 0.051 90.0)",
+          "oklch(72.1% 0.051 90.0)",
+          "oklch(83.6% 0.051 90.0)",
+          "oklch(95.0% 0.051 90.0)"
+        ]
+      },
+      "header-line": {
+        "role": "neutral",
+        "displayName": "Header Line",
+        "canonical": "#4A4E55",
+        "tonalRamp": [
+          "oklch(15.0% 0.013 261.8)",
+          "oklch(26.4% 0.013 261.8)",
+          "oklch(37.9% 0.013 261.8)",
+          "oklch(49.3% 0.013 261.8)",
+          "oklch(60.7% 0.013 261.8)",
+          "oklch(72.1% 0.013 261.8)",
+          "oklch(83.6% 0.013 261.8)",
+          "oklch(95.0% 0.013 261.8)"
+        ]
+      },
+      "state-running": {
+        "role": "secondary",
+        "displayName": "State Running",
+        "canonical": "#56D364",
+        "tonalRamp": [
+          "oklch(15.0% 0.048 145.5)",
+          "oklch(26.4% 0.082 145.5)",
+          "oklch(37.9% 0.118 145.5)",
+          "oklch(49.3% 0.153 145.5)",
+          "oklch(60.7% 0.188 145.5)",
+          "oklch(72.1% 0.188 145.5)",
+          "oklch(83.6% 0.188 145.5)",
+          "oklch(95.0% 0.088 145.5)"
+        ]
+      },
+      "state-paused": {
+        "role": "secondary",
+        "displayName": "State Paused",
+        "canonical": "#F85149",
+        "tonalRamp": [
+          "oklch(15.0% 0.063 27.0)",
+          "oklch(26.4% 0.108 27.0)",
+          "oklch(37.9% 0.155 27.0)",
+          "oklch(49.3% 0.201 27.0)",
+          "oklch(60.7% 0.205 27.0)",
+          "oklch(72.1% 0.173 27.0)",
+          "oklch(83.6% 0.091 27.0)",
+          "oklch(95.0% 0.025 27.0)"
+        ]
+      },
+      "ground-dark": {
+        "role": "neutral",
+        "displayName": "Asphalt Ground",
+        "canonical": "#131311",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 106.8)",
+          "oklch(26.4% 0.004 106.8)",
+          "oklch(37.9% 0.004 106.8)",
+          "oklch(49.3% 0.004 106.8)",
+          "oklch(60.7% 0.004 106.8)",
+          "oklch(72.1% 0.004 106.8)",
+          "oklch(83.6% 0.004 106.8)",
+          "oklch(95.0% 0.004 106.8)"
+        ]
+      },
+      "panel-dark": {
+        "role": "neutral",
+        "displayName": "Night Panel",
+        "canonical": "#1C1C19",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 106.8)",
+          "oklch(26.4% 0.006 106.8)",
+          "oklch(37.9% 0.006 106.8)",
+          "oklch(49.3% 0.006 106.8)",
+          "oklch(60.7% 0.006 106.8)",
+          "oklch(72.1% 0.006 106.8)",
+          "oklch(83.6% 0.006 106.8)",
+          "oklch(95.0% 0.006 106.8)"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Off-White Ink",
+        "canonical": "#F2F1EA",
+        "tonalRamp": [
+          "oklch(15.0% 0.009 100.0)",
+          "oklch(26.4% 0.009 100.0)",
+          "oklch(37.9% 0.009 100.0)",
+          "oklch(49.3% 0.009 100.0)",
+          "oklch(60.7% 0.009 100.0)",
+          "oklch(72.1% 0.009 100.0)",
+          "oklch(83.6% 0.009 100.0)",
+          "oklch(95.0% 0.009 100.0)"
+        ]
+      },
+      "soft-ink-dark": {
+        "role": "neutral",
+        "displayName": "Soft Ink, Dark",
+        "canonical": "#C9C8BE",
+        "tonalRamp": [
+          "oklch(15.0% 0.014 102.1)",
+          "oklch(26.4% 0.014 102.1)",
+          "oklch(37.9% 0.014 102.1)",
+          "oklch(49.3% 0.014 102.1)",
+          "oklch(60.7% 0.014 102.1)",
+          "oklch(72.1% 0.014 102.1)",
+          "oklch(83.6% 0.014 102.1)",
+          "oklch(95.0% 0.014 102.1)"
+        ]
+      },
+      "muted-ink-dark": {
+        "role": "neutral",
+        "displayName": "Muted Ink, Dark",
+        "canonical": "#A3A298",
+        "tonalRamp": [
+          "oklch(15.0% 0.014 102.1)",
+          "oklch(26.4% 0.014 102.1)",
+          "oklch(37.9% 0.014 102.1)",
+          "oklch(49.3% 0.014 102.1)",
+          "oklch(60.7% 0.014 102.1)",
+          "oklch(72.1% 0.014 102.1)",
+          "oklch(83.6% 0.014 102.1)",
+          "oklch(95.0% 0.014 102.1)"
+        ]
+      },
+      "hairline-dark": {
+        "role": "neutral",
+        "displayName": "Hairline, Dark",
+        "canonical": "rgba(242,241,234,.5)",
+        "tonalRamp": [
+          "oklch(15.0% 0.009 100.0)",
+          "oklch(26.4% 0.009 100.0)",
+          "oklch(37.9% 0.009 100.0)",
+          "oklch(49.3% 0.009 100.0)",
+          "oklch(60.7% 0.009 100.0)",
+          "oklch(72.1% 0.009 100.0)",
+          "oklch(83.6% 0.009 100.0)",
+          "oklch(95.0% 0.009 100.0)"
+        ]
+      },
+      "agent-ultramarine-dark": {
+        "role": "secondary",
+        "displayName": "Agent Ultramarine, Dark",
+        "canonical": "#7AA8FF",
+        "tonalRamp": [
+          "oklch(15.0% 0.076 262.3)",
+          "oklch(26.4% 0.127 262.3)",
+          "oklch(37.9% 0.136 262.3)",
+          "oklch(49.3% 0.136 262.3)",
+          "oklch(60.7% 0.136 262.3)",
+          "oklch(72.1% 0.136 262.3)",
+          "oklch(83.6% 0.081 262.3)",
+          "oklch(95.0% 0.024 262.3)"
+        ]
+      },
+      "cli-violet-dark": {
+        "role": "secondary",
+        "displayName": "CLI Violet, Dark",
+        "canonical": "#B794F6",
+        "tonalRamp": [
+          "oklch(15.0% 0.082 299.4)",
+          "oklch(26.4% 0.142 299.4)",
+          "oklch(37.9% 0.142 299.4)",
+          "oklch(49.3% 0.142 299.4)",
+          "oklch(60.7% 0.142 299.4)",
+          "oklch(72.1% 0.142 299.4)",
+          "oklch(83.6% 0.095 299.4)",
+          "oklch(95.0% 0.028 299.4)"
+        ]
+      },
+      "money-green-dark": {
+        "role": "secondary",
+        "displayName": "Money Green, Dark",
+        "canonical": "#56D364",
+        "tonalRamp": [
+          "oklch(15.0% 0.048 145.5)",
+          "oklch(26.4% 0.082 145.5)",
+          "oklch(37.9% 0.118 145.5)",
+          "oklch(49.3% 0.153 145.5)",
+          "oklch(60.7% 0.188 145.5)",
+          "oklch(72.1% 0.188 145.5)",
+          "oklch(83.6% 0.188 145.5)",
+          "oklch(95.0% 0.088 145.5)"
+        ]
+      },
+      "money-amber-dark": {
+        "role": "secondary",
+        "displayName": "Money Amber, Dark",
+        "canonical": "#D29922",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 79.9)",
+          "oklch(26.4% 0.055 79.9)",
+          "oklch(37.9% 0.079 79.9)",
+          "oklch(49.3% 0.102 79.9)",
+          "oklch(60.7% 0.126 79.9)",
+          "oklch(72.1% 0.140 79.9)",
+          "oklch(83.6% 0.140 79.9)",
+          "oklch(95.0% 0.046 79.9)"
+        ]
+      },
+      "amber-tint-dark": {
+        "role": "neutral",
+        "displayName": "Amber Tint, Dark",
+        "canonical": "#3A2E10",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 87.4)",
+          "oklch(26.4% 0.048 87.4)",
+          "oklch(37.9% 0.048 87.4)",
+          "oklch(49.3% 0.048 87.4)",
+          "oklch(60.7% 0.048 87.4)",
+          "oklch(72.1% 0.048 87.4)",
+          "oklch(83.6% 0.048 87.4)",
+          "oklch(95.0% 0.048 87.4)"
+        ]
+      },
+      "money-red-dark": {
+        "role": "secondary",
+        "displayName": "Money Red, Dark",
+        "canonical": "#F85149",
+        "tonalRamp": [
+          "oklch(15.0% 0.063 27.0)",
+          "oklch(26.4% 0.108 27.0)",
+          "oklch(37.9% 0.155 27.0)",
+          "oklch(49.3% 0.201 27.0)",
+          "oklch(60.7% 0.205 27.0)",
+          "oklch(72.1% 0.173 27.0)",
+          "oklch(83.6% 0.091 27.0)",
+          "oklch(95.0% 0.025 27.0)"
+        ]
+      },
+      "square-dark": {
+        "role": "neutral",
+        "displayName": "True Black Square",
+        "canonical": "#000000",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 0.0)",
+          "oklch(26.4% 0.000 0.0)",
+          "oklch(37.9% 0.000 0.0)",
+          "oklch(49.3% 0.000 0.0)",
+          "oklch(60.7% 0.000 0.0)",
+          "oklch(72.1% 0.000 0.0)",
+          "oklch(83.6% 0.000 0.0)",
+          "oklch(95.0% 0.000 0.0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Monumental gate-scale figures: today's spend, always with tabular numerals."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The yellow band's sentence-case message."
+      },
+      "banner": {
+        "displayName": "Banner",
+        "purpose": "Environment banner text, tightened to 600 with tracking."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card headings and the console wordmark."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Everything the operator reads or writes, including agent replies."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels, metadata, helper text, and the header's waiting count."
+      },
+      "tag": {
+        "displayName": "Tag",
+        "purpose": "Uppercase micro-caps on alert tags."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Identifiers the operator might copy: tool calls, timestamps, ids; JSON panels drop to 12px."
+      }
+    },
+    "motion": [
+      {
+        "name": "dotpulse",
+        "value": "dotpulse 1.6s ease-in-out infinite",
+        "purpose": "The system's one animation: the 8px failed and uncertain dots on the tool-calls ghost throb (opacity 1 to .4, scale 1 to .68 at 50%); it stands still under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "grid-collapse",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Sign Band",
+      "kind": "custom",
+      "refersTo": "band",
+      "description": "The signature yellow section sign, sticky at the section top: one sentence-case title, an optional muted qualifier, and the attention count on its own 44px black plate.",
+      "html": "<div class=\"ds-band\"><span class=\"ds-band-title\"><span>Needs your attention</span><span class=\"ds-band-msg\">holds until you dismiss it</span></span><span class=\"ds-band-plate\">2</span></div>",
+      "css": ".ds-band { display: flex; align-items: center; gap: 12px; background: #FFCC00; color: #0B0B0B; border: 1px solid #0B0B0B; padding: 8px 18px; font: 700 15px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; letter-spacing: .01em; } .ds-band-title { display: flex; align-items: baseline; gap: 12px; flex: 1; min-width: 0; } .ds-band-msg { font-weight: 500; color: rgba(11,11,11,.72); } .ds-band-plate { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; background: #0B0B0B; color: #FFF; font-size: 24px; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action that commits something in a region: Send, Add, Unlock, Run again. Light theme shown; the dark theme flips the plate to Schiphol Yellow with black text. Buttons have no hover state.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Send</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; background: #0B0B0B; color: #FFF; border: 1px solid #0B0B0B; border-radius: 6px; font: 600 15px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; cursor: pointer; } .ds-btn-primary:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "The default operator action: Pause, Resume, Freeze, Discard, Remove, Raw event.",
+      "html": "<button class=\"ds-btn-outline\" type=\"button\">Pause</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; background: #FFFFFF; color: #0B0B0B; border: 1px solid #0B0B0B; border-radius: 6px; font: 400 15px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; cursor: pointer; } .ds-btn-outline:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; }"
+    },
+    {
+      "name": "Attention Card",
+      "kind": "card",
+      "refersTo": "card-attention",
+      "description": "An alert plate with the amber frame: state square, micro-caps tag, id, and two solid action squares, an amber wrench that drafts a fix-it message and a black X that marks the alert checked.",
+      "html": "<div class=\"ds-attn\"><div class=\"ds-attn-head\"><span class=\"ds-sq ds-sq-warn\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M11 4h2v10h-2zM11 17h2v2h-2z\"/></svg></span><span class=\"ds-tag\">UNCERTAIN</span><strong class=\"ds-mono\">9f2c4e7a</strong><span class=\"ds-attn-actions\"><button class=\"ds-sq ds-sq-fix\" type=\"button\" title=\"Drafts a fix-it message into the composer\" aria-label=\"Fix this\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M22 6.5a5.5 5.5 0 01-7.6 5.07L8 18l-2.5 2.5a2.12 2.12 0 01-3-3L5 15l6.43-6.4A5.5 5.5 0 0117.5 1l-3 3 2.5 2.5 3-3c.33.63.5 1.32.5 2z\"/></svg></button><button class=\"ds-sq ds-sq-dismiss\" type=\"button\" title=\"Mark checked\" aria-label=\"Mark checked\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M5.7 4.3L4.3 5.7 10.6 12l-6.3 6.3 1.4 1.4L12 13.4l6.3 6.3 1.4-1.4L13.4 12l6.3-6.3-1.4-1.4L12 10.6z\"/></svg></button></span></div><div class=\"ds-attn-body\">$15.00 is counted as spent and the agent will not retry it. The command may or may not have reached the server.</div></div>",
+      "css": ".ds-attn { background: #FFFFFF; border: 1px solid #B45309; border-radius: 2px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; font: 400 15px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; color: #0B0B0B; } .ds-attn-head { display: flex; gap: 10px; align-items: center; } .ds-attn-actions { flex: none; margin-left: auto; display: inline-flex; gap: 8px; } .ds-sq { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; background: #0B0B0B; color: #FFF; border: none; cursor: pointer; } .ds-sq-warn { background: #B45309; } .ds-sq-fix { background: #B45309; } .ds-sq-fix:hover { background: #B3261E; } .ds-sq-dismiss { background: #0B0B0B; } .ds-sq-dismiss:hover { color: #B45309; } .ds-sq:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; } .ds-tag { font: 700 11px/1 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; letter-spacing: .07em; text-transform: uppercase; padding: 5px 8px; border-radius: 2px; background: #B45309; color: #FFF; } .ds-mono { font-family: ui-monospace, \"SFMono-Regular\", Menlo, monospace; }"
+    },
+    {
+      "name": "Tool Calls Ghost",
+      "kind": "chip",
+      "refersTo": "calls-chip",
+      "description": "Borderless tool-call affordance: violet server mark and tabular count at 28px with an invisible 44px hit area; failed and uncertain calls throb as dots, never as text.",
+      "html": "<button class=\"ds-calls\" type=\"button\" aria-expanded=\"false\" aria-label=\"1 tool call, 1 uncertain\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"#7C3AED\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M4 3h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1zm1.5 2v2h2V5h-2zM4 13h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1v-5a1 1 0 011-1zm1.5 2v2h2v-2h-2z\"/></svg><span class=\"ds-calls-num\">1</span><span class=\"ds-dot ds-dot-warn\"></span></button>",
+      "css": "@keyframes ds-dotpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.68); } } .ds-calls { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px; background: none; border: none; color: #7C3AED; font: 400 13px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; cursor: pointer; } .ds-calls::before { content: \"\"; position: absolute; left: -4px; right: -4px; top: 50%; transform: translateY(-50%); height: 44px; } .ds-calls-num { color: #0B0B0B; font-variant-numeric: tabular-nums; } .ds-calls:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; } .ds-dot { width: 8px; height: 8px; border-radius: 50%; animation: ds-dotpulse 1.6s ease-in-out infinite; } .ds-dot-warn { background: #B45309; } @media (prefers-reduced-motion: reduce) { .ds-dot { animation: none; } }"
+    },
+    {
+      "name": "Pictogram Squares",
+      "kind": "custom",
+      "refersTo": "sq",
+      "description": "The only state and role marks: solid silhouettes on sharp squares; the agent's robot on ultramarine, the operator's person on yellow, the taskfast CLI's server on violet.",
+      "html": "<div class=\"ds-sq-row\"><span class=\"ds-sq ds-sq-agent\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M12 1a1 1 0 00-1 1v2.1A7.5 7.5 0 004.5 11.5V17a4 4 0 004 4h7a4 4 0 004-4v-5.5A7.5 7.5 0 0013 4.1V2a1 1 0 00-1-1zM8.5 12h2.2v2.4H8.5zM13.3 12h2.2v2.4h-2.2z\"/></svg></span><span class=\"ds-sq ds-sq-you\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M12 11.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9zm0 2c-4.2 0-8 2.1-8 5V22h16v-3.5c0-2.9-3.8-5-8-5z\"/></svg></span><span class=\"ds-sq ds-sq-cli\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M4 3h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1zm1.5 2v2h2V5h-2zM4 13h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1v-5a1 1 0 011-1zm1.5 2v2h2v-2h-2z\"/></svg></span></div>",
+      "css": ".ds-sq-row { display: flex; gap: 10px; } .ds-sq { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #0B0B0B; color: #FFF; } .ds-sq-agent { background: #1D4ED8; } .ds-sq-you { background: #FFCC00; color: #0B0B0B; outline: 1px solid rgba(11,11,11,.28); } .ds-sq-cli { background: #7C3AED; }"
+    },
+    {
+      "name": "Environment Banner",
+      "kind": "custom",
+      "refersTo": "banner-staging",
+      "description": "Full-width money-environment sign, always the first element on screen; staging shown, development is #2E5E8C and production is the theme's Money Red.",
+      "html": "<div class=\"ds-banner\" role=\"status\"><span>STAGING \u00b7 testnet funds</span><span class=\"ds-banner-host\">127.0.0.1:7070</span></div>",
+      "css": ".ds-banner { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; background: #F2C14E; color: #2B2000; padding: 6px 24px; font: 600 13px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; letter-spacing: .04em; } .ds-banner-host { font-weight: 400; letter-spacing: .02em; opacity: .85; font-size: 12px; }"
+    },
+    {
+      "name": "Task Card",
+      "kind": "custom",
+      "refersTo": "task",
+      "description": "A marketplace object: hairline-framed plate with an 18px arrow square pinned top-right and a humanized origin name; a link only against a local development server.",
+      "html": "<a class=\"ds-task\" href=\"#\"><span class=\"ds-task-via\">Post Task</span><strong>Copy-edit a product page</strong><span class=\"ds-task-small\">assigned \u00b7 budget $15.00</span><span class=\"ds-task-go\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M13 4l8 8-8 8-1.4-1.4L17.2 13H3v-2h14.2l-5.6-5.6z\"/></svg></span></a>",
+      "css": ".ds-task { display: flex; flex-direction: column; gap: 2px; position: relative; padding: 6px 36px 6px 10px; border: 1px solid rgba(11,11,11,.72); border-radius: 2px; background: #FFFFFF; color: #0B0B0B; text-decoration: none; font: 400 15px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; } .ds-task:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; } .ds-task-via { font-size: 13px; color: #5E5E56; } .ds-task-small { font-size: 13px; color: #5E5E56; } .ds-task-go { position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; background: #0B0B0B; color: #FFF; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "The message form: an unlabeled textarea (aria-label and sr-only span), dashed Try chips that prefill the field, a full-width Send, and the kbd hint line. It takes focus when the page loads; Enter and Ctrl+S both submit.",
+      "html": "<form class=\"ds-composer\"><label class=\"ds-composer-label\"><span class=\"ds-sr-only\">Message Careful Worker</span><textarea class=\"ds-composer-input\" rows=\"2\" aria-label=\"Message Careful Worker\" placeholder=\"e.g. &quot;Post one copy-editing job under $15.&quot;\"></textarea></label><div class=\"ds-samples\"><span class=\"ds-samples-label\">Try:</span><button type=\"button\" class=\"ds-sample\">Post a job under $15</button><button type=\"button\" class=\"ds-sample\">Hold off on new bids today</button><button type=\"button\" class=\"ds-sample\">Summarize the last check-in</button></div><button type=\"submit\" class=\"ds-composer-send\">Send</button><div class=\"ds-hint\"><span><kbd class=\"ds-kbd\">Enter</kbd> to send \u00b7 <kbd class=\"ds-kbd\">Shift+Enter</kbd> for a new line</span><span><kbd class=\"ds-kbd\">Ctrl+S</kbd> to steer</span></div></form>",
+      "css": ".ds-composer { display: flex; flex-direction: column; gap: 10px; background: #FFFFFF; border: 1px solid rgba(11,11,11,.72); border-radius: 2px; padding: 16px 18px; font: 400 15px/1.45 \"Segoe UI\", Frutiger, \"Frutiger Next\", Roboto, \"Helvetica Neue\", \"Noto Sans\", \"Liberation Sans\", Arial, system-ui, sans-serif; color: #0B0B0B; } .ds-composer-label { display: flex; } .ds-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .ds-composer-input { padding: 10px; border: 1px solid #5E5E56; border-radius: 6px; min-height: 44px; background: #FFFFFF; color: #0B0B0B; font: inherit; width: 100%; } .ds-composer-input::placeholder { color: #5E5E56; } .ds-composer-input:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; } .ds-samples { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; } .ds-samples-label { font-size: 12px; color: #5E5E56; } .ds-sample { border: 1px dashed #5E5E56; border-radius: 999px; background: none; color: #3D3D38; padding: 4px 12px; min-height: 30px; font-size: 13px; cursor: pointer; } .ds-sample:hover { border-style: solid; color: #0B0B0B; } .ds-sample:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; } .ds-composer-send { width: 100%; justify-content: center; min-height: 44px; padding: 0 16px; background: #0B0B0B; color: #FFF; border: 1px solid #0B0B0B; border-radius: 6px; font-weight: 600; font-size: 15px; cursor: pointer; } .ds-composer-send:focus-visible { outline: 2px solid #1D4ED8; outline-offset: 2px; } .ds-hint { display: flex; justify-content: flex-end; gap: 14px; font-size: 12px; color: #5E5E56; } .ds-kbd { font: 600 11px ui-monospace, \"SFMono-Regular\", Menlo, monospace; background: #F2F2EF; border: 1px solid rgba(11,11,11,.72); border-bottom-width: 2px; border-radius: 3px; padding: 1px 5px; color: #3D3D38; }"
+    },
+    {
+      "name": "Agent State Glyph",
+      "kind": "custom",
+      "refersTo": "agent-state",
+      "description": "The header's live agent state: the brand robot on the constant yellow square, its glyph deep green (#14532D) while running and deep red (#7F1D1D) while paused. No visible count; the waiting count lives in the title and a screen-reader status.",
+      "html": "<span class=\"ds-astate\" role=\"status\" title=\"Running\"><span class=\"ds-astate-sq\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" fill-rule=\"evenodd\" aria-hidden=\"true\"><path d=\"M12 1a1 1 0 00-1 1v2.1A7.5 7.5 0 004.5 11.5V17a4 4 0 004 4h7a4 4 0 004-4v-5.5A7.5 7.5 0 0013 4.1V2a1 1 0 00-1-1zM8.5 12h2.2v2.4H8.5zM13.3 12h2.2v2.4h-2.2z\"/></svg></span><span class=\"ds-sr\">running</span></span>",
+      "css": ".ds-astate { display: inline-flex; } .ds-astate-sq { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #FFCC00; color: #14532D; } .ds-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Yellow Signage",
+    "overview": "The console is an international airport sign system pointed at one agent that moves real money. Saturated yellow bands name each section the way gate signs name a concourse: one message per band, black sentence-case text, pinned to the top of the section while the content scrolls. State and role arrive as solid white pictograms on black squares: the agent's robot, the operator's person, the taskfast CLI's server. Today's spend renders at monumental gate-number scale with tabular numerals, and the attention band carries its count on a black plate of its own.\n\nThe system refuses the category default of neutral cards with one blue accent. Nothing here casts a shadow and nothing fades into a gradient: structure comes from hairline black frames and the shift between ground and panel. Dark and light are one design, not two. The bands stay #FFCC00 in the dark theme, the way road signage turns retroreflective at night, while the inks, grounds and status hues re-ink for legibility. A manual toggle stores the choice in localStorage under \"tf-theme\" and the default follows the OS preference.\n\nTwo product truths pin the palette. The environment banner always opens the screen in its reserved hue, and money-safety green, amber and red each keep one fixed meaning in both themes. One more product truth pins the rendering: everything the server or marketplace says appears as plain text, never markup. That is a safety boundary, not a style choice.",
+    "keyCharacteristics": [
+      "Yellow sign bands, one message per band, sticky at the top of each section.",
+      "Solid pictograms on black squares as the only state and role marks: the agent's robot, the operator's person, the taskfast CLI's server.",
+      "Money figures at monumental gate scale (weight 800, tabular numerals, up to 64px), and the attention count on its band's black plate.",
+      "Hairline black frames and 2px corners on signs and cards; zero shadows, zero gradients.",
+      "Two themes, one sign system: dark re-inks the grounds and hues, the bands stay yellow.",
+      "Server and marketplace content always renders as plain text."
+    ],
+    "rules": [
+      {
+        "name": "The Yellow Means Wayfinding Rule",
+        "body": "Yellow names sections and marks the operator's own voice; in the dark theme it also carries the primary action. It never warns and never fails. Warnings are Money Amber, danger is Money Red.",
+        "section": "colors"
+      },
+      {
+        "name": "The Same Sign At Night Rule",
+        "body": "Dark and light are one design. A theme change may re-ink grounds, texts, status hues and square outlines, but the bands stay #FFCC00, the header stays black, and every hue keeps its meaning. A theme that changes a color's job is a defect.",
+        "section": "colors"
+      },
+      {
+        "name": "The Environment Never Hides Rule",
+        "body": "Every screen opens with a full-width banner naming the money environment in words and in its reserved hue: blue for development, amber for staging, red for production. No state of the page may render without it.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red Means Money Rule",
+        "body": "Money Red appears only for the production banner, errors, frozen spending, and failed or refused money outcomes, plus two pinned exceptions: the paused robot glyph in the header (a user-pinned stop signal) and the fix square's red hover on an attention card. Never for emphasis.",
+        "section": "colors"
+      },
+      {
+        "name": "The Gate Scale Rule",
+        "body": "A figure the operator must read at a glance renders with tabular numerals. Today's spend earns the monumental gate scale; the attention count sits on its band's black plate. Nothing else earns monumental type.",
+        "section": "typography"
+      },
+      {
+        "name": "The System Is the Font Rule",
+        "body": "No font loading, no branding type. The stack prefers the humanist signage faces an OS already ships and falls through to system-ui. If the OS changes its face, the console changes with it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Identifier Is Monospace Rule",
+        "body": "Anything the operator might copy or cross-check against the server (ids, tool calls, JSON, timestamps) is set in mono. Anything the model writes is set in proportional type.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Sign Rule",
+        "body": "A 1px frame plus a tonal shift is the maximum depth treatment. No elevation, no blur, no glow. The dark theme's 3px band under-edge and square outline belong to those elements only.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Square Carries the Mark Rule",
+        "body": "State and role marks live only on solid squares with sharp corners: one silhouette per meaning, white on black or on its reserved hue. Plain controls outside squares use 2px stroke glyphs. Never place a solid pictogram on bare ground, and never round the square.",
+        "section": "shapes"
+      },
+      {
+        "name": "The One Message Per Band Rule",
+        "body": "A band carries one message: a sentence-case title, an optional muted qualifier, and at most one count. Never two messages, never an icon, never a button.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do keep the environment banner as the first element of every screen, in its reserved hue (development #2E5E8C, staging #F2C14E, production Money Red).",
+      "Do give every section its own yellow band with one sentence-case message; a section without its band is off the sign system.",
+      "Do keep 44px minimum targets on primary controls (buttons, inputs, tabs, the copy button) and on the ghost's invisible hit area; only the dense inline marks (sample chips, attention action squares) run smaller.",
+      "Do render today's spend at gate scale with tabular numerals, and the attention count on its band's black plate.",
+      "Do set identifiers, tool calls, timestamps and raw payloads in the mono stack, and model or marketplace prose in the proportional stack.",
+      "Do show server and marketplace content as plain text only; rendering it as markup is a security defect, not a style choice."
+    ],
+    "donts": [
+      "Don't introduce shadows, gradients, hover lifts or transitions; signs are flat and state changes render immediately. The single pinned exception is the state dot's pulse on the tool-calls ghost.",
+      "Don't use yellow for warnings or errors. Yellow means wayfinding and the operator; warnings are Money Amber and danger is Money Red.",
+      "Don't use Money Red outside money danger, errors, frozen spending, the production banner, and the two exceptions The Red Means Money Rule pins.",
+      "Don't place solid pictograms off their squares, round a square's corners, invent new roles for the reserved hues, or label what an icon and its fixed position already say (the author column, the state glyph, the alert actions).",
+      "Don't load a custom font or add another accent color; the stack is the OS's own and every accent is already assigned.",
+      "Don't treat the dark theme as a second design; re-ink only what legibility demands and keep every hue's meaning fixed."
+    ]
+  }
+}
