@@ -93,8 +93,8 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .sq.agent { background: var(--agent); } .sq.you { background: var(--yellow); color: #0B0B0B; outline: 1px solid rgba(11,11,11,.28); } .sq.cli { background: var(--cli); }
 .sq.ok { background: var(--ok); } .sq.warn { background: var(--warn); } .sq.bad { background: var(--bad); }
 .turn { padding: 0; gap: 0; overflow: hidden; }
-.turn > .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--hairline); background: var(--ground); }
-.turn > .head.raw { cursor: pointer; }
+/* Event heads are native buttons: reset the base button chrome so the row keeps its look. */
+.turn > .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-height: 0; padding: 12px 18px; border: none; border-bottom: 1px solid var(--hairline); border-radius: 0; background: var(--ground); text-align: left; }
 .raw-chev { display: inline-flex; color: var(--muted); }
 .head[aria-expanded="true"] .raw-chev { transform: rotate(180deg); }
 .turn > .body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
@@ -425,7 +425,7 @@ function turnCard(turn, index) {
   const key = "t" + index;
   const isEvent = turn.kind === "event";
   return el("article", { class: "card turn", "data-i": index },
-    el("div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { role: "button", tabindex: "0", "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(ui.raw, key); } } } : {}) },
+    el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),
       el("span", { class: "sr-only", text: origin + ":" }),
       el("span", { class: "small mono", title: turn.at ? new Date(turn.at).toLocaleString() : "", text: rel(turn.at) }),
