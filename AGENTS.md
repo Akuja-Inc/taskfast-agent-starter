@@ -62,6 +62,7 @@ The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used
 ## Pull requests
 
 - Never commit to main. Open one branch per change and send it as a pull request.
+- Work each change in its own git worktree (the `.worktrees/<name>` convention), not the main checkout: other changes are routinely in flight there and their tooling rewrites shared files such as package.json mid-task.
 - Fill every slot of [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) before you ask for review. Evidence classes: **A + D always** (body evidence, and the required `CI` workflow checks green), **B** for TUI or console changes (before/after screenshots or a GIF, committed under `docs/` and pinned to a commit SHA), **C** for logic, policy or money-math changes (one repro command).
 - The commit message completes the sentence "... applying this change will ...".
 - Keep lifecycle markers (`Part of #N`, `Closes #N`) out of code fences, including Mermaid diagrams.

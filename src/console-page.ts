@@ -109,10 +109,12 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 button.calls-chip { position: relative; min-height: 28px; height: 28px; padding: 0 4px; border: none; background: none; color: var(--cli); font-size: 13px; gap: 6px; }
 button.calls-chip::before { content: ""; position: absolute; left: -4px; right: -4px; top: 50%; transform: translateY(-50%); height: 44px; }
 .calls-chip .num { color: var(--ink); }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; animation: dotpulse 1.6s ease-in-out infinite; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+/* Only the newest turn's dots pulse: a historical failure stands still, so an idle page keeps the compositor free. */
+.dot.live { animation: dotpulse 1.6s ease-in-out infinite; }
 @keyframes dotpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.68); } }
-@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
 .task { display: flex; flex-direction: column; gap: 2px; position: relative; padding: 6px 36px 6px 10px; border: 1px solid var(--hairline); border-radius: 2px; background: var(--panel); color: var(--ink); text-decoration: none; }
 .task .go { position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; }
 .monu { font-size: clamp(48px, 6vw, 64px); font-weight: 800; letter-spacing: -.02em; }
@@ -432,19 +434,22 @@ function turnCard(turn, index) {
       el("span", { class: "head-msg", text: headText(turn) }),
       isEvent ? el("span", { class: "raw-chev" }, icon(GLYPH.chevron, 15)) : null),
     ui.raw.has(key) ? el("div", { style: "padding:0 18px 12px" }, jsonBlock("e:" + key, turn.event === undefined ? turn.text : turn.event), el("div", { class: "small", text: "Shown as plain text. HTML in marketplace content is never rendered." })) : null,
-    el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, key + "r" + r)) : el("div", { class: "small", text: "No reply yet." })));
+    el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, key + "r" + r, index === view.timeline.length - 1)) : el("div", { class: "small", text: "No reply yet." })));
 }
-function replyBlock(reply, key) {
+// live marks the newest turn: its call dots pulse so current failures stay visible,
+// while an idle page's history stands still.
+function replyBlock(reply, key, live) {
   const failed = countOf(reply.calls, "failed");
   const uncertain = countOf(reply.calls, "uncertain");
+  const dot = (cls, n, label) => el("span", { class: "dot " + cls + (live ? " live" : ""), title: n + " " + label });
   return el("div", { class: "reply" },
     el("div", { style: "display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start" },
       reply.text ? el("p", { class: "reply-text" }, el("span", { class: "sq agent" }, pict("agent", 16)), el("span", {}, el("span", { class: "sr-only", text: "Agent: " }), reply.text)) : el("span", { style: "flex:1 1 360px", class: "small", text: reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)" }),
       reply.calls.length ? el("button", { class: "calls-chip", "aria-expanded": String(ui.open.has(key)), "aria-label": reply.calls.length + (reply.calls.length === 1 ? " tool call" : " tool calls") + (failed ? ", " + failed + " failed" : "") + (uncertain ? ", " + uncertain + " uncertain" : ""), onclick: () => toggle(ui.open, key) },
         pict("cli", 13),
         el("span", { class: "num", text: reply.calls.length }),
-        failed ? el("span", { class: "dot bad", title: failed + " failed" }) : null,
-        uncertain ? el("span", { class: "dot warn", title: uncertain + " uncertain" }) : null) : null),
+        failed ? dot("bad", failed, "failed") : null,
+        uncertain ? dot("warn", uncertain, "uncertain") : null) : null),
     ui.open.has(key) ? el("div", { class: "calls" }, reply.calls.map((call) => el("div", { class: "call " + call.outcome },
       el("span", { class: "sq cli", style: "width:20px;height:20px" }, pict("cli", 12)),
       el("span", { class: "name", text: call.name + " " + JSON.stringify(call.arguments) }),

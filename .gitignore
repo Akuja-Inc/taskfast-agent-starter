@@ -10,3 +10,5 @@ agents/
 .envrc
 # Claude Code puts its worktrees here; they are untracked checkouts
 .claude/worktrees/
+# One worktree per change lives here; they are untracked checkouts
+.worktrees/
