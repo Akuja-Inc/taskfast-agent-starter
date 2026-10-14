@@ -1,6 +1,6 @@
 # Plan: steer a busy agent (#39)
 
-Status: proposed. No implementation starts until you approve this plan in Plannotator.
+Status: approved in Plannotator before implementation. The core/API slice passes the local gate; browser and terminal slices follow separately.
 
 Source: [issue #39](https://github.com/Akuja-Inc/taskfast-agent-starter/issues/39).
 
@@ -110,7 +110,7 @@ The test seams covered by this approval are the public operator controls and reo
 
 For each slice, work one behavior at a time: first add a failing regression test, then implement the smallest change that makes it pass. Do not write the whole imagined suite before implementing.
 
-1. Run focused regressions in `src/core/operator.test.ts`, `src/core/agent.test.ts`, `test/runtime-crash.test.ts`, `test/console.test.ts`, `test/console-host.test.ts`, `test/console-page.test.ts` and `test/tui.test.ts`, as applicable. Extend the crash fixture for the three promotion boundaries. Extend `src/tui/smoke.test.tsx` and `test/fixtures/tui-host.mjs` for rendered key handling and controlled busy work.
+1. Run focused regressions in `src/core/operator.test.ts`, `src/core/agent.test.ts`, `test/runtime-crash.test.ts`, `test/console.test.ts`, `test/console-host.test.ts`, `test/console-page.test.ts` and `test/tui.test.ts`, as applicable. The core slice stages each interrupted promotion in `src/core/steering.test.ts` using real Pi submissions and durable document commits, then closes and reopens the same store. No copied live store or power-loss claim. Extend `src/tui/smoke.test.tsx` and `test/fixtures/tui-host.mjs` for rendered key handling and controlled busy work.
 2. Run `pnpm check`, the full repository gate, and record exact counts.
 3. Run `pnpm tui:test` for the API slice and both client slices. This checks `app.tsx` under Bun, which CI does not cover. Include the run output in the relevant PR evidence.
 4. Exercise the browser and TUI against a throwaway host with deterministic queued work. Capture before/after screenshots under `docs/`, pinned to the source commit SHA. Browser checks include desktop light/dark and phone; terminal checks include normal and narrow sidebar layouts. Never capture a real console token or private agent data.
