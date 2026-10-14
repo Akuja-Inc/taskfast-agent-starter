@@ -14,7 +14,13 @@ afterEach(async () => { await Promise.all(closers.splice(0).map((close) => close
 // One agent whose controls record what the console asked of them.
 type Ledger = Awaited<ReturnType<ConsoleAgent["agent"]["status"]>>;
 type Work = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["events"]>>;
-function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], state = initialOperator() }: { id?: string; actions?: Ledger["actions"]; events?: Work; transcript?: Message[]; state?: OperatorState } = {}) {
+type QueuedMessages = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["queued"]>>;
+type SteerResult = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["steer"]>>;
+function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], state = initialOperator(), queuedMessages = [], steerResult = "steered" }: {
+  id?: string; actions?: Ledger["actions"]; events?: Work; transcript?: Message[]; state?: OperatorState;
+  queuedMessages?: QueuedMessages;
+  steerResult?: SteerResult;
+} = {}) {
   const asked: unknown[][] = [];
   const record = (name: string) => async (...args: unknown[]) => { asked.push([name, ...args]); };
   const listeners = new Set<() => void>();
@@ -26,7 +32,8 @@ function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], sta
       transcript: async () => transcript,
       changes: (listener) => { listeners.add(listener); return () => void listeners.delete(listener); },
       operator: {
-        state: async () => state, events: async () => events,
+        state: async () => state, events: async () => events, queued: async () => queuedMessages,
+        steer: async (requestId: string) => { asked.push(["steer", requestId]); return steerResult; },
         setFrozen: record("setFrozen"), setPaused: record("setPaused"), message: record("message"),
         addOrder: record("addOrder"), removeOrder: record("removeOrder"), markChecked: record("markChecked"), retryEvent: record("retryEvent"),
       },
@@ -309,6 +316,111 @@ it("turns console actions into the agent's operator controls and refuses malform
   }
   expect((await call(port, "/api/agents/foo/orders/x", { method: "DELETE", headers: auth })).status).toBe(400);
   expect(asked).toHaveLength(7);
+});
+
+it("admits follow-ups and explicit steers without changing their request identity", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  for (const body of [
+    { requestId: "follow-up_1", text: "When you finish." },
+    { requestId: "steer_1", text: "Change direction.", steer: true },
+  ]) {
+    expect((await call(port, "/api/agents/foo/messages", { method: "POST", headers: auth, body })).status).toBe(204);
+    expect(asked.at(-1)).toEqual(["message", body]);
+  }
+});
+
+it("rejects every supplied steer value except true before admitting a message", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  for (const steer of [false, null, "true", "false", 0, 1, [], {}]) {
+    const result = await call(port, "/api/agents/foo/messages", { method: "POST", headers: auth, body: { requestId: "r1", text: "Go.", steer } });
+    expect(result.status).toBe(400);
+    expect(JSON.parse(result.text)).toEqual({ error: "steer must be true or omitted" });
+  }
+  expect(asked).toEqual([]);
+});
+
+it("promotes by request ID and maps successful, idempotent, late and missing results", async () => {
+  for (const steerResult of ["steered", "already_placed", "not_found"] as const) {
+    const { agent, asked } = fakeAgent({ steerResult });
+    const { port } = await serve([agent]);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await call(port, "/api/agents/foo/steer/follow-up_1", { method: "POST", headers: auth });
+      expect(result.status).toBe(steerResult === "steered" ? 204 : steerResult === "already_placed" ? 409 : 404);
+      if (steerResult === "steered") expect(result.text).toBe("");
+      else expect(JSON.parse(result.text)).toEqual({ error: steerResult === "already_placed" ? "The agent already has this message." : "Queued message not found." });
+    }
+    expect(asked).toEqual([["steer", "follow-up_1"], ["steer", "follow-up_1"]]);
+  }
+});
+
+it("applies the same strict request ID grammar to sends and promotions", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  for (const requestId of ["bad.id", "bad%id", "%2F", "%zz", "a".repeat(101)]) {
+    for (const [path, body] of [
+      ["messages", { requestId, text: "Go." }],
+      [`steer/${requestId}`, undefined],
+    ] as const) {
+      const result = await call(port, `/api/agents/foo/${path}`, { method: "POST", headers: auth, body });
+      expect(result.status).toBe(400);
+      expect(JSON.parse(result.text)).toEqual({ error: "requestId must be 1-100 letters, digits, - or _" });
+    }
+  }
+  const requestId = "A_9-" + "x".repeat(96);
+  expect((await call(port, `/api/agents/foo/steer/${requestId}`, { method: "POST", headers: auth })).status).toBe(204);
+  expect(asked).toEqual([["steer", requestId]]);
+});
+
+it("protects promotion with the existing token, host and origin checks", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  const path = "/api/agents/foo/steer/r1";
+  const deniedHeaders: Record<string, string>[] = [{}, { authorization: "Bearer wrong" }];
+  for (const headers of deniedHeaders) {
+    expect((await call(port, path, { method: "POST", headers })).status).toBe(401);
+  }
+  expect((await call(port, path, { method: "POST", headers: { ...auth, host: `rebound.example:${port}` } })).status).toBe(403);
+  expect((await call(port, path, { method: "POST", headers: { ...auth, origin: "https://elsewhere.example" } })).status).toBe(403);
+  expect(asked).toEqual([]);
+  expect((await call(port, path, { method: "POST", headers: { ...auth, origin: `http://localhost:${port}` } })).status).toBe(204);
+  expect(asked).toEqual([["steer", "r1"]]);
+});
+
+it("does not ignore extra path arguments on existing actions", async () => {
+  const { agent, asked } = fakeAgent();
+  agent.saveSpec = async () => { asked.push(["saveSpec"]); };
+  const { port } = await serve([agent]);
+  for (const [action, body] of [
+    ["paused", { value: true }], ["frozen", { value: true }], ["messages", { requestId: "r1", text: "Go." }],
+    ["orders", { text: "Be brief." }], ["checked", { id: "x" }], ["retry", { eventId: "x" }],
+  ] as const) {
+    expect((await call(port, `/api/agents/foo/${action}/ignored`, { method: "POST", headers: auth, body })).status).toBe(404);
+  }
+  expect((await call(port, "/api/agents/foo/spec/ignored", { method: "PUT", headers: auth, body: agent.spec })).status).toBe(404);
+  expect((await call(port, "/api/agents/foo/stream/ignored", { headers: auth })).status).toBe(404);
+  expect((await call(port, "/api/agents/foo/steer", { method: "POST", headers: auth })).status).toBe(404);
+  expect((await call(port, "/api/agents/foo/steer/r1/ignored", { method: "POST", headers: auth })).status).toBe(404);
+  expect((await call(port, "/api/agents/foo/steer/r1", { method: "GET", headers: auth })).status).toBe(404);
+  expect(asked).toEqual([]);
+});
+
+it("publishes the core's queue unchanged in reads and streamed views, including while paused", async () => {
+  const queuedMessages: QueuedMessages = [
+    { requestId: "old", text: "<script>literal words</script>", mode: "followUp" },
+    { requestId: "new", text: "Change direction.", mode: "steer" },
+  ];
+  const { agent, commit } = fakeAgent({ state: { ...initialOperator(), paused: true }, queuedMessages });
+  const { port } = await serve([agent], { coalesceMs: 1 });
+  const result = await call(port, "/api/agents/foo", { headers: auth });
+  expect(result.status).toBe(200);
+  expect(JSON.parse(result.text).queuedMessages).toEqual(queuedMessages);
+  const live = await stream(port);
+  expect(await live.next()).toMatchObject({ event: "view", data: { queuedMessages } });
+  queuedMessages.splice(0, 1);
+  commit();
+  expect(await live.next()).toMatchObject({ event: "view", data: { queuedMessages: [{ requestId: "new", text: "Change direction.", mode: "steer" }] } });
 });
 
 it("refuses to listen without a token", async () => {

@@ -389,7 +389,11 @@ it("does not allow forks to create separate marketplace policy owners", async ()
 it("a storage error fails the session: nothing is admitted afterwards, closing still finishes and ownership is released", async () => {
   let armed = false;
   const kit = await open({ openStorage: (file) => failingStorage(file, () => armed) });
+  await kit.agent.operator.setPaused(true);
   await expect(kit.agent.deliver({ event_id: "evt-fail", event: "task.updated", task_id: task })).resolves.toBeUndefined();
+  // Quiesce the first admission's background reads before arming every storage
+  // method. Otherwise recovery can fail first and delivery sees SessionFailed.
+  await kit.agent.recover();
   armed = true;
   // A new event key forces a real commit; the deduplicated resend above would not.
   await expect(kit.agent.deliver({ event_id: "evt-fail-2", event: "task.updated", task_id: task })).rejects.toThrow(/injected storage failure/);

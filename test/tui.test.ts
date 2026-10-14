@@ -33,7 +33,7 @@ function fixtureView(env: ConsoleView["env"] = "local"): ConsoleView {
     { role: "user", content: `${MESSAGE_PREFIX}Post one more job.`, timestamp: Date.parse("2026-10-13T11:00:00Z") },
   ];
   return {
-    id: "me", env,
+    id: "me", env, queuedMessages: [],
     spec: parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8"))),
     operator: { ...initialOperator(), paused: true, orders: ["Keep every job under $15."] },
     attention: [
