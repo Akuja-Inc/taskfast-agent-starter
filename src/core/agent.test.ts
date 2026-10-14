@@ -5,7 +5,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { createSession, defineDoc } from "@earendil-works/pi-durable";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { failingStorage } from "../../test/failing-storage.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
@@ -311,11 +311,14 @@ it("admits and deduplicates events while a model run is blocked", async () => {
   expect(kit.faux.state.callCount).toBe(2);
 });
 
-it("preserves marketplace policy when Pi actually compacts the transcript", async () => {
+it("preserves marketplace policy and operator state when Pi actually compacts the transcript", async () => {
   const kit = await open();
   kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
   await run(kit.agent);
   const before = await kit.agent.status();
+  // Operator state is session-scoped like Policy; a shrunken context window that
+  // forces compaction must not lose it either.
+  await kit.agent.operator.setPaused(true);
   for (let index = 0; index < 8; index++) {
     await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: "Marketplace background. ".repeat(5000), timestamp: index }] } }, context);
   }
@@ -324,9 +327,55 @@ it("preserves marketplace policy when Pi actually compacts the transcript", asyn
   await kit.agent.waitForIdle();
   expect((await kit.agent.conversation.context(context)).head?.kind).toBe("pi.compaction");
   expect(await kit.agent.status()).toEqual(before);
+  expect((await kit.agent.operator.state()).paused).toBe(true);
+  await kit.agent.operator.setPaused(false);
   kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" }), fauxAssistantMessage("Skipped")]);
   await run(kit.agent);
   expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
+});
+
+it("a failed blocking compaction fails the run with model_error and queues at most one resume input", async () => {
+  let at = Date.parse("2026-06-20T12:00:00Z");
+  const kit = await open({ now: () => new Date(at), recoverEveryMs: 20 });
+  // Past the faux model's 128000-token window, so every generation prepares a blocking compaction.
+  for (let index = 0; index < 8; index++) {
+    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: "Marketplace background. ".repeat(5000), timestamp: index }] } }, context);
+  }
+  await kit.agent.waitForIdle();
+  const submit = vi.spyOn(kit.agent.conversation, "submit");
+  let release = () => {};
+  const gate = new Promise<void>((done) => { release = done; });
+  let summaryAsked = () => {};
+  const asked = new Promise<void>((done) => { summaryAsked = done; });
+  kit.faux.setResponses([async () => { summaryAsked(); await gate; return fauxAssistantMessage("", { stopReason: "error", errorMessage: "summary unavailable" }); }]);
+  await kit.agent.ping();
+  await asked; // The doomed generation is held by its blocking compaction's summary request.
+  for (const id of ["evt-compaction-a", "evt-compaction-b"]) await kit.agent.deliver({ event_id: id, event: "task.updated", task_id: task });
+  await kit.agent.recover(); // Both events queue behind the busy conversation.
+  release();
+  await kit.agent.waitForIdle();
+  // The queued inputs drain one doomed generation each, then the passes go quiet.
+  for (let pass = 0; pass < 5; pass++) { await kit.agent.recover(); await kit.agent.waitForIdle(); }
+  // The run failed on its compaction with the summary error, and no pass re-runs it.
+  const generations = await kit.agent.conversation.commit((tx) => tx.scanTasks({ conversationId: kit.agent.conversation.id, kind: "pi.generation" }, 50), context);
+  const outcomes = JSON.stringify(generations.items);
+  expect(outcomes).toContain("Compaction failed");
+  expect(outcomes).toContain("summary unavailable");
+  // Three model requests in total, every one a failed compaction summary: the ping
+  // run, one queued event and the single resume input. Nothing spins afterwards.
+  expect(kit.faux.state.callCount).toBe(3);
+  expect(submit.mock.calls.filter(([draft]) => draft.requestId?.startsWith("resume:"))).toHaveLength(1);
+});
+
+it("reports a throwing commit listener through onReport and the operation it ran in still succeeds", async () => {
+  const lines: string[] = [];
+  const kit = await open({ log: (line) => lines.push(line) });
+  const unsubscribe = kit.agent.changes(() => { throw new Error("listener exploded"); });
+  try {
+    await kit.agent.operator.addOrder("Check the marketplace feed twice a day");
+    expect((await kit.agent.operator.state()).orders).toEqual(["Check the marketplace feed twice a day"]);
+  } finally { unsubscribe(); }
+  await expect.poll(() => lines.some((line) => line.includes("listener exploded"))).toBe(true);
 });
 
 it("does not allow forks to create separate marketplace policy owners", async () => {

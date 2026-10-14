@@ -110,6 +110,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
   });
   type Item = typeof agents[number];
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
+  // Session-failure stops still closing when shutdown begins; the finally loop drains them.
+  const stopping = new Set<Promise<unknown>>();
   let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
   const streams = new Map<string, HostFacts["stream"]>();
   // Removes this exact agent from the roster, then closes its stream before its store,
@@ -139,11 +141,14 @@ export async function runAgents(o: RunOptions): Promise<void> {
     streams.set(item.id, "starting");
     // A failed session has already closed its store: stop this agent cleanly and
     // keep the others running. Every later deliver() rejects, so nothing is ACKed.
-    void agent.closed.then((end) => {
+    // Shutdown drains `stopping`, so the host cannot return while a stop closes a store.
+    const stop = agent.closed.then((end) => {
       if (end.reason !== "failed" || o.signal.aborted) return;
       o.log(`${item.id}: session failed: ${end.error instanceof Error ? end.error.message : String(end.error)}; stopping the agent`);
       return detach(owned);
     }).catch((error: unknown) => o.log(`${item.id}: could not stop the agent: ${error instanceof Error ? error.message : String(error)}`));
+    stopping.add(stop);
+    void stop.finally(() => stopping.delete(stop));
     try {
       owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => {
         const stream = streamStatus(line);
@@ -250,12 +255,18 @@ export async function runAgents(o: RunOptions): Promise<void> {
     }
   } finally {
     await consoleServer?.close();
-    // A save still in flight can add an agent while these close; keep going until none remain.
-    while (running.length) {
+    // A save still in flight can add an agent while these close; keep going until none
+    // remain. A session-failure stop still closing is awaited too, so no store
+    // outlives the host; a stop only waiting on its session ends once the batch's
+    // own close ends that session, so the batch closes first.
+    while (running.length || stopping.size) {
       const batch = running.splice(0, running.length);
       // Close streams before stores so no event can be ACKed after its owner closed.
       await Promise.allSettled(batch.map(async ({ listener }) => listener?.close()));
       await Promise.all(batch.map(({ agent }) => agent.close()));
+      const stops = [...stopping];
+      stopping.clear();
+      await Promise.allSettled(stops);
     }
   }
 }
