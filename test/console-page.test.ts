@@ -1,6 +1,87 @@
 import { expect, it } from "vitest";
 import { LIVE, PAGE } from "../src/console-page.js";
 
+// The page script expects a browser. A tiny fake DOM is enough to boot it and inspect
+// the timeline it renders; every node implements only what el() and icon() call.
+class FakeNode {
+  tagName: string;
+  attributes: Record<string, string> = {};
+  children: unknown[] = [];
+  listeners: Record<string, ((event: unknown) => void)[]> = {};
+  style: Record<string, string> = {};
+  dataset: Record<string, string> = {};
+  classList = { add() {}, remove() {}, toggle() {} };
+  constructor(tag: string) { this.tagName = tag.toUpperCase(); }
+  setAttribute(key: string, value: string) { this.attributes[key] = value; }
+  getAttribute(key: string) { return key in this.attributes ? this.attributes[key] : null; }
+  hasAttribute(key: string) { return key in this.attributes; }
+  addEventListener(type: string, fn: (event: unknown) => void) { (this.listeners[type] ??= []).push(fn); }
+  append(...kids: unknown[]) { this.children.push(...kids); }
+  replaceChildren(...kids: unknown[]) { this.children = kids; }
+  remove() {}
+  cloneNode() {
+    const copy = new FakeNode(this.tagName);
+    copy.attributes = { ...this.attributes };
+    copy.children = this.children.map((kid) => (kid instanceof FakeNode ? kid.cloneNode() : kid));
+    return copy;
+  }
+  set textContent(value: string) { this.children = [value]; }
+}
+
+// Boot the page's inline script against the fake DOM and hand back its render functions.
+const bootPage = () => {
+  const script = PAGE.match(/<script>\n("use strict";[\s\S]*?)<\/script>/)![1];
+  const app = new FakeNode("div");
+  const storage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const fakeDocument = {
+    getElementById: () => app,
+    createElement: (tag: string) => new FakeNode(tag),
+    createElementNS: () => new FakeNode("svg"),
+    activeElement: null,
+    body: new FakeNode("body"),
+    documentElement: { dataset: {} as Record<string, string>, style: { setProperty() {} }, scrollHeight: 0 },
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+  const boot = new Function(
+    "document", "Node", "sessionStorage", "localStorage", "location", "history",
+    "addEventListener", "ResizeObserver", "fetch", "matchMedia",
+    `${script}\nreturn { turnCard, ui };`,
+  );
+  return boot(
+    fakeDocument, FakeNode, storage, storage,
+    { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
+    () => {}, class { observe() {} disconnect() {} },
+    () => new Promise(() => {}), () => ({ matches: false }),
+  ) as { turnCard: (turn: unknown, index: number) => FakeNode; ui: { raw: Set<string> } };
+};
+
+it("renders the event turn head as a native button", () => {
+  const { turnCard, ui } = bootPage();
+  const card = turnCard({ kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: "t-1" }, replies: [] }, 0);
+  const head = card.children[0] as FakeNode;
+  expect(head.tagName).toBe("BUTTON");
+  expect(head.getAttribute("type")).toBe("button");
+  expect(head.getAttribute("aria-expanded")).toBe("false");
+  expect(head.hasAttribute("role")).toBe(false);
+  expect(head.hasAttribute("tabindex")).toBe(false);
+  expect(head.listeners.keydown ?? []).toHaveLength(0);
+  // A native button fires click on Enter and Space by itself, so no keydown shim remains.
+  head.listeners.click[0]({});
+  expect(ui.raw.has("t0")).toBe(true);
+});
+
+it("keeps a non-event turn head as a plain row", () => {
+  const { turnCard } = bootPage();
+  const card = turnCard({ kind: "operator", at: Date.now(), text: "Hold off on new bids today", replies: [] }, 1);
+  const head = card.children[0] as FakeNode;
+  expect(head.tagName).toBe("DIV");
+  expect(head.hasAttribute("aria-expanded")).toBe(false);
+  expect(head.hasAttribute("role")).toBe(false);
+  expect(head.hasAttribute("tabindex")).toBe(false);
+  expect(head.listeners.click ?? []).toHaveLength(0);
+});
+
 // A stream body that sends `chunks`, then ends unless `stay` keeps it open.
 const body = (chunks: string[], stay = false) => new ReadableStream<Uint8Array>({
   start(controller) {
