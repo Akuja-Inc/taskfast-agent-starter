@@ -326,6 +326,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           }
         }, context));
         await recoverLogged();
+        // Joining a pass whose drain predates admission is not a fresh drain.
+        await recoverLogged();
       },
       queued: readQueuedMessages,
       steer: async (requestId) => {
