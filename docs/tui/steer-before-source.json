@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "f1eebfc4a05caf1e66b92b91be435040f61af11f",
+  "sourceSha256": {
+    "src/tui/app.tsx": "ea3ceba51b26e56d69cc3a9505a7583dbf9db805fc69eb745f46bd721eac952d",
+    "src/tui/keys.ts": "de3e229035b1765c48370145a6497274c4308ffa2997f88eaf240640bdc9b441",
+    "src/tui/screen.ts": "0a8dbcba77f0fff4231a6fad68b41fe4346941df5027434790b21e21a354e4d4",
+    "src/tui/smoke.test.tsx": "ad84753281e43690ad83cef686d4080a911d14e69f80cdb00164e920d515362b",
+    "test/tui.test.ts": "80aa0d222f2f2e3c22ce26b2416dd9511435ba904cf74cf339b1590f83a9ddce",
+    "test/fixtures/tui-host.mjs": "01bd7349c186cabe2a4dd9cc2b88ed7de62e0fc7acd3962e8583c90b504ee433"
+  },
+  "captureScriptSha256": "40386648704403e4c5c739176db5fc396b1af14891a1eb6cb9c44a6dbbf03a58",
+  "capture": "Unmodified X11 window pixels from Zutty running tmux and Bun/OpenTUI. ImageMagick import -window."
+}

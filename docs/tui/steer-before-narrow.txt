@@ -2,7 +2,7 @@
  ‹ shop · Your Name (poster) › [1 Timeline] 2 Briefing    ● paused · 3 waiting   spend
  Paused: events are still received and stored. 3 waiting; they run in order when you
 ┌─ Timeline ─────────────────────────────────────────────────────────────────────────────┐
-│ POLL  21:42  Check your marketplace work in your poster role and pursue your current   │
+│ POLL  22:03  Check your marketplace work in your poster role and pursue your current   │
 │ goals: get small jobs done fast at a fair price. Read current state before acting; do  │
 │ not repeat uncertain writes.                                                           │
 │ ▶ Your Name — (tool calls only)                                                        │
@@ -14,7 +14,7 @@
 │   Your Name — Claimed the photo edit. The message was refused and the bid acceptance   │
 │ timed out, so it is uncertain: please check it before I do anything else on that task. │
 │                                                                                        │
-│ EVENT  21:42  bid.created · task 22222222-2222-4222-8222-222222222222                  │
+│ EVENT  22:03  bid.created · task 22222222-2222-4222-8222-222222222222                  │
 │   Your Name — A new bid arrived on the copywriting job. I will wait for your check on  │
 │ the uncertain acceptance first.                                                        │
 │                                                                                        │

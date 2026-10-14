@@ -1,13 +1,13 @@
 {
-  "sourceBase": "1ec0f9401c1d80d7e21eaae4ba73f23c02df2015",
+  "sourceCommit": "ad02e3e972afc97ff9351067ee34b5075842d775",
   "sourceSha256": {
     "src/tui/app.tsx": "df66e8fc6a01c52e105a7a82755e0568801879a04a9b41ecb495d801117f0940",
     "src/tui/keys.ts": "f6e56b27643b2705a2bc47d8d8fd78fdf134102e4b5dc32293edb508b498f5cf",
     "src/tui/screen.ts": "ee5a6f8fc3f4389e8cc231bf5db4530d1a510f628c1d38af941f5703cbbd8625",
     "src/tui/smoke.test.tsx": "e9011c33a7aded0a8c8acc6bae086b462ad7747148ded1db7b8bd39cb654c9af",
     "test/tui.test.ts": "51c79b39c5d952724e58a263bcaefde0890452174e8762192a3a068186b5bb19",
-    "test/fixtures/tui-host.mjs": "01bd7349c186cabe2a4dd9cc2b88ed7de62e0fc7acd3962e8583c90b504ee433",
-    "docs/tui/steer-capture.py": "573e7149b191e1ce3632ecd68d09d572f18a6ad66331cafa151230fc1e28fcaa"
+    "test/fixtures/tui-host.mjs": "01bd7349c186cabe2a4dd9cc2b88ed7de62e0fc7acd3962e8583c90b504ee433"
   },
+  "captureScriptSha256": "40386648704403e4c5c739176db5fc396b1af14891a1eb6cb9c44a6dbbf03a58",
   "capture": "Unmodified X11 window pixels from Zutty running tmux and Bun/OpenTUI. ImageMagick import -window."
 }
