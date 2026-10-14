@@ -1,2 +1,1 @@
 source_id	origin	first_seen	disposition	target	note
-hand:0199594e1d67	claude-code	2026-10-14T19:15:03Z	lesson	.agents/lessons/console-page.md	el() flattens children one level; nested arrays render as text

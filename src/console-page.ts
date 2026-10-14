@@ -139,21 +139,21 @@ kbd { font: 600 11px ui-monospace, monospace; background: var(--ground); border:
 textarea::placeholder { color: var(--muted); }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
-.turn { scroll-margin-top: 60px; }
-/* The rail: one mark per turn beside the stream, ending above the pinned composer. */
-.railed { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 12px; align-items: start; }
+/* The rail: marks beside the turns, sized from --composer-space to end above the pinned composer. --under-band clears the sticky band. */
+.railed { --under-band: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 12px; align-items: start; }
 .railed > .turns { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-/* --composer-space is the measured composer plus what follows it, so the rail always ends above the composer. */
-.rail { position: sticky; top: 56px; height: calc(100vh - 56px - var(--composer-space, 240px) - 16px); min-height: 120px; display: flex; flex-direction: column; gap: 1px; }
+.turn { scroll-margin-top: var(--under-band); }
+.rail { position: sticky; top: var(--under-band); height: calc(100vh - var(--under-band) - var(--composer-space, 240px) - 16px); min-height: 120px; display: flex; flex-direction: column; gap: 1px; }
 /* The rail passes under the band like content, and rises above it only while a peek is open. */
 .rail:hover, .rail:focus-within { z-index: 3; }
 .rail-earlier { flex: none; display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; margin-bottom: 5px; border-bottom: 1px dashed var(--muted); }
 .rail-earlier button.tick { flex: 0 0 4px; max-height: none; }
 button.tick { position: relative; flex: 1 1 0; min-height: 1px; max-height: 14px; padding: 0; border: none; border-radius: 0; background: none; justify-content: flex-end; align-items: stretch; }
-.tick::after { content: ""; width: 12px; background: var(--muted); opacity: .45; }
-.tick.event::after, .tick.resume::after, .tick.other::after { background: var(--ink); opacity: 1; }
-.tick.operator::after { width: 24px; background: var(--yellow); outline: 1px solid #0B0B0B; outline-offset: -1px; opacity: 1; }
-.tick.bad::after { width: 18px; background: var(--bad); opacity: 1; } .tick.warn::after { width: 18px; background: var(--warn); opacity: 1; }
+.tick::after { content: ""; width: 12px; background: var(--ink); }
+.tick.poll::after { background: var(--muted); opacity: .45; }
+.tick.operator::after { width: 24px; background: var(--yellow); outline: 1px solid #0B0B0B; outline-offset: -1px; }
+.tick.bad::after, .tick.warn::after { width: 18px; opacity: 1; }
+.tick.bad::after { background: var(--bad); } .tick.warn::after { background: var(--warn); }
 .tick:hover::after, .tick[aria-current="true"]::after { width: 30px; opacity: 1; }
 .tick[aria-current="true"]:not(.operator)::after { background: var(--ink); }
 .tick:focus-visible { outline-offset: 0; }
@@ -166,8 +166,8 @@ form.composer { position: sticky; bottom: 0; z-index: 3; display: grid; grid-tem
 form.composer > label { grid-column: 1; }
 form.composer button.send { grid-column: 2; grid-row: 1; justify-content: center; }
 form.composer .samples, form.composer .hint { grid-column: 1 / -1; }
-button.jump { display: none; position: absolute; left: 50%; top: -58px; transform: translateX(-50%); width: 44px; padding: 0; justify-content: center; border-radius: 0; background: var(--square); border-color: var(--square); color: #FFF; }
-[data-theme="dark"] button.jump { outline: 1px solid rgba(255,255,255,.28); }
+/* A pictogram square (.sq) sized as a control. */
+button.jump { display: none; position: absolute; left: 50%; top: -58px; transform: translateX(-50%); width: 44px; height: 44px; padding: 0; border-radius: 0; border-color: var(--square); }
 button.jump svg { transform: rotate(90deg); }
 body.away button.jump { display: inline-flex; }
 @media (max-width: 640px) { .railed { grid-template-columns: minmax(0, 1fr); } .rail { display: none; } form.composer .samples, form.composer .hint { display: none; } }
@@ -183,7 +183,7 @@ const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { 
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, railAt: -1, windowN: 12, toEnd: true };
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, windowN: 12 };
 let list = null, view = null;
 
 function el(tag, attrs, ...children) {
@@ -194,7 +194,7 @@ function el(tag, attrs, ...children) {
     else if (key === "text") node.textContent = value;
     else node.setAttribute(key, value === true ? "" : String(value));
   }
-  for (const child of children.flat()) if (child !== null && child !== undefined && child !== false) node.append(child instanceof Node ? child : String(child));
+  for (const child of children.flat(Infinity)) if (child !== null && child !== undefined && child !== false) node.append(child instanceof Node ? child : String(child));
   return node;
 }
 // Stroke icons drawn as SVG, which document.createElement cannot make. Pictograms in
@@ -417,24 +417,26 @@ function attention() {
 function toggle(set, key) { if (set.has(key)) set.delete(key); else set.add(key); render(); }
 // Turn origins as wayfinding pictograms: black squares, except the operator's own yellow.
 const TAG = { poll: ["", "clock", "Automatic check-in"], event: ["", "bell", "Marketplace event"], operator: ["you", "person", "You"], resume: ["", "arrow", "Resumed work"], other: ["", "info", "Input"] };
+const countOf = (calls, outcome) => calls.filter((c) => c.outcome === outcome).length;
+// What a turn's head says: the event and its task, or the input text.
+const headText = (turn) => turn.kind === "event" ? ((turn.event && turn.event.event) || "event") + (turn.event && turn.event.task_id ? " · task " + turn.event.task_id : "") : turn.text;
 function turnCard(turn, index) {
   const [cls, glyph, origin] = TAG[turn.kind];
   const key = "t" + index;
-  const eventName = turn.event && turn.event.event;
   const isEvent = turn.kind === "event";
   return el("article", { class: "card turn", "data-i": index },
     el("div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { role: "button", tabindex: "0", "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(ui.raw, key); } } } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),
       el("span", { class: "sr-only", text: origin + ":" }),
       el("span", { class: "small mono", title: turn.at ? new Date(turn.at).toLocaleString() : "", text: rel(turn.at) }),
-      el("span", { class: "head-msg", text: isEvent ? (eventName || "event") + (turn.event && turn.event.task_id ? " · task " + turn.event.task_id : "") : turn.text }),
+      el("span", { class: "head-msg", text: headText(turn) }),
       isEvent ? el("span", { class: "raw-chev" }, icon(GLYPH.chevron, 15)) : null),
     ui.raw.has(key) ? el("div", { style: "padding:0 18px 12px" }, jsonBlock("e:" + key, turn.event === undefined ? turn.text : turn.event), el("div", { class: "small", text: "Shown as plain text. HTML in marketplace content is never rendered." })) : null,
     el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, key + "r" + r)) : el("div", { class: "small", text: "No reply yet." })));
 }
 function replyBlock(reply, key) {
-  const failed = reply.calls.filter((c) => c.outcome === "failed").length;
-  const uncertain = reply.calls.filter((c) => c.outcome === "uncertain").length;
+  const failed = countOf(reply.calls, "failed");
+  const uncertain = countOf(reply.calls, "uncertain");
   return el("div", { class: "reply" },
     el("div", { style: "display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start" },
       reply.text ? el("p", { class: "reply-text" }, el("span", { class: "sq agent" }, pict("agent", 16)), el("span", {}, el("span", { class: "sr-only", text: "Agent: " }), reply.text)) : el("span", { style: "flex:1 1 360px", class: "small", text: reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)" }),
@@ -454,43 +456,46 @@ function replyBlock(reply, key) {
 const smooth = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 const lastSaid = (turn) => turn.replies.map((r) => r.text).filter(Boolean).pop() || "";
 
-// A long timeline mounts only its newest turns; older ones load above without moving
-// the reader. The rail beside it gives each mounted turn a mark, the way a scrollbar
-// would if it knew who spoke: the operator's turns read yellow, failed or uncertain
-// calls keep their money hues. Turns not yet mounted compress into at most 12 marks
-// above a dashed rule, each standing for its most telling turn. One tab stop; arrow
-// keys move along it.
+// The timeline mounts only its newest turns. The rail gives each mounted turn a mark and
+// compresses the rest into at most 12, each showing its most telling turn.
 const RANK = { bad: 5, warn: 4, operator: 3, event: 2, resume: 2, other: 2, poll: 1 };
-function tickClass(turn) {
-  const outcomes = turn.replies.flatMap((r) => r.calls.map((c) => c.outcome));
-  return turn.kind + (outcomes.includes("uncertain") ? " warn" : outcomes.includes("failed") ? " bad" : "");
+function hue(turn) {
+  const calls = turn.replies.flatMap((r) => r.calls);
+  return countOf(calls, "uncertain") ? "warn" : countOf(calls, "failed") ? "bad" : turn.kind;
 }
-const rank = (turn) => Math.max(...tickClass(turn).split(" ").map((c) => RANK[c]));
+const rank = (turn) => RANK[hue(turn)];
 function timelineTurns() {
   const tl = view.timeline, from = Math.max(0, tl.length - ui.windowN);
-  if (ui.railAt < 0 || ui.railAt >= tl.length) ui.railAt = tl.length - 1;
+  const earlier = from + (from === 1 ? " earlier turn" : " earlier turns");
   const size = Math.ceil(from / 12), groups = [];
   for (let a = 0; a < from; a += size) {
     const b = Math.min(from, a + size);
-    let pick = a;
-    for (let i = a + 1; i < b; i++) if (rank(tl[i]) > rank(tl[pick])) pick = i;
+    let pick = a, best = rank(tl[a]);
+    for (let i = a + 1; i < b; i++) { const r = rank(tl[i]); if (r > best) { pick = i; best = r; } }
     groups.push([pick, a, b]);
   }
   const tick = (i, span) => {
-    const turn = tl[i], who = TAG[turn.kind][2];
-    const said = turn.kind === "operator" ? turn.text : turn.kind === "event" ? (turn.event && turn.event.event) || "event" : lastSaid(turn) || "(no reply text)";
-    const where = span && span[1] - span[0] > 1 ? "Turns " + (span[0] + 1) + "–" + span[1] + " of " + tl.length + ", not loaded · " : "";
-    return el("button", { class: "tick " + tickClass(turn), "data-i": i, tabindex: i === ui.railAt ? "0" : "-1", "aria-current": String(i === ui.railAt), "aria-label": where + who + ", " + rel(turn.at), onclick: () => jumpTo(i),
-      onkeydown: (e) => { const d = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0; if (d && tl[i + d]) { e.preventDefault(); jumpTo(i + d); document.querySelector('.tick[data-i="' + (i + d) + '"]').focus(); } } },
-      el("span", { class: "peek" }, where ? el("span", { class: "small", text: where.slice(0, -3) }) : null, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
+    const turn = tl[i], who = TAG[turn.kind][2], h = hue(turn);
+    const said = turn.kind === "operator" || turn.kind === "event" ? headText(turn) : lastSaid(turn) || "(no reply text)";
+    const where = span && span[1] - span[0] > 1 ? "Turns " + (span[0] + 1) + "–" + span[1] + " of " + tl.length + ", not loaded" : "";
+    const onkeydown = (e) => {
+      const d = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+      if (!d || !tl[i + d]) return;
+      e.preventDefault();
+      jumpTo(i + d);
+      document.querySelector('.tick[data-i="' + (i + d) + '"]').focus();
+    };
+    // markRail() picks the one current mark, which is also the rail's one tab stop.
+    return el("button", { class: "tick " + turn.kind + (h === turn.kind ? "" : " " + h), "data-i": i, tabindex: "-1", "aria-current": "false", "aria-label": (where ? where + " · " : "") + who + ", " + rel(turn.at), onclick: () => jumpTo(i), onkeydown },
+      el("span", { class: "peek" }, where ? el("span", { class: "small", text: where }) : null, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
   };
   return el("div", { class: "railed" },
     el("div", { class: "turns" },
-      from ? el("div", { class: "card earlier" }, el("span", { class: "small", text: from + (from === 1 ? " earlier turn" : " earlier turns") }),
+      from ? el("div", { class: "card earlier" }, el("span", { class: "small", text: earlier }),
         el("button", { onclick: () => showFrom(from - 20), text: "Show " + Math.min(20, from) + " more" })) : null,
       tl.slice(from).map((t, k) => turnCard(t, from + k))),
     el("nav", { class: "rail", "aria-label": "Jump to a turn" },
-      from ? el("div", { class: "rail-earlier", title: from + (from === 1 ? " earlier turn" : " earlier turns") + ", not loaded" }, groups.map(([pick, a, b]) => tick(pick, [a, b]))) : null,
+      from ? el("div", { class: "rail-earlier", title: earlier + ", not loaded" }, groups.map(([pick, a, b]) => tick(pick, [a, b]))) : null,
       tl.slice(from).map((t, k) => tick(from + k))));
 }
 // Mount turns from index i onward, keeping the reader's place.
@@ -508,39 +513,43 @@ function jumpTo(i) {
   markRail(i);
 }
 function markRail(i) {
-  ui.railAt = i;
-  for (const tick of document.querySelectorAll(".tick")) { const on = tick.dataset.i === String(i); tick.setAttribute("aria-current", String(on)); tick.tabIndex = on ? 0 : -1; }
+  const old = document.querySelector('.tick[aria-current="true"]'), next = document.querySelector('.tick[data-i="' + i + '"]');
+  if (!next || next === old) return;
+  if (old) { old.setAttribute("aria-current", "false"); old.tabIndex = -1; }
+  next.setAttribute("aria-current", "true");
+  next.tabIndex = 0;
 }
 const toNewest = (behavior) => { const end = document.querySelector(".send-note"); if (end) end.scrollIntoView({ block: "end", behavior }); };
 
-// render() rebuilds the page on every push, so scroll-driven marks are reapplied to
-// whatever is mounted. ponytail: linear scan of mounted turns per frame; the window
-// keeps that small unless the operator loads the whole history.
-// The rail must fit between the band and the pinned composer even at the page end,
-// where the send note and page padding sit below the composer too. Both change height
-// as chips wrap or the field is resized; render() replaces them, so re-observe.
+// The rail must end above the pinned composer even at the page end, where the send note
+// and page gap follow it. Their heights change as chips wrap or the field is resized,
+// and render() replaces both, so measureComposer() re-observes them.
+let composerSpace = "";
 const composerSize = new ResizeObserver(() => {
   const form = document.querySelector("form.composer"), note = document.querySelector(".send-note");
   if (!form || !note) return;
   // The note is never sticky, so its box shows what really follows the composer: to the
   // page end, or to the end of the column plus the page gap when the sidebar wraps below.
-  const at = (box) => box.getBoundingClientRect()[box === note ? "top" : "bottom"] + scrollY;
-  const end = Math.min(document.documentElement.scrollHeight, at(note.closest("main")) + 24);
-  const below = end - at(note) + 16;
-  document.documentElement.style.setProperty("--composer-space", Math.ceil(form.offsetHeight + below) + "px");
+  const noteTop = note.getBoundingClientRect().top + scrollY;
+  const mainEnd = note.closest("main").getBoundingClientRect().bottom + scrollY + 24;
+  const space = Math.ceil(form.offsetHeight + Math.min(document.documentElement.scrollHeight, mainEnd) - noteTop + 16) + "px";
+  if (space !== composerSpace) document.documentElement.style.setProperty("--composer-space", composerSpace = space);
 });
 function measureComposer() {
   composerSize.disconnect();
   for (const node of document.querySelectorAll("form.composer, .send-note")) composerSize.observe(node);
 }
-let scrollFrame = 0;
+// render() rebuilds the page on every push, so scroll-driven marks are reapplied to
+// whatever is mounted. ponytail: linear scan of mounted turns per frame; the window
+// keeps that small unless the operator loads the whole history.
+let scrollFrame = 0, toEnd = true;
 addEventListener("scroll", () => { scrollFrame ||= requestAnimationFrame(onScroll); }, { passive: true });
 function onScroll() {
   scrollFrame = 0;
   const turns = [...document.querySelectorAll(".turn[data-i]")];
   if (!turns.length) return document.body.classList.remove("away");
   const at = turns.find((t) => t.getBoundingClientRect().bottom > 120) || turns[turns.length - 1];
-  if (Number(at.dataset.i) !== ui.railAt) markRail(Number(at.dataset.i));
+  markRail(Number(at.dataset.i));
   document.body.classList.toggle("away", turns[turns.length - 1].getBoundingClientRect().bottom > innerHeight + 120);
 }
 
@@ -632,7 +641,7 @@ function timelineTab() {
         el("div", { class: "hint" },
           el("span", {}, el("kbd", { text: "Enter" }), " to send · ", el("kbd", { text: "Shift+Enter" }), " for a new line"),
           el("span", {}, el("kbd", { text: "Ctrl+S" }), " to steer")),
-        el("button", { type: "button", class: "jump", "aria-label": "Jump to the newest turn", title: "Jump to the newest turn", onclick: () => toNewest(smooth()) }, pict("arrow", 16))),
+        el("button", { type: "button", class: "sq jump", "aria-label": "Jump to the newest turn", title: "Jump to the newest turn", onclick: () => toNewest(smooth()) }, pict("arrow", 16))),
       el("div", { class: "small send-note", text: "Each send carries its own ID, so a double click or a retry queues it only once." })),
     el("aside", {}, readiness(), tasksPanel(), spendPanel(),
       el("section", { class: "section" },
@@ -714,7 +723,7 @@ function render() {
       ui.error ? el("div", { class: "error", role: "alert", text: ui.error }) : null)] :
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
   // The timeline opens at its newest turn, as a chat does.
-  if (ui.toEnd && view && ui.tab === "timeline") { ui.toEnd = false; toNewest("auto"); }
+  if (toEnd && view && ui.tab === "timeline") { toEnd = false; toNewest("auto"); }
   measureComposer();
   onScroll();
   const next = document.querySelector("textarea");
