@@ -76,3 +76,17 @@ it("follows the event stream, polls while it is down, and stops polling when it 
   expect(LIVE).not.toContain("</script>");
   expect(PAGE).not.toContain("setInterval(refresh");
 });
+
+it("keeps historical call dots still and pulses only the newest turn's", () => {
+  // The base .dot rule carries no animation, so an idle page with old failures
+  // keeps the compositor free.
+  const base = /\.dot \{[^}]*\}/.exec(PAGE);
+  expect(base).not.toBeNull();
+  expect(base![0]).not.toContain("animation");
+  // Only the newest turn's dots pulse, and prefers-reduced-motion stills them.
+  expect(PAGE).toMatch(/\.dot\.live \{[^}]*animation: dotpulse/);
+  expect(PAGE).toMatch(/prefers-reduced-motion: reduce\) \{ \.dot\.live \{ animation: none/);
+  // replyBlock gates the live class on the newest turn of the timeline.
+  expect(PAGE).toMatch(/replyBlock\(reply, key \+ "r" \+ r, index === view\.timeline\.length - 1\)/);
+  expect(PAGE).toMatch(/"dot " \+ cls \+ \(live \? " live" : ""\)/);
+});
