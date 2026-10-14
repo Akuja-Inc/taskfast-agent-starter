@@ -140,6 +140,48 @@ kbd { font: 600 11px ui-monospace, monospace; background: var(--ground); border:
 textarea::placeholder { color: var(--muted); }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
+/* Prototype: long-timeline variants, switched from the dashed bar under the header. */
+.proto { max-width: 1280px; margin: 12px auto 0; padding: 0 24px; }
+.proto-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 1px dashed var(--muted); padding: 6px 10px; }
+.proto-bar .label { font: 700 11px/1 ui-monospace, monospace; letter-spacing: .07em; color: var(--muted); margin-right: 4px; }
+.proto-bar button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
+.turn { scroll-margin-top: 60px; }
+/* Fold: a run of quiet check-ins becomes one row drawn as a stack of plates. */
+.card.fold { flex-direction: row; align-items: center; gap: 12px; position: relative; margin-bottom: 9px; }
+.fold::before, .fold::after { content: ""; position: absolute; border: 1px solid var(--hairline); border-top: none; background: var(--panel); }
+.fold::before { left: 6px; right: 6px; bottom: -5px; height: 5px; }
+.fold::after { left: 12px; right: 12px; bottom: -9px; height: 4px; }
+.fold.open { margin-bottom: 0; } .fold.open::before, .fold.open::after { display: none; }
+.fold-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fold-last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-run { display: flex; flex-direction: column; gap: 16px; padding-left: 14px; border-left: 1px solid var(--hairline); }
+/* Rail: one mark per turn beside the stream, like a scrollbar that knows who spoke. */
+.railed { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 12px; align-items: start; }
+.railed > .turns { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.rail { position: sticky; top: 56px; height: calc(100vh - 72px); display: flex; flex-direction: column; gap: 1px; }
+button.tick { position: relative; flex: 1 1 0; min-height: 1px; max-height: 14px; padding: 0; border: none; border-radius: 0; background: none; justify-content: flex-end; align-items: stretch; }
+.tick::after { content: ""; width: 12px; background: var(--muted); opacity: .45; }
+.tick.event::after, .tick.resume::after, .tick.other::after { background: var(--ink); opacity: 1; }
+.tick.operator::after { width: 24px; background: var(--yellow); outline: 1px solid #0B0B0B; outline-offset: -1px; opacity: 1; }
+.tick.bad::after { width: 18px; background: var(--bad); opacity: 1; } .tick.warn::after { width: 18px; background: var(--warn); opacity: 1; }
+.tick:hover::after, .tick[aria-current="true"]::after { width: 30px; opacity: 1; }
+.tick[aria-current="true"]:not(.operator)::after { background: var(--ink); }
+.tick:focus-visible { outline-offset: 0; }
+.peek { display: none; position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%); width: max-content; max-width: 320px; flex-direction: column; gap: 4px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--hairline); color: var(--ink); font-size: 13px; text-align: left; z-index: 4; pointer-events: none; }
+.peek-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tick:hover .peek, .tick:focus-visible .peek { display: flex; }
+@media (max-width: 640px) { .railed { grid-template-columns: minmax(0, 1fr); } .rail { display: none; } }
+/* Window: the newest turns, a composer pinned to the bottom edge, a jump back down. */
+.card.earlier { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+form.composer.pinned { position: sticky; bottom: 0; z-index: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: end; }
+form.composer.pinned > label { grid-column: 1; }
+form.composer.pinned button.send { grid-column: 2; grid-row: 1; width: auto; }
+form.composer.pinned .samples, form.composer.pinned .hint { grid-column: 1 / -1; }
+button.jump { display: none; position: absolute; left: 50%; top: -58px; transform: translateX(-50%); width: 44px; padding: 0; justify-content: center; border-radius: 0; background: var(--square); border-color: var(--square); color: #FFF; }
+[data-theme="dark"] button.jump { outline: 1px solid rgba(255,255,255,.28); }
+button.jump svg { transform: rotate(90deg); }
+body.away button.jump { display: inline-flex; }
+@media (max-width: 640px) { form.composer.pinned .samples, form.composer.pinned .hint { display: none; } }
 </style>
 <script>try{var t=localStorage.getItem("tf-theme");if(t!=="dark"&&t!=="light")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
@@ -152,7 +194,7 @@ const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { 
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true };
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", draftId: null, orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, variant: store.get("variant") || "fold", folds: new Set(), railAt: -1, windowN: 12, toEnd: true };
 let list = null, view = null;
 
 function el(tag, attrs, ...children) {
@@ -391,7 +433,7 @@ function turnCard(turn, index) {
   const key = "t" + index;
   const eventName = turn.event && turn.event.event;
   const isEvent = turn.kind === "event";
-  return el("article", { class: "card turn" },
+  return el("article", { class: "card turn", "data-i": index },
     el("div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { role: "button", tabindex: "0", "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(ui.raw, key); } } } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),
       el("span", { class: "sr-only", text: origin + ":" }),
@@ -418,6 +460,107 @@ function replyBlock(reply, key) {
       el("span", { style: "color:" + (call.outcome === "ok" ? "var(--ok)" : "var(--warn)"), text: call.outcome }),
       call.error ? el("div", { style: "flex-basis:100%;white-space:pre-wrap;color:var(--soft)", text: call.error }) : null))) : null,
     reply.tasks.map(taskCard));
+}
+
+// Prototype: three ways to keep a long timeline usable, picked from the dashed bar.
+const VARIANTS = [["current", "Current"], ["fold", "Fold · Claude"], ["rail", "Rail · Gemini"], ["window", "Window · ChatGPT"]];
+function protoBar() {
+  return el("div", { class: "proto" }, el("div", { class: "proto-bar", role: "group", "aria-label": "Prototype: long timeline variant" },
+    el("span", { class: "label", text: "PROTOTYPE · LONG TIMELINE" }),
+    VARIANTS.map(([id, name]) => el("button", { "aria-pressed": String(ui.variant === id), onclick: () => { ui.variant = id; store.set("variant", id); ui.toEnd = true; render(); }, text: name }))));
+}
+const smooth = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+const lastSaid = (turn) => turn.replies.map((r) => r.text).filter(Boolean).pop() || "";
+
+// Fold. A check-in is quiet when it touched no task and every call came back ok: read
+// from the record, never from what the model wrote. Runs of two or more fold into one
+// row; the newest turn never folds.
+const quiet = (turn) => turn.kind === "poll" && turn.replies.length > 0 && turn.replies.every((r) => (r.text || r.calls.length) && !r.tasks.length && r.calls.every((c) => c.outcome === "ok"));
+function quietRuns(tl) {
+  const runs = [];
+  for (let i = 0; i < tl.length;) {
+    let j = i;
+    while (j < tl.length - 1 && quiet(tl[j])) j++;
+    if (j - i >= 2) { runs.push([i, j]); i = j; } else i = Math.max(j, i + 1);
+  }
+  return runs;
+}
+function foldedTimeline(runs) {
+  const tl = view.timeline, ends = new Map(runs), out = [];
+  for (let i = 0; i < tl.length;) {
+    if (ends.has(i)) { out.push(...foldRow(i, ends.get(i))); i = ends.get(i); } else { out.push(turnCard(tl[i], i)); i++; }
+  }
+  return out;
+}
+function foldRow(from, to) {
+  const key = "f" + from, open = ui.folds.has(key), run = view.timeline.slice(from, to);
+  const calls = run.reduce((n, t) => n + t.replies.reduce((m, r) => m + r.calls.length, 0), 0);
+  return [
+    el("div", { class: "card fold" + (open ? " open" : "") },
+      el("span", { class: "sq" }, pict("clock", 16)),
+      el("div", { class: "fold-text" },
+        el("div", {}, el("strong", { text: run.length + " automatic check-ins" }), " · " + calls + (calls === 1 ? " tool call" : " tool calls") + ", all ok, no tasks touched"),
+        el("div", { class: "small mono", text: rel(run[0].at) + " → " + rel(run[run.length - 1].at) }),
+        open ? null : el("div", { class: "small fold-last", text: "Last said: " + lastSaid(run[run.length - 1]).replace(/\\s+/g, " ") })),
+      el("button", { "aria-expanded": String(open), onclick: () => toggle(ui.folds, key), text: open ? "Fold" : "Show all" })),
+    open ? el("div", { class: "fold-run" }, run.map((t, k) => turnCard(t, from + k))) : null,
+  ];
+}
+
+// Rail. Marks share the viewport height like a scrollbar; the operator's turns read
+// yellow and failed or uncertain calls keep their money hues. One tab stop, arrows move.
+function railTimeline() {
+  const tl = view.timeline;
+  if (ui.railAt < 0 || ui.railAt >= tl.length) ui.railAt = tl.length - 1;
+  return el("div", { class: "railed" },
+    el("div", { class: "turns" }, tl.map(turnCard)),
+    el("nav", { class: "rail", "aria-label": "Jump to a turn" }, tl.map((turn, i) => {
+      const outcomes = turn.replies.flatMap((r) => r.calls.map((c) => c.outcome));
+      const who = TAG[turn.kind][2];
+      const said = turn.kind === "operator" ? turn.text : turn.kind === "event" ? (turn.event && turn.event.event) || "event" : lastSaid(turn) || "(no reply text)";
+      return el("button", { class: "tick " + turn.kind + (outcomes.includes("uncertain") ? " warn" : outcomes.includes("failed") ? " bad" : ""), "data-i": i, tabindex: i === ui.railAt ? "0" : "-1", "aria-current": String(i === ui.railAt), "aria-label": who + ", " + rel(turn.at), onclick: () => jumpTo(i),
+        onkeydown: (e) => { const d = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0; if (d && tl[i + d]) { e.preventDefault(); jumpTo(i + d); document.querySelector('.tick[data-i="' + (i + d) + '"]').focus(); } } },
+        el("span", { class: "peek" }, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
+    })));
+}
+function jumpTo(i) {
+  document.querySelector('.turn[data-i="' + i + '"]').scrollIntoView({ block: "start", behavior: smooth() });
+  markRail(i);
+}
+function markRail(i) {
+  ui.railAt = i;
+  for (const tick of document.querySelectorAll(".tick")) { const on = tick.dataset.i === String(i); tick.setAttribute("aria-current", String(on)); tick.tabIndex = on ? 0 : -1; }
+}
+
+// Window. Only the newest turns mount; older ones load above without moving the reader.
+function windowedTimeline() {
+  const tl = view.timeline, from = Math.max(0, tl.length - ui.windowN);
+  return [
+    from ? el("div", { class: "card earlier" }, el("span", { class: "small", text: from + (from === 1 ? " earlier turn" : " earlier turns") }),
+      el("button", { onclick: () => {
+        const fromBottom = document.documentElement.scrollHeight - scrollY;
+        ui.windowN += 20; render(); scrollTo(0, document.documentElement.scrollHeight - fromBottom);
+      }, text: "Show " + Math.min(20, from) + " more" })) : null,
+    // Spread: el() flattens children one level only.
+    ...tl.slice(from).map((t, k) => turnCard(t, from + k)),
+  ];
+}
+const toNewest = (behavior) => { const end = document.querySelector(".send-note"); if (end) end.scrollIntoView({ block: "end", behavior }); };
+
+// render() rebuilds the page on every push, so scroll-driven marks are reapplied to
+// whatever is mounted. ponytail: linear scan of mounted turns per frame; fine to a few
+// hundred turns, measure an IntersectionObserver if timelines grow past that.
+let scrollFrame = 0;
+addEventListener("scroll", () => { scrollFrame ||= requestAnimationFrame(onScroll); }, { passive: true });
+function onScroll() {
+  scrollFrame = 0;
+  const turns = [...document.querySelectorAll(".turn[data-i]")];
+  if (ui.variant === "rail" && turns.length) {
+    const at = turns.find((t) => t.getBoundingClientRect().bottom > 120) || turns[turns.length - 1];
+    if (Number(at.dataset.i) !== ui.railAt) markRail(Number(at.dataset.i));
+  }
+  const last = turns[turns.length - 1];
+  document.body.classList.toggle("away", ui.variant === "window" && !!last && last.getBoundingClientRect().bottom > innerHeight + 120);
 }
 
 function readiness() {
@@ -481,13 +624,16 @@ function spendPanel() {
 function timelineTab() {
   const op = view.operator;
   const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + op.messages.length;
+  const n = view.timeline.length, v = ui.variant;
+  const runs = v === "fold" ? quietRuns(view.timeline) : [];
+  const folded = runs.reduce((sum, [from, to]) => sum + to - from, 0);
   return el("div", { class: "page" },
     el("main", {},
       op.paused ? el("div", { class: "note", role: "status" }, el("strong", { text: "Paused. " }), "New events are still received and stored, so nothing is lost. " + waiting + " waiting; they run in order when you resume. Check-ins are skipped while paused.") : null,
       attention(),
-      band("Timeline", view.timeline.length + (view.timeline.length === 1 ? " turn" : " turns")),
-      view.timeline.length ? view.timeline.map(turnCard) : el("div", { class: "small", text: "No turns yet." }),
-      el("form", { class: "card composer", onsubmit: (e) => {
+      band("Timeline", n + (n === 1 ? " turn" : " turns") + (folded ? " · " + folded + " folded" : "") + (v === "window" && n > ui.windowN ? " · showing the newest " + ui.windowN : "")),
+      !n ? el("div", { class: "small", text: "No turns yet." }) : v === "fold" ? foldedTimeline(runs) : v === "rail" ? railTimeline() : v === "window" ? windowedTimeline() : view.timeline.map(turnCard),
+      el("form", { class: "card composer" + (v === "window" ? " pinned" : ""), onsubmit: (e) => {
         e.preventDefault();
         const text = ui.draft.trim();
         if (!text) return;
@@ -506,8 +652,9 @@ function timelineTab() {
         el("button", { type: "submit", class: "primary send", text: "Send" }),
         el("div", { class: "hint" },
           el("span", {}, el("kbd", { text: "Enter" }), " to send · ", el("kbd", { text: "Shift+Enter" }), " for a new line"),
-          el("span", {}, el("kbd", { text: "Ctrl+S" }), " to steer"))),
-      el("div", { class: "small", text: "Each send carries its own ID, so a double click or a retry queues it only once." })),
+          el("span", {}, el("kbd", { text: "Ctrl+S" }), " to steer")),
+        v === "window" ? el("button", { type: "button", class: "jump", "aria-label": "Jump to the newest turn", title: "Jump to the newest turn", onclick: () => toNewest(smooth()) }, pict("arrow", 16)) : null),
+      el("div", { class: "small send-note", text: "Each send carries its own ID, so a double click or a retry queues it only once." })),
     el("aside", {}, readiness(), tasksPanel(), spendPanel(),
       el("section", { class: "section" },
         band("Standing orders", "· " + op.orders.length),
@@ -586,7 +733,9 @@ function render() {
     ui.reopening ? [...header(), el("div", { class: "page" },
       el("div", { class: "note", role: "status", text: ui.agent + " is saving and reopening, so it is missing from the agent list for a moment. It stays selected here; its panels return when it reappears." }),
       ui.error ? el("div", { class: "error", role: "alert", text: ui.error }) : null)] :
-    [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+    [...header(), ui.tab === "timeline" ? protoBar() : null, ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+  if (ui.toEnd && view && ui.tab === "timeline" && ui.variant === "window") { ui.toEnd = false; toNewest("auto"); }
+  onScroll();
   const next = document.querySelector("textarea");
   if (ui.focusComposer && next) { next.focus(); ui.focusComposer = false; }
 }
