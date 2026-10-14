@@ -11,9 +11,9 @@ import { cliEnv, runCli } from "../src/core/cli.js";
 import type { Command } from "../src/core/policy.js";
 import { runEventPump, runEventPumpForever } from "../src/core/pump.js";
 import { parseAgentSpec } from "../src/core/spec.js";
-import { openAgentStorage } from "../src/core/storage.js";
 import type { MarketEvent, Runtime } from "../src/core/types.js";
 import { runAgents } from "../src/run.js";
+import { failingStorage } from "./failing-storage.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -352,17 +352,6 @@ function hostAgent({ root, id }: { root: string; id: string }) {
   return { home, fixture, storeDir: join(home, ".pi-state", "staging") };
 }
 
-// Delegates to the real store until armed; then every method except close throws.
-function failingStorage(file: string, armed: () => boolean): Promise<Storage> {
-  return openAgentStorage(file).then((storage) => new Proxy(storage, {
-    get(target, key) {
-      const value: unknown = Reflect.get(target, key);
-      if (typeof value !== "function" || key === "close" || key === "then" || !armed()) return typeof value === "function" ? value.bind(target) : value;
-      return async () => { throw new Error("injected storage failure"); };
-    },
-  }));
-}
-
 it("a failed session stops that agent: the host logs it and closes its stream before its store", async () => {
   const root = directory();
   const { storeDir } = hostAgent({ root, id: "worker" });
@@ -384,8 +373,6 @@ it("a failed session stops that agent: the host logs it and closes its stream be
   try {
     await expect.poll(() => order.join(","), { timeout: 4000 }).toBe("listener,agent");
     expect(logs.some((line) => line.includes("worker: session failed: injected storage failure; stopping the agent"))).toBe(true);
-    // The failed agent is gone; the host keeps running and still shuts down cleanly.
-    await sleep(100);
   } finally {
     stop.abort();
     await host;

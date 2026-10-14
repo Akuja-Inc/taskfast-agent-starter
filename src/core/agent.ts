@@ -283,11 +283,11 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         if (closed) return;
         closed = true;
         clearInterval(timer);
-        // A recovery still in flight when the session failed rejects with
-        // SessionFailed; the host logs the failure itself, so closing must still
-        // finish and release ownership.
-        try { await recovering?.catch(() => {}); }
-        finally { await owner.close(context); }
+        // A recovery still in flight may reject (SessionFailed after a storage
+        // error); deliver() and ping() already report it, so closing ignores it
+        // and still releases ownership.
+        await recovering?.catch(() => {});
+        await owner.close(context);
       },
     };
   } catch (error) {

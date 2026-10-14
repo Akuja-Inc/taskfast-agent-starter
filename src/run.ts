@@ -112,16 +112,17 @@ export async function runAgents(o: RunOptions): Promise<void> {
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
   let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
   const streams = new Map<string, HostFacts["stream"]>();
-  // Removes one agent from the roster and closes its stream before its store, as at
-  // shutdown, so no event can be ACKed after its ownership closed.
-  async function detach(item: Item): Promise<void> {
-    const at = running.findIndex((owned) => owned.id === item.id);
-    if (at < 0) return;
-    const [owned] = running.splice(at, 1);
-    streams.delete(item.id);
-    await consoleServer?.closeStreams(item.id);
+  // Removes this exact agent from the roster, then closes its stream before its store,
+  // as at shutdown. Returns where it stood, or -1 if it had already gone.
+  async function detach(owned: typeof running[number]): Promise<number> {
+    const at = running.indexOf(owned);
+    if (at < 0) return at;
+    running.splice(at, 1);
+    streams.delete(owned.id);
+    await consoleServer?.closeStreams(owned.id);
     await owned.listener?.close();
     await owned.agent.close();
+    return at;
   }
   // Opens one agent's store, then its stream, keeping its place among the others.
   async function start(item: Item, at = running.length): Promise<void> {
@@ -141,8 +142,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
     void agent.closed.then((end) => {
       if (end.reason !== "failed" || o.signal.aborted) return;
       o.log(`${item.id}: session failed: ${end.error instanceof Error ? end.error.message : String(end.error)}; stopping the agent`);
-      void detach(item);
-    }).catch(() => {});
+      return detach(owned);
+    }).catch((error: unknown) => o.log(`${item.id}: could not stop the agent: ${error instanceof Error ? error.message : String(error)}`));
     try {
       owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => {
         const stream = streamStatus(line);
@@ -209,8 +210,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
     // The unlock file may have been created since this agent started; rediscover it.
     const file = findUnlockFile(item.agentDir);
     item.runtime = { env: item.runtime.env, configPath: item.runtime.configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) };
-    const at = running.findIndex((owned) => owned.id === item.id);
-    if (at >= 0) await detach(item);
+    const current = running.find((owned) => owned.id === item.id);
+    const at = current ? await detach(current) : -1;
     try { await start(item, at >= 0 ? at : running.length); }
     catch (error) {
       // A transient reopen failure must not leave a file the next start cannot load.
