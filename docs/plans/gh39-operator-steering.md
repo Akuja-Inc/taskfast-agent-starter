@@ -12,7 +12,7 @@ Steering is not cancellation. It cannot undo a tool call or a money action alrea
 
 ## Starting point and boundaries
 
-- Base: fetched `origin/main`, currently `a414051`, with Pi packages pinned to 1.1.0. No dependency upgrade belongs in this change. Open PR #43 is a separate Pi upgrade.
+- Initial base was `a414051` with Pi 1.1.0. During implementation, separate PR #43 merged Pi 1.2.0 into main at `a86e824`. The core slice was rebased onto it and revalidated there. This change adds no dependency or lockfile delta.
 - Work in dedicated worktrees. The first is `.worktrees/gh39-steer-core-api`, branch `gh39-steer-core-api`. Leave the existing dirty `.worktrees/gh39-console-steer` and the main checkout's untracked `make-110-store.mjs` untouched.
 - Use temporary agent folders, real persistent SQLite stores, a scripted model and a fake CLI. Do not start real agents or contact staging or production.
 - Leave policy, action keys, reservations, spending, tools, CLI children, stream acknowledgement and Pi queue settings unchanged.
@@ -60,7 +60,7 @@ Recover pending intents before draining fresh follow-ups. Reacquire the original
 
 A paused promotion may withdraw the original queued follow-up, but must retain the intent and defer its replacement until resume. A restart must do the same. Pi's commits make abort and inbox removal atomic; the kit must bridge abort and replacement durably.
 
-Verified at the installed 1.1.0 pin: `whenBusy`, `Submission.abort()`, `owner.submission()`, `InboxDoc` and request deduplication already exist. Crucially, aborting an already aborted input returns `settled`, not `aborted`. Recovery must inspect the saved status rather than apply the fresh-request late-steer rule blindly.
+Verified at the initial 1.1.0 pin and rechecked after adopting main's 1.2.0 pin: `whenBusy`, `Submission.abort()`, `owner.submission()`, `InboxDoc` and request deduplication already exist. Crucially, aborting an already aborted input returns `settled`, not `aborted`. Recovery must inspect the saved status rather than apply the fresh-request late-steer rule blindly.
 
 ### API and view
 
