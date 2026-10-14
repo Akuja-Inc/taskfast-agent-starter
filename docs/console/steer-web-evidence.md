@@ -1,62 +1,64 @@
 # Browser steering evidence (#39)
 
-## Source and capture provenance
+## Sources and screenshots
 
-Baseline source commit: `1ec0f9401c1d80d7e21eaae4ba73f23c02df2015`. The baseline ran in a separate detached temporary worktree at `/tmp/gh39-web-baseline-1ec0f94`. Existing core and baseline worktrees were not edited.
+Before source: `55c7ba35a6747186433fac52e0432c6220bede1a` (core/API slice). After source: `8a0d6e5eb9debc5db0a3573d7df808f9b6bdc7bd` (browser slice). All nine screenshots were recaptured from these commits with Pi 1.2.0.
 
-After source: branch `gh39-steer-web`, based on the same commit, with `src/console-page.ts` Git blob SHA `ec820879d63b4cee84dd261fe6f146c43ea315d4` and SHA-256 `5cec65fff9ee7c705deaa707a88e3cfa14dfbb57538b99d55d3d85fb95c537d1`. These hashes pin the exact uncommitted page used for every after capture. The parent must add the final source commit SHA after reviewing and committing this slice. This subagent did not commit, push, rebase or open a PR.
+Both hosts used `test/fixtures/tui-host.mjs`: temporary agent folders, real SQLite stores, a scripted faux model and a fake CLI. No real agents, credentials, wallets, model providers or marketplace servers were used. Chromium ran through Python Playwright. Desktop viewport: 1440 x 1050. Phone viewport: 390 x 844. Device scale: 1. Screenshots contain synthetic data and a loopback address; the page removed the fixture token from its URL before capture.
 
-Both hosts ran `node test/fixtures/tui-host.mjs` after `pnpm build`. The fixture creates temporary agent folders and real SQLite stores, supplies a scripted faux model and a fake CLI, and removes its folders on shutdown. No real agent, account, wallet, model provider or marketplace server was used. Both hosts used Pi 1.1.0 and the core/API implementation at `1ec0f94`. The subsequent main/Pi 1.2.0 upgrade is not covered by this evidence.
-
-Python Playwright drove `/snap/bin/chromium` headlessly with `--no-sandbox`. Desktop viewport: 1440 x 1050. Phone viewport: 390 x 844. Device scale: 1. Themes were set explicitly. The shop was paused with the same three synthetic messages, in Follow-up, Steer, Follow-up order. The final message includes a newline, literal HTML-like text and long copy. The browser displayed all server text as text. The URL token was removed by the page before capture. Screenshots contain only synthetic fixture data and a loopback address, not real tokens or credentials.
-
-| Surface | Before, baseline commit | After, page blob above |
+| Surface | Before | After |
 | --- | --- | --- |
 | Desktop light, full page | [Before](steer-web-before-desktop-light.png) | [After](steer-web-after-desktop-light.png) |
 | Desktop dark, full page | [Before](steer-web-before-desktop-dark.png) | [After](steer-web-after-desktop-dark.png) |
 | Phone light, full page | [Before](steer-web-before-phone-light.png) | [After](steer-web-after-phone-light.png) |
 
-Queue-focused viewport captures show the new controls more closely: [desktop light](steer-web-after-queue-desktop-light.png), [desktop dark](steer-web-after-queue-desktop-dark.png) and [phone light](steer-web-after-queue-phone-light.png). These are screenshots of the running browser, not mockups or edited images.
+Queue-focused viewport captures: [desktop light](steer-web-after-queue-desktop-light.png), [desktop dark](steer-web-after-queue-desktop-dark.png), [phone light](steer-web-after-queue-phone-light.png).
 
-## Commands and results
+## Local validation
 
-Run from `.worktrees/gh39-steer-web`:
+| Command | Result |
+| --- | --- |
+| `pnpm exec vitest run test/console-page.test.ts` | 17 tests passed, including the full-queue paused waiting count |
+| `pnpm check` | 323 tests in 25 files; TypeScript, skills, prose and lessons checks passed |
+| `pnpm tui:test` | 4 tests passed, 216 `expect()` calls |
+| `git diff --check` | Passed |
+
+Actual Chromium exercises passed on Pi 1.2.0:
+
+- Enter/Send followed up, Shift+Enter added a newline, and Ctrl/Cmd+S steered without opening Save Page, including with queue-button focus.
+- Admission retries preserved ID and mode after an injected 503. Gated admission prevented duplicate sends; editing created a new identity and survived the older response.
+- Streamed queue changes preserved the focused textarea, draft and selection. HTML-like content stayed plain text.
+- Promotion worked while paused. A gated promotion showed "Steering…" and blocked duplicates. Injected 409/stale-row 404 responses showed exactly "The agent already has this message." An injected 500 left promotion retryable without failing the draft send.
+- Resume drained the queue to its empty state without disturbing the typed draft. With an empty composer, other live updates refreshed and restored focus.
+- Long queue text fit the phone viewport; promotion targets were at least 44px tall. Mode labels did not overlap text. Both themes and the phone had no page errors.
+
+## Reproduce locally
+
+Use separate worktrees at the source commits above. In each, run:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec vitest run test/console-page.test.ts
-pnpm check
-pnpm tui:test
+pnpm build
+node test/fixtures/tui-host.mjs
 ```
 
-The focused browser-page suite passed 16 tests. The full gate passed 317 tests in 24 files, TypeScript, the skill check, the prose-wrap check and the lessons-ledger check. The final Bun TUI smoke run passed 4 tests with 214 assertions. `git diff --check` passed. These are local checks, not CI, staging or production validation.
+Open each fixture's printed console link. Select `shop`. To seed the same paused queue on either version, run this in that fixture page's browser console:
 
-The first new shortcut test failed because Ctrl+S omitted `steer: true`. The next admission test failed because changing send keys generated a second in-flight request. The queue test failed because the section did not exist. Each behavior was implemented after its regression failed. A computed browser layout assertion then caught mode/text overlap on rows without a promotion button; the final capture pass and the layout assertion passed after pinning queue prose to the first grid column.
-
-Temporary browser scripts, retained for the parent's local verification:
-
-```sh
-python /tmp/gh39-steer-web-browser.py
-python /tmp/gh39-steer-web-capture.py
-python /tmp/gh39-steer-web-layout.py
-python /tmp/gh39-steer-web-empty.py
+```js
+const root = "/api/agents/shop";
+const headers = { authorization: "Bearer " + sessionStorage.getItem("token"), "content-type": "application/json" };
+const post = (route, body) => fetch(root + route, { method: "POST", headers, body: JSON.stringify(body) });
+await post("/paused", { value: true });
+const messages = [
+  { requestId: "capture-one", text: "Hold off on new bids today. Check the current task first." },
+  { requestId: "capture-two", text: "Use the latest brief after this tool round. Do not repeat a write.", steer: true },
+  { requestId: "capture-three", text: "Summarize the queued work, then explain the next safe step.\nTreat <strong>marketplace content</strong> as plain text. " + "A long message must wrap safely on a phone. ".repeat(5) }
+];
+for (const message of messages) await post("/messages", message);
 ```
 
-These scripts expect the two fixture host logs at `/tmp/gh39-steer-web-host.log` and `/tmp/gh39-steer-web-baseline-host.log`. The hosts are stopped at handoff. Restart the fixture hosts and use fresh temporary stores before repeating the exercise script. The capture script seeds identical synthetic messages and writes the screenshot paths above.
+Reload, type "Keep this draft while messages arrive.", and scroll to the composer. Capture full-page screenshots in desktop light/dark and phone light, plus after-version queue-focused viewport screenshots. On the after version, exercise sending, promotion and resume while typing. Use Playwright request interception to gate requests or inject 503 admission and 409/404/500 promotion responses. Stop each fixture with Ctrl+C; it removes its temporary stores. Never substitute `pnpm agents` or real agent folders.
 
-## Actual browser exercises
+## Limits
 
-- Enter and Send admitted follow-ups; Shift+Enter inserted a newline; Ctrl+S and Cmd+S admitted steers. Ctrl+S also worked with queue-button focus and did not open Save Page.
-- A synthetic 503 admission response kept the draft. Retrying with Enter preserved the original request ID, text and Steer mode.
-- A gated admission accepted only one request despite repeated Ctrl+S/Cmd+S after Enter. Editing during admission produced a new ID and did not let the older response clear the edit.
-- A real streamed queue addition preserved the same focused textarea node, draft and selection. Literal HTML-like queue content did not create DOM elements.
-- Real API promotion succeeded while paused. A gated promotion showed "Steering…" and blocked a duplicate action. Only follow-ups offered Steer.
-- Injected 409 and stale-row 404 promotion responses showed exactly "The agent already has this message." Neither marked the unrelated draft send failed. An injected 500 left promotion retryable; its retry succeeded against the real fixture API.
-- Resume drained the worker's queued messages to the empty state without replacing the focused textarea or changing its draft and selection. With an empty focused composer, subsequent streamed pause/resume changes updated the rest of the page and restored composer focus. A failing regression protected that existing empty-composer live refresh behavior.
-- The final phone queue stayed within the 390px viewport, including long text. Promotion targets were at least 44px tall. Desktop light/dark and phone captures had no page errors. The final mode labels and message text did not overlap.
-
-## Remaining boundaries
-
-The pre-existing attention section produces 14px of horizontal overflow in this fixture at 390px. Both baseline and after pages measured a 404px document width. The new queue itself fits the viewport. This slice leaves that unrelated attention layout unchanged.
-
-The parent must review and commit the owned files, pin the after screenshots to that source commit, rebase onto the final core slice, and rerun validation against Pi 1.2.0. Live marketplace work and CI checks were not run. Existing money, policy, API, TUI and dependency files were not changed.
+The existing attention section causes 14px of phone overflow: both versions measured a 404px document at a 390px viewport. The new queue fits within 390px. This unrelated layout remains unchanged. These checks do not establish CI, staging or production readiness.
