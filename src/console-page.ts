@@ -43,7 +43,6 @@ header .row, .page { max-width: 1280px; margin: 0 auto; padding: 10px 24px; disp
 .sq.brand-sq.paused { color: #7F1D1D; }
 header .rule { align-self: stretch; width: 1px; background: #4A4E55; }
 header .switcher { display: inline-flex; align-items: center; gap: 6px; background: #1C1C19; border: 1px solid #4A4E55; border-radius: 6px; padding: 4px 6px 4px 4px; }
-header .role-sq { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--yellow); color: #0B0B0B; flex: none; }
 header .switcher select { background: none; border: none; min-height: 40px; color: #F2F1EA; width: auto; }
 header button { background: transparent; color: #F2F1EA; border-color: #4A4E55; }
 header button.theme { padding: 0; width: 44px; justify-content: center; }
@@ -368,7 +367,7 @@ function header() {
       el("div", { class: "spacer" },
         el("span", { class: "rule" }),
         el("span", { class: "switcher" },
-          el("span", { class: "role-sq", title: roleTitle }, pict(roleGlyph, 15)),
+          el("span", { class: "sq you", title: roleTitle }, pict(roleGlyph, 15)),
           el("select", { "aria-label": "Agent", onchange: (e) => { ui.agent = e.target.value; store.set("agent", ui.agent); ui.open.clear(); ui.raw.clear(); ui.specDraft = null; refresh(); } },
             ui.reopening ? [el("option", { value: ui.agent, selected: true, text: ui.agent + " · reopening…" })] : [],
             (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + " · " + a.name })))),
@@ -703,7 +702,7 @@ function briefingTab() {
 function unlock() {
   let value = "";
   return el("div", { class: "unlock" },
-    el("div", { class: "brand" }, el("span", { class: "sq", style: "background:var(--yellow);color:#0B0B0B" }, pict("agent", 16)), "Agent console"),
+    el("div", { class: "brand" }, el("span", { class: "sq you" }, pict("agent", 16)), "Agent console"),
     el("h1", { style: "margin:0", text: "Unlock the console" }),
     el("p", { style: "margin:0", text: "When pnpm agents --console starts, it prints a console link with a one-time token. Open that link, or paste the token here." }),
     el("form", { style: "display:flex;flex-direction:column;gap:12px", onsubmit: (e) => { e.preventDefault(); if (/^[0-9a-f]{64}$/.test(value.trim())) { token = value.trim(); store.set("token", token); refresh(); } else { ui.error = "That is not a console token."; render(); } } },

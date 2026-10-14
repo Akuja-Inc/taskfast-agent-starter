@@ -46,14 +46,14 @@ const bootPage = () => {
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
     "addEventListener", "ResizeObserver", "fetch", "matchMedia",
-    `${script}\nreturn { turnCard, ui, viaLabel };`,
+    `${script}\nreturn { header, turnCard, ui, unlock, viaLabel };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
     () => new Promise(() => {}), () => ({ matches: false }),
-  ) as { turnCard: (turn: unknown, index: number) => FakeNode; ui: { raw: Set<string> }; viaLabel: (via: string | undefined) => string };
+  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; ui: { raw: Set<string> }; unlock: () => FakeNode; viaLabel: (via: string | undefined) => string };
 };
 
 it("renders the event turn head as a native button", () => {
@@ -190,4 +190,27 @@ it("keeps historical call dots still and pulses only the newest turn's", () => {
   // replyBlock gates the live class on the newest turn of the timeline.
   expect(PAGE).toMatch(/replyBlock\(reply, key \+ "r" \+ r, index === view\.timeline\.length - 1\)/);
   expect(PAGE).toMatch(/"dot " \+ cls \+ \(live \? " live" : ""\)/);
+});
+
+// Every yellow square is the shared .sq.you: no hand copies of its look.
+it("renders the header role square with the shared .sq.you classes", () => {
+  const { header } = bootPage();
+  const row = header()[1].children[0] as FakeNode;
+  const spacer = row.children[2] as FakeNode;
+  const switcher = spacer.children[1] as FakeNode;
+  const roleSq = switcher.children[0] as FakeNode;
+  expect(roleSq.getAttribute("class")).toBe("sq you");
+  expect(roleSq.hasAttribute("style")).toBe(false);
+});
+
+it("renders the unlock brand square with the shared .sq.you classes", () => {
+  const { unlock } = bootPage();
+  const brand = unlock().children[0] as FakeNode;
+  const square = brand.children[0] as FakeNode;
+  expect(square.getAttribute("class")).toBe("sq you");
+  expect(square.hasAttribute("style")).toBe(false);
+});
+
+it("has no hand-copied role-sq rule left in the page", () => {
+  expect(PAGE).not.toContain("role-sq");
 });
