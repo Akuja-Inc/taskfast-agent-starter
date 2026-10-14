@@ -733,7 +733,7 @@ function updateQueuedMessages() {
 
 function timelineTab() {
   const op = view.operator;
-  const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + op.messages.length;
+  const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + (view.queuedMessages || op.messages).length;
   const n = view.timeline.length;
   return el("div", { class: "page" },
     el("main", {},

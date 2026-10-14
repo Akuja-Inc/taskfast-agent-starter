@@ -135,6 +135,15 @@ it("shows the oldest-first mixed queue outside the sticky composer, with Steer o
   expect(nodes(all.find((node) => node.tagName === 'FORM')!).includes(queue!)).toBe(false);
 });
 
+it("counts operator messages already in Pi's inbox in the paused waiting summary", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), events: { event: { kind: 'admitted' } }, queuedMessages: [
+    { requestId: 'first', text: 'Queued follow-up', mode: 'followUp' },
+    { requestId: 'second', text: 'Queued steer', mode: 'steer' },
+  ] });
+  expect(nodes(page.timelineTab()).find((node) => node.getAttribute('class') === 'note')?.textContent).toContain('3 waiting');
+});
+
 it("retains a failed send's ID and mode across retry keys, but edits create a new identity", async () => {
   const requests: { requestId: string; text: string; steer?: boolean }[] = [];
   const page = bootPage((_path, init) => { requests.push(JSON.parse((init as { body: string }).body)); return Promise.reject(new Error('offline')); });
