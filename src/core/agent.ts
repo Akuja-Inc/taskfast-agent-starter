@@ -3,11 +3,11 @@ import { Type, StringEnum, type Message, type Models, type TSchema } from "@eare
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
 import { createTimeout } from "retry";
-import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, InboxDoc, type Conversation, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration, type Tx } from "@earendil-works/pi-durable";
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
-import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState } from "./operator.js";
+import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { marketplacePrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
@@ -70,7 +70,9 @@ export interface OperatorControls {
   setFrozen(frozen: boolean): Promise<void>;
   setPaused(paused: boolean): Promise<void>;
   // Queues the user's words as the next input; the same requestId is delivered once.
-  message(message: { requestId: string; text: string }): Promise<void>;
+  message(message: { requestId: string; text: string; steer?: true }): Promise<void>;
+  queued(): Promise<QueuedOperatorMessage[]>;
+  steer(requestId: string): Promise<SteerResult>;
   addOrder(order: string): Promise<void>;
   removeOrder(index: number): Promise<void>;
   markChecked(id: string): Promise<void>;
@@ -140,10 +142,95 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     await conversation.commit(async (tx) => { await tx.doc(Events); }, context);
     let closed = false;
     let recovering: Promise<void> | undefined;
+    // Serializes operator admission, promotion and drains, not model/tool work.
+    let operatorLine: Promise<void> = Promise.resolve();
+    function onOperatorLine<T>(change: () => Promise<T>): Promise<T> {
+      const next = operatorLine.then(change);
+      operatorLine = next.then(() => {}, () => {});
+      return next;
+    }
+    async function queuedMessages(tx: Tx, requests: ReadonlyMap<SubmissionId, string>): Promise<QueuedOperatorMessage[]> {
+      const state = await tx.doc(Operator);
+      const inbox = await tx.doc(InboxDoc, conversation.id);
+      const messages = new Map<string, QueuedOperatorMessage>();
+      for (const item of inbox.items) {
+        if (item.mode === "write" || typeof item.content !== "string" || !item.content.startsWith(MESSAGE_PREFIX)) continue;
+        const request = requests.get(item.id);
+        const record = request === undefined ? undefined : await tx.submissionByRequest(conversation.id, request);
+        const prefix = request?.startsWith("operator-steer:") ? "operator-steer:" : "operator:";
+        if (record?.id !== item.id || record.status !== "queued" || !request?.startsWith(prefix)) continue;
+        const requestId = request.slice(prefix.length);
+        messages.set(requestId, { requestId, text: item.content.slice(MESSAGE_PREFIX.length), mode: item.mode });
+      }
+      for (const message of state.messages) {
+        if (!messages.has(message.requestId)) messages.set(message.requestId, { requestId: message.requestId, text: message.text, mode: message.mode ?? "followUp" });
+      }
+      for (const [requestId, intent] of Object.entries(state.pendingSteers ?? {})) {
+        const original = await tx.submissionByRequest(conversation.id, `operator:${requestId}`);
+        if (original?.id !== intent.submission) throw new Error("operator steer submission identity changed");
+        if (original?.status === "queued" || (original?.status === "unanswered" && original.reason === "aborted" && original.entry === undefined)) {
+          messages.set(requestId, { requestId, text: intent.text, mode: "steer" });
+        }
+      }
+      const order = new Map((state.queuedOrder ?? []).map((id, index) => [id, index]));
+      return [...messages.values()].sort((a, b) => (order.get(a.requestId) ?? -1) - (order.get(b.requestId) ?? -1));
+    }
+    async function readQueuedMessages(): Promise<QueuedOperatorMessage[]> {
+      const records = (await owner.inspect(context)).submissions;
+      const requests = new Map(records.flatMap((record): [SubmissionId, string][] => record.requestId === undefined ? [] : [[record.id, record.requestId]]));
+      return conversation.commit((tx) => queuedMessages(tx, requests), context);
+    }
+    async function finishSteer(requestId: string): Promise<SteerResult> {
+      const pending = (await owner.snapshot(Operator, context))?.pendingSteers;
+      const intent = pending && Object.hasOwn(pending, requestId) ? pending[requestId] : undefined;
+      if (!intent) return "steered";
+      const original = await owner.submission(intent.submission, context);
+      if (!original) throw new Error("operator steer submission is missing from storage");
+      let record = await original.status(context);
+      if (record.type !== "input" || record.conversationId !== conversation.id || record.requestId !== `operator:${requestId}`) throw new Error("operator steer submission identity changed");
+      if (record.status === "queued") {
+        await original.abort(context);
+        record = await original.status(context);
+      }
+      // Re-aborting returns `settled`. Only this persisted, unplaced abort plus our
+      // durable intent grants permission to admit the replacement after a restart.
+      const aborted = record.status === "unanswered" && record.reason === "aborted" && record.entry === undefined;
+      if (aborted) {
+        if ((await owner.snapshot(Operator, context))?.paused) return "steered";
+        await conversation.submit({ type: "input", requestId: `operator-steer:${requestId}`, content: MESSAGE_PREFIX + intent.text, whenBusy: "steer" }, context);
+      }
+      await conversation.commit(async (tx) => { delete (await tx.doc(Operator)).pendingSteers?.[requestId]; }, context);
+      return aborted ? "steered" : "already_placed";
+    }
+    async function drainMessages(): Promise<void> {
+      await onOperatorLine(async () => {
+        for (const requestId of Object.keys((await owner.snapshot(Operator, context))?.pendingSteers ?? {})) await finishSteer(requestId);
+        const messages = (await owner.snapshot(Operator, context))?.messages ?? [];
+        // The first idle submission starts a run, so Pi cannot reorder this buffer.
+        messages.sort((a, b) => Number(b.mode === "steer") - Number(a.mode === "steer"));
+        for (const { requestId, text, mode } of messages) {
+          if ((await owner.snapshot(Operator, context))?.paused) return;
+          await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text, whenBusy: mode ?? "followUp" }, context);
+          await conversation.commit(async (tx) => {
+            const state = await tx.doc(Operator);
+            state.messages = state.messages.filter((item) => item.requestId !== requestId);
+          }, context);
+        }
+        const queued = new Set((await readQueuedMessages()).map((message) => message.requestId));
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Operator);
+          if (state.queuedOrder) state.queuedOrder = state.queuedOrder.filter((id) => queued.has(id));
+        }, context);
+      });
+    }
     async function recover(): Promise<void> {
       if (closed) return;
       if (recovering) return recovering;
       recovering = (async () => {
+        // Finish withdrawal before any submit() can wake Pi's pre-crash inbox.
+        await onOperatorLine(async () => {
+          for (const requestId of Object.keys((await owner.snapshot(Operator, context))?.pendingSteers ?? {})) await finishSteer(requestId);
+        });
         const pending = await owner.snapshot(Events, context);
         for (const [id, work] of Object.entries(pending?.events ?? {})) {
           if (work.kind === "done" || work.kind === "abandoned") continue;
@@ -171,17 +258,9 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
-        // Paused: settle finished runs, but submit nothing and start no work. Read it
-        // again after the loop so a pause committed mid-pass also stops the drain.
+        // Withdrawal may finish while paused; its replacement must wait for resume.
+        await drainMessages();
         if ((await owner.snapshot(Operator, context))?.paused) return;
-        // The request ID makes a resend, or a crash before the removal commits, one input.
-        for (const { requestId, text } of (await owner.snapshot(Operator, context))?.messages ?? []) {
-          await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text }, context);
-          await conversation.commit(async (tx) => {
-            const state = await tx.doc(Operator);
-            state.messages = state.messages.filter((item) => item.requestId !== requestId);
-          }, context);
-        }
         owner.resume();
         const stalled = await owner.inspect(context);
         const queued = stalled.submissions.find((item) => item.status === "queued");
@@ -236,12 +315,53 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         await recoverLogged();
         await recoverLogged();
       },
-      message: async ({ requestId, text }) => {
-        await conversation.commit(async (tx) => {
+      message: async ({ requestId, text, steer }) => {
+        await onOperatorLine(() => conversation.commit(async (tx) => {
           const state = await tx.doc(Operator);
-          if (!state.messages.some((item) => item.requestId === requestId)) state.messages.push({ requestId, text });
-        }, context);
+          if (await tx.submissionByRequest(conversation.id, `operator:${requestId}`)) return;
+          if (await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`)) return;
+          if (!state.messages.some((item) => item.requestId === requestId)) {
+            state.messages.push({ requestId, text, mode: steer ? "steer" : "followUp" });
+            state.queuedOrder = [...(state.queuedOrder ?? []), requestId];
+          }
+        }, context));
         await recoverLogged();
+      },
+      queued: readQueuedMessages,
+      steer: async (requestId) => {
+        const result = await onOperatorLine(async (): Promise<SteerResult> => {
+          // Capture legacy inbox order before withdrawal replaces its oldest ID.
+          const order = (await readQueuedMessages()).map((message) => message.requestId);
+          const admission = await conversation.commit(async (tx): Promise<SteerResult | "pending"> => {
+            const state = await tx.doc(Operator);
+            if (state.pendingSteers && Object.hasOwn(state.pendingSteers, requestId)) return "pending";
+            const replacement = await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`);
+            if (replacement) return replacement.status === "queued" ? "steered" : "not_found";
+            const original = await tx.submissionByRequest(conversation.id, `operator:${requestId}`);
+            if (!original) {
+              const buffered = state.messages.find((item) => item.requestId === requestId);
+              if (!buffered) return "not_found";
+              buffered.mode = "steer";
+              state.queuedOrder = [...new Set([...order, ...(state.queuedOrder ?? [])])];
+              return "steered";
+            }
+            if (original.status !== "queued") return "not_found";
+            const item = (await tx.doc(InboxDoc, conversation.id)).items.find((input) => input.id === original.id);
+            if (!item || item.mode === "write" || typeof item.content !== "string" || !item.content.startsWith(MESSAGE_PREFIX)) return "not_found";
+            if (item.mode === "steer") return "steered";
+            state.queuedOrder = [...new Set([...order, ...(state.queuedOrder ?? [])])];
+            state.pendingSteers = { ...(state.pendingSteers ?? {}), [requestId]: { submission: original.id, text: item.content.slice(MESSAGE_PREFIX.length) } };
+            // Death after submit but before removing a buffer item may leave both.
+            state.messages = state.messages.filter((message) => message.requestId !== requestId);
+            return "pending";
+          }, context);
+          if (admission !== "pending") return admission;
+          // The intent is durable. A transient recovery error cannot retract ACK.
+          try { return await finishSteer(requestId); }
+          catch (error) { log(`operator steer recovery: ${String(error)}`); return "steered"; }
+        });
+        if (result !== "not_found") await recoverLogged();
+        return result;
       },
       addOrder: async (order) => {
         // Each order renders as one bullet line in the system prompt; collapsing line
@@ -285,8 +405,9 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         clearInterval(timer);
         // A recovery still in flight may reject (SessionFailed after a storage
         // error); deliver() and ping() already report it, so closing ignores it
-        // and still releases ownership.
+        // and still drains operator admission before releasing ownership.
         await recovering?.catch(() => {});
+        await operatorLine;
         await owner.close(context);
       },
     };

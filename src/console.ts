@@ -52,6 +52,8 @@ function eventIdOf(line: string): string | undefined {
   } catch { return undefined; }
 }
 const MAX_TEXT = 4000;
+const REQUEST_ID_PROBLEM = "requestId must be 1-100 letters, digits, - or _";
+const validRequestId = (value: unknown): value is string => typeof value === "string" && /^[\w-]{1,100}$/.test(value);
 // A burst of commits (a model's partial answers land every ~100 ms) becomes one view.
 export const COALESCE_MS = 250;
 export const PING_MS = 15_000;
@@ -85,9 +87,11 @@ async function act(controls: ConsoleAgent["agent"]["operator"], action: string |
     case "messages": {
       const requestId = field(body, "requestId");
       const text = field(body, "text");
-      if (typeof requestId !== "string" || !/^[\w-]{1,100}$/.test(requestId)) return "requestId must be 1-100 letters, digits, - or _";
+      const steer = field(body, "steer");
+      if (!validRequestId(requestId)) return REQUEST_ID_PROBLEM;
       if (!words(text)) return `text must be 1-${MAX_TEXT} characters`;
-      await controls.message({ requestId, text });
+      if (steer !== undefined && steer !== true) return "steer must be true or omitted";
+      await controls.message({ requestId, text, ...(steer === true ? { steer } : {}) });
       return undefined;
     }
     case "orders": {
@@ -116,7 +120,7 @@ async function act(controls: ConsoleAgent["agent"]["operator"], action: string |
 // One agent as GET /api/agents/:id and its stream show it.
 export type ConsoleView = Awaited<ReturnType<typeof view>>;
 async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
-  const [policy, operator, events, transcript] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES)]);
+  const [policy, operator, events, transcript, queuedMessages] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES), agent.operator.queued()]);
   const timeline = buildTimeline(transcript);
   const taskIds = [...new Set(timeline.flatMap((turn) => turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))))].slice(-TASK_READS);
   const facts = await host?.(taskIds);
@@ -129,7 +133,7 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
     ...deadLetters.filter((letter) => !operator.checked[letter.id]),
   ];
   return {
-    id, env, spec, operator, attention, events,
+    id, env, spec, operator, attention, events, queuedMessages,
     actions: policy.actions, spend: policy.spend, notes: policy.memory,
     prompt: marketplacePrompt(spec, policy.memory, operator.orders),
     timeline, host: facts && { unlockFile: facts.unlockFile, stream: facts.stream, wallet: facts.wallet, tasks: facts.tasks },
@@ -215,7 +219,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       await controls.removeOrder(Number(arg));
       return send(res, 204, "");
     }
-    if (req.method === "PUT" && action === "spec" && item.saveSpec) {
+    if (req.method === "PUT" && action === "spec" && arg === undefined && item.saveSpec) {
       let spec: AgentSpec;
       try { spec = parseAgentSpec(await readJson(req)); }
       catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
@@ -223,6 +227,17 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       return send(res, 204, "");
     }
     if (req.method !== "POST") return send(res, 404, { error: "not found" });
+    if (action === "steer" && arg !== undefined) {
+      if (!validRequestId(arg)) return send(res, 400, { error: REQUEST_ID_PROBLEM });
+      const result = await controls.steer(arg);
+      switch (result) {
+        case "steered": return send(res, 204, "");
+        case "already_placed": return send(res, 409, { error: "The agent already has this message." });
+        case "not_found": return send(res, 404, { error: "Queued message not found." });
+        default: { const exhaustive: never = result; throw new Error(`unknown steer result: ${exhaustive}`); }
+      }
+    }
+    if (arg !== undefined) return send(res, 404, { error: "not found" });
     const body = await readJson(req);
     const problem = await act(controls, action, body);
     return problem === undefined ? send(res, 204, "") : send(res, problem === null ? 404 : 400, { error: problem ?? "not found" });

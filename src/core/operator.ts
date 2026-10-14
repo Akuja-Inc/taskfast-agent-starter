@@ -1,4 +1,7 @@
-import { defineDoc } from "@earendil-works/pi-durable";
+import { defineDoc, type SubmissionId } from "@earendil-works/pi-durable";
+
+export type QueuedOperatorMessage = { requestId: string; text: string; mode: "followUp" | "steer" };
+export type SteerResult = "steered" | "already_placed" | "not_found";
 
 // What the user has told the host to do with this agent. Session-scoped like Policy,
 // so reset and compaction keep it; kept apart from Policy, whose version never moves.
@@ -8,7 +11,11 @@ export type OperatorState = {
   // Events are still admitted and acknowledged; no new model work starts.
   paused: boolean;
   // Messages not yet handed to the conversation, oldest first.
-  messages: { requestId: string; text: string }[];
+  messages: { requestId: string; text: string; mode?: "followUp" | "steer" }[];
+  // Additive v1 fields: old documents have neither. Intents precede Pi withdrawal.
+  pendingSteers?: Record<string, { submission: SubmissionId; text: string }>;
+  // Original admission order survives replacement with a new Pi submission ID.
+  queuedOrder?: string[];
   // Standing orders, read into every system prompt. Only the user changes them.
   orders: string[];
   // Alerts the user has looked into, by action key or event id, with when. Never

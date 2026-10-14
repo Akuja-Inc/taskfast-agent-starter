@@ -82,6 +82,57 @@ it("delivers an operator message once, however often the same request is sent", 
   expect(kit.faux.state.callCount).toBe(1);
 });
 
+it("places a steer after tools in the busy run and leaves a follow-up for the next run", async () => {
+  let entered = () => {};
+  let release = () => {};
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const kit = await open(undefined, async () => { entered(); await gate; return { outcome: "ok", data: {} }; });
+  const prompts: string[] = [];
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("wallet_balance", {})], { stopReason: "toolUse" }),
+    (ctx) => { prompts.push(JSON.stringify(ctx.messages)); return fauxAssistantMessage("Finished the current work."); },
+    (ctx) => { prompts.push(JSON.stringify(ctx.messages)); return fauxAssistantMessage("Handled the follow-up."); },
+  ]);
+  await kit.agent.ping();
+  await started;
+  try {
+    await kit.agent.operator.message({ requestId: "later", text: "A different task later." });
+    await kit.agent.operator.message({ requestId: "now", text: "Correct the current task.", steer: true });
+  } finally { release(); }
+  await kit.agent.waitForIdle();
+  expect(prompts).toHaveLength(2);
+  expect(prompts[0]).toContain("Correct the current task.");
+  expect(prompts[0]).not.toContain("A different task later.");
+  expect(prompts[1]).toContain("A different task later.");
+});
+
+it("promotes a queued follow-up exactly once inside the busy run", async () => {
+  let entered = () => {};
+  let release = () => {};
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const kit = await open(undefined, async () => { entered(); await gate; return { outcome: "ok", data: {} }; });
+  let prompt = "";
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("wallet_balance", {})], { stopReason: "toolUse" }),
+    (ctx) => { prompt = JSON.stringify(ctx.messages); return fauxAssistantMessage("Corrected."); },
+  ]);
+  await kit.agent.ping();
+  await started;
+  try {
+    await kit.agent.operator.message({ requestId: "promote", text: "Skip that job." });
+    expect(await kit.agent.operator.queued()).toEqual([{ requestId: "promote", text: "Skip that job.", mode: "followUp" }]);
+    expect(await kit.agent.operator.steer("promote")).toBe("steered");
+    expect(await kit.agent.operator.steer("promote")).toBe("steered");
+    expect(await kit.agent.operator.queued()).toEqual([{ requestId: "promote", text: "Skip that job.", mode: "steer" }]);
+  } finally { release(); }
+  await kit.agent.waitForIdle();
+  expect(prompt).toContain("Skip that job.");
+  expect(JSON.stringify(await kit.agent.transcript(100)).split("Skip that job.")).toHaveLength(2);
+  expect(kit.faux.state.callCount).toBe(2);
+});
+
 it("holds operator messages while paused and delivers them on resume", async () => {
   const kit = await open();
   await kit.agent.operator.setPaused(true);
@@ -92,6 +143,31 @@ it("holds operator messages while paused and delivers them on resume", async () 
   await kit.agent.operator.setPaused(false);
   await kit.agent.waitForIdle();
   expect(JSON.stringify((await kit.agent.conversation.context(context)).messages)).toContain("The wallet is funded now.");
+});
+
+it("stops draining buffered messages when a pause lands mid-drain", async () => {
+  const kit = await open();
+  await kit.agent.operator.setPaused(true);
+  for (let n = 0; n < 30; n++) await kit.agent.operator.message({ requestId: `buffer-${n}`, text: `Buffered correction ${n}.`, ...(n === 0 ? { steer: true } : {}) });
+  let entered = () => {};
+  let release = () => {};
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  kit.faux.setResponses([
+    async () => { entered(); await gate; return fauxAssistantMessage("Handled the first correction."); },
+    ...Array.from({ length: 30 }, () => fauxAssistantMessage("Handled another correction.")),
+  ]);
+  const resuming = kit.agent.operator.setPaused(false);
+  await started;
+  await kit.agent.operator.setPaused(true);
+  await resuming;
+  release();
+  await kit.agent.waitForIdle();
+  expect((await kit.agent.operator.state()).messages.some((message) => message.requestId === "buffer-29")).toBe(true);
+  expect(JSON.stringify(await kit.agent.transcript(200))).not.toContain("Buffered correction 29.");
+  await kit.agent.operator.setPaused(false);
+  await kit.agent.waitForIdle();
+  expect(JSON.stringify(await kit.agent.transcript(200)).split("Buffered correction 29.")).toHaveLength(2);
 });
 
 it("puts standing orders in every system prompt, where the agent's own forget cannot reach them", async () => {
