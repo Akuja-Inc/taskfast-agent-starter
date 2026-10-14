@@ -652,12 +652,13 @@ async function submitMessage(mode) {
     }
     await refresh();
   } catch (error) {
-    if (ui.attempt === attempt && ui.agent === attempt.agent) ui.messageError = "Message not confirmed. Retry keeps its ID and " + (attempt.mode === "steer" ? "Steer" : "Follow-up") + " mode. " + error.message;
+    if (ui.attempt === attempt && ui.agent === attempt.agent) ui.messageError = "Message not confirmed. Retry keeps its ID and " + modeLabel(attempt.mode) + " mode. " + error.message;
   } finally { attempt.pending = false; render(); }
 }
+const modeLabel = (mode) => mode === "steer" ? "Steer" : "Follow-up";
 function updateMessageStatus() {
   const status = document.querySelector(".message-status");
-  if (status) { status.textContent = ui.messageError || (ui.attempt && ui.attempt.pending ? "Sending " + (ui.attempt.mode === "steer" ? "Steer" : "Follow-up") + "…" : ""); status.className = "message-status " + (ui.messageError ? "error" : "small"); }
+  if (status) { status.textContent = ui.messageError || (ui.attempt && ui.attempt.pending ? "Sending " + modeLabel(ui.attempt.mode) + "…" : ""); status.className = "message-status " + (ui.messageError ? "error" : "small"); }
   const send = document.querySelector("form.composer .send");
   if (send) send.disabled = !!(ui.attempt && ui.attempt.pending);
 }
@@ -693,7 +694,7 @@ function queueRow(message) {
   return row;
 }
 function updateQueueRow(row, message) {
-  row.querySelector(".queue-mode").textContent = message.mode === "steer" ? "Steer" : "Follow-up";
+  row.querySelector(".queue-mode").textContent = modeLabel(message.mode);
   const text = row.querySelector(".queue-text");
   if (text.textContent !== message.text) text.textContent = message.text;
   const state = ui.promotions.get(promotionKey(ui.agent, message.requestId));
@@ -707,7 +708,7 @@ function updateQueueRow(row, message) {
   } else if (button) { if (document.activeElement === button) row.closest("section").focus(); button.remove(); }
 }
 function queuedMessages() {
-  const queue = view.queuedMessages || [];
+  const queue = view.queuedMessages;
   return el("section", { class: "section", id: "queued-messages", "data-agent": ui.agent, tabindex: "-1", "aria-label": "Queued messages" },
     band("Queued messages"),
     el("div", { class: "section queued-rows" }, queue.length ? queue.map(queueRow) : el("div", { class: "small queue-empty", text: "No queued messages." })),
@@ -716,7 +717,7 @@ function queuedMessages() {
 function updateQueuedMessages() {
   const section = document.querySelector("#queued-messages");
   if (!section || !view || ui.tab !== "timeline" || section.getAttribute("data-agent") !== ui.agent) return;
-  const rows = section.querySelector(".queued-rows"), queue = view.queuedMessages || [];
+  const rows = section.querySelector(".queued-rows"), queue = view.queuedMessages;
   const existing = new Map([...rows.children].filter((row) => row.hasAttribute("data-request-id")).map((row) => [row.getAttribute("data-request-id"), row]));
   const ids = new Set(queue.map((message) => message.requestId));
   for (const [id, row] of existing) if (!ids.has(id)) { if (row.contains(document.activeElement)) section.focus(); row.remove(); }
@@ -733,7 +734,7 @@ function updateQueuedMessages() {
 
 function timelineTab() {
   const op = view.operator;
-  const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + (view.queuedMessages || op.messages).length;
+  const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + view.queuedMessages.length;
   const n = view.timeline.length;
   return el("div", { class: "page" },
     el("main", {},
@@ -834,13 +835,14 @@ function render() {
   const activeTag = document.activeElement && document.activeElement.tagName;
   // Keep keyboard focus on stable queue controls as well as on the editor.
   const queue = document.querySelector("#queued-messages");
-  if (token && view && !ui.reopening && ui.tab === "timeline" && queue && queue.contains(document.activeElement)) return;
+  const timeline = token && view && !ui.reopening && ui.tab === "timeline";
+  if (timeline && queue && queue.contains(document.activeElement)) return;
   // Briefing fields and inputs keep the old protection: never rebuild under them.
   if ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "briefing")) return;
   // Queue and admission feedback update above without rebuilding a typed draft.
   // An empty composer keeps the existing full live refresh and gets focus back.
   const taHadFocus = activeTag === "TEXTAREA";
-  if (taHadFocus && ui.draft && token && view && !ui.reopening && ui.tab === "timeline") return;
+  if (taHadFocus && ui.draft && timeline) return;
   if (taHadFocus) ui.focusComposer = true;
   app.replaceChildren(...(!token ? [unlock()] :
     !list || (!view && !ui.reopening) ? [el("div", { class: "unlock", text: ui.error || "Loading…" })] :
