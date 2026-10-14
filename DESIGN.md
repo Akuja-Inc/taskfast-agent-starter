@@ -288,7 +288,7 @@ The palette is a sign cabinet: one saturated yellow for wayfinding, black and of
 - **Hairline** (rgba(11,11,11,.72)): the 1px frame on cards, turn heads and task cards; the same value sets the band's qualifier text.
 - **Code Ink** (#E9E7DC): text on the black JSON panel and its copy button.
 - **Header Line** (#4A4E55): the border on controls inside the black header.
-- **State hues** (#56D364 running, #F85149 paused): the robot state glyph in the black header, the same in both themes. The paused red is a user-pinned stop signal, an explicit exception to The Red Means Money Rule.
+- **State hues** (#56D364 running, #F85149 frozen): the freeze toggle's knob, track and label and the frozen budget figure on the dark budget plate, the same in both themes. The header's own state mark is the brand robot's glyph, deep green (#14532D) or deep red (#7F1D1D) on the constant yellow square; the paused red is a user-pinned stop signal, an explicit exception to The Red Means Money Rule.
 
 ### The dark theme
 One sign system, re-inked for night: asphalt ground (#131311), night panel (#1C1C19), off-white ink (#F2F1EA), softened soft (#C9C8BE) and muted (#A3A298) inks, a lighter hairline (rgba(242,241,234,.5)), and true black squares (#000000) holding their edges with a 1px off-white outline. Role and safety hues brighten for contrast: ultramarine #7AA8FF, violet #B794F6, green #56D364, amber #D29922 on a #3A2E10 tint, red #F85149. Schiphol Yellow, the environment hues, the staging text brown, the black header and the JSON panel stay exactly as they are in the light theme.
@@ -350,7 +350,7 @@ Corners stay nearly square, the way sign panels are. Signs, cards, tags, notes, 
 Physical sign-plate keys.
 - **Shape:** gently rounded (6px), 44px minimum height, 16px horizontal padding, 1px ink frame.
 - **Primary:** the highest-contrast plate of the theme: Sign Black with white text in the light theme, Schiphol Yellow with black text in the dark theme, 600 weight. One per region: Send, Add, Unlock, Run again, Save & reopen.
-- **Outline (default):** Panel surface with ink text and a 1px ink frame. The workhorse: Pause, Resume, Freeze, Discard, Remove, Raw event.
+- **Outline (default):** Panel surface with ink text and a 1px ink frame. The workhorse: Pause/Resume, Discard, Remove, Run again, Raw event on an abandoned alert. Freeze spending is not a button: it is the animated toggle on the budget card.
 - **Attention action squares:** the alert's affordances are not text buttons. Two solid 28px pictogram squares close the tag row: an amber wrench that drafts a fix-it message into the composer and focuses it, and a black X that marks the alert checked. They clear the alert only, never the ledger.
 - **Tool-calls ghost:** the tool-call affordance is not a pill. A violet server pictogram with a tabular count at 28px, borderless, with an invisible 44px hit area. Failed and uncertain calls show as a throbbing 8px dot (Money Red for failed, Money Amber for uncertain), never as text the operator cannot act on. The pulse is the system's one animation, and it stands still under prefers-reduced-motion. The count and state stay in the aria-label.
 - **Hover / Focus:** focus is a 2px Agent Ultramarine outline offset by 2px on everything. Hovers are absent by design; the exceptions are the copy button, which swaps its plate shade, the composer's sample chips, whose dashed frame turns solid, and the attention action squares, where the wrench turns Money Red and the X's glyph turns Money Amber. State changes render immediately, with no transitions.
@@ -371,7 +371,7 @@ The signature component.
 
 ### Tags and status
 - **Tag:** micro-caps (700, 11px, 0.07em, uppercase) on a black plate with a 2px radius and 5px 8px padding. It classifies alert kinds only (UNCERTAIN amber, ABANDONED and DEAD-LETTERED red); turn origins are carried by their pictogram squares, never by a text tag.
-- **Agent state glyph:** the live agent state in the header is the robot itself, tinted #56D364 when running and #F85149 when paused, with the waiting count beside it in 12px tabular numerals while paused and work waits. No pill, no words; the full state stays in the title and for screen readers.
+- **Agent state glyph:** the live agent state in the header is the brand robot itself: its glyph on the constant yellow square turns deep green (#14532D) while running and deep red (#7F1D1D) while paused. There is no pill and no separate status mark. The waiting count stays out of the glyph: it lives in the square's title and in a screen-reader-only status, and the paused note in the timeline names it.
 
 ### Cards and containers
 - **Card:** the Panel surface with a 1px hairline frame, 2px radius, 16px 18px padding and 10px internal gaps. Headings at 15px.
@@ -389,7 +389,7 @@ The signature component.
 The message form is a card of textarea, a row of Try sample chips, a full-width primary Send, and a right-aligned kbd hint line. The field carries no visible label: its name lives in an aria-label and a screen-reader-only span, the placeholder teaches by example, and the field takes focus when the page loads. The placeholder shows a real message the operator has sent before (e.g. "Post one copy-editing job under $15."). Sample chips are dashed pills that prefill the field, so a first-timer sees what a message can do. Enter sends, Shift+Enter adds a line, Ctrl+S steers; every path runs the same dedup-safe submit.
 
 ### Navigation and header
-- **Header:** a black bar in both themes with off-white content. The yellow brand square and the wordmark sit left with the tabs; the agent state glyph, Freeze, Pause, the theme toggle and the agent switcher sit right. Header buttons are transparent plates with Header Line frames, the agent select a near-black plate; the pressed Freeze button fills Money Red.
+- **Header:** a black bar in both themes with off-white content. The yellow brand square and the wordmark sit left with the tabs; the right cluster is a hairline rule, the agent switcher plate (yellow role square fused with the near-black select), the theme toggle, and Pause. Freeze spending lives in the budget card, not the header.
 - **Tabs:** 44px text links. The current tab becomes a yellow plate with black 700 text, the wayfinding highlight. There is no hover state.
 - **Environment banner:** a full-width strip above the header on the environment hue, 13px at 600 with 0.04em tracking. The host address sits demoted at its right edge (12px, 85% opacity). Always first, always visible.
 - **Frozen strip:** when spending is frozen, a Money Red strip with white 14px text (10px 24px padding, role="alert") under the header.
