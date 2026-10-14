@@ -130,7 +130,9 @@ pnpm tui 'http://127.0.0.1:7070/#token=…'   # also works, but puts the token i
 
 The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`, `bun.lock`) before each run; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.
 
-Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Briefing, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`.
+Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel (Timeline, alerts, queued messages) · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `s` steer the selected queued follow-up · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Briefing, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`; Tab into queued messages opens the sidebar too.
+
+In the Timeline composer (`m`), Enter sends a follow-up for the next run; Ctrl+S sends a steer after the current tool round. Steering cannot cancel a tool call or money action already in flight. The Agent sidebar shows each queued message as Follow-up or Steer. Tab focuses that list; j/k selects a message and s promotes only the selected follow-up. Selection follows its request ID through live refreshes, never its row number. If the message has already left the queue, the TUI says "The agent already has this message." Messages and promotions stay available while paused; on resume, buffered steers run before follow-ups. A failed send keeps the draft and retries the same request ID and mode, even if you retry with the other shortcut.
 
 | Timeline | Tool calls |
 | --- | --- |
@@ -144,7 +146,9 @@ Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` n
 | **Can't reach the console** | |
 | ![Can't reach the console](docs/tui/cant-reach.png) | |
 
-`pnpm tui:test` runs its smoke test against a throwaway host (temporary agent folders, real stores, scripted model, fake CLI).
+Steering proof: [normal sidebar](docs/tui/steer-after-normal.png), [narrow sidebar](docs/tui/steer-after-narrow.png), [help](docs/tui/steer-after-help.png), and [capture provenance](docs/tui/steer-evidence.md).
+
+`pnpm tui:test` runs its smoke test against a throwaway host (temporary agent folders, real stores, scripted model, fake CLI). It exercises focused Ctrl+S, Enter, queue promotion, a lost send acknowledgement, a late promotion, pause/resume and Briefing's spending-limit save confirmation.
 
 ### Wallet unlock
 

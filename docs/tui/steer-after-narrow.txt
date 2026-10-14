@@ -1,0 +1,44 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop · Your Name (poster) › [1 Timeline] 2 Briefing    ● paused · 3 waiting   spend
+ Paused: events are still received and stored. 3 waiting; steers run before follow-ups on
+┌─ Timeline ─────────────────────────────────────────────────────────────────────────────┐
+│ not repeat uncertain writes.                                                           │
+│ ▶ Your Name — (tool calls only)                                                        │
+│     [▸ 4 tool calls · 1 failed · 1 uncertain]                                          │
+│     TASK_CLAIM  Edit 12 product photos  in_progress · budget $18.00 · worker assigned  │
+│ http://localhost:4000/tasks/11111111-1111-4111-8111-111111111111                       │
+│     MESSAGE_SEND  Write 5 product descriptions  open · budget $20.00  http://          │
+│ localhost:4000/tasks/22222222-2222-4222-8222-222222222222                              │
+│   Your Name — Claimed the photo edit. The message was refused and the bid acceptance   │
+│ timed out, so it is uncertain: please check it before I do anything else on that task. │
+│                                                                                        │
+│                                                                                       █│
+│ EVENT  21:57  bid.created · task 22222222-2222-4222-8222-222222222222                 █│
+│   Your Name — A new bid arrived on the copywriting job. I will wait for your check on █│
+│ the uncertain acceptance first.                                                       █│
+│                                                                                       █│
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Message · Enter follow-up · Ctrl+S steer ─────────────────────────────────────────────┐
+│ m to write to Your Name; Enter next run / Ctrl+S after tool round                      │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Agent ────────────────────────────────────────────────────────────────────────────────┐
+│ Queued messages · 3                                                                   █│
+│ Tab focus · j/k select · s steer                                                      █│
+│ ▶ Follow-up · s to steer                                                              █│
+│ Check the photo deadline before bidding.                                              █│
+│   Follow-up · s to steer                                                              █│
+│ Keep new commitments under $15.                                                       █│
+│   Steer · after tool round                                                            █│
+│ Prioritize the existing photo edit.                                                   █│
+│                                                                                       █│
+│ Ready to work? yes                                                                    ▀│
+│ ✓ Wallet balance: 50.00 USDC                                                           │
+│ ✓ Wallet unlock file: present                                                          │
+│ ✓ Event stream: connected                                                              │
+│ ✓ Model: anthropic:claude-haiku-5-5                                                    │
+│ ✓ Spending limits: $20.00 per job · $50.00 per day                                     │
+│                                                                                        │
+│ Tasks                                                                                  │
+│ POSTED · 0                                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+ i sidebar · Tab queue · s steer · a alerts (2) · m message · p pause · ? help · q quit

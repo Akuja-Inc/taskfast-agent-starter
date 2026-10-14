@@ -1,6 +1,7 @@
 // The terminal UI against a throwaway host (test/fixtures/tui-host.mjs: temporary agent
 // folders, real stores, scripted model, fake CLI). Run with `pnpm tui:test`.
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
+import type { ConsoleView } from "../console.js";
 import { spawn } from "node:child_process";
 import { testRender } from "@opentui/solid";
 import { App } from "./app.js";
@@ -79,7 +80,7 @@ test("draws a live agent and steers it through the console API", async () => {
   await until((frame) => frame.includes("Your message to the agent"));
   await keys.typeText("Keep every job under $15.");
   keys.pressEnter();
-  await until((frame) => frame.includes("Message queued") && frame.includes("1 waiting"));
+  await until((frame) => frame.includes("Follow-up queued") && frame.includes("1 waiting"));
   keys.pressKey("p");
   await until((frame) => frame.includes("YOU") && frame.includes("Keep every job under $15.") && frame.includes("Understood."));
 
@@ -99,6 +100,158 @@ test("draws a live agent and steers it through the console API", async () => {
   expect(quits()).toBe(1);
   expect(setup.renderer.isDestroyed).toBe(true);
   expect((await fetch(new URL("/api/agents", link), { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
+}, 60_000);
+
+test("the focused composer sends steers, queue focus promotes by ID, and Briefing still confirms saving", async () => {
+  const other = await startHost();
+  const headers = { authorization: `Bearer ${other.link.hash.slice("#token=".length)}`, "content-type": "application/json" };
+  const path = other.link.origin + "/api/agents/shop";
+  const api = async (action: string, body?: unknown): Promise<ConsoleView> => {
+    const response = await fetch(path + action, { method: body === undefined ? "GET" : "POST", headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    expect(response.ok).toBe(true);
+    return response.status === 204 ? api("") : await response.json() as ConsoleView;
+  };
+  const { setup, until, keys } = await draw(130, 48, other.link.origin, other.link.hash.slice("#token=".length));
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    keys.pressKey("p");
+    await until((frame) => frame.includes("● paused"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("Steer from the focused input.");
+    keys.pressKey("s", { ctrl: true });
+    await until((frame) => frame.includes("Steer queued") && frame.includes("Queued messages · 1"));
+    let current = await api("");
+    expect(current.queuedMessages).toHaveLength(1);
+    expect(current.queuedMessages[0]).toMatchObject({ text: "Steer from the focused input.", mode: "steer" }); // No typed Ctrl+S.
+
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("A follow-up to promote.");
+    keys.pressEnter();
+    await until((frame) => frame.includes("Follow-up queued") && frame.includes("Queued messages · 2"));
+    current = await api("");
+    const original = current.queuedMessages.find((row) => row.mode === "followUp");
+    expect(original).toBeDefined();
+    keys.pressTab();
+    keys.pressTab();
+    keys.pressKey("j");
+    keys.pressKey("s");
+    await until((frame) => frame.includes("Message set to Steer."));
+    current = await api("");
+    expect(current.queuedMessages).toHaveLength(2);
+    expect(current.queuedMessages.find((row) => row.requestId === original?.requestId)?.mode).toBe("steer");
+
+    // Direct API steering uses the same live queue, even while paused.
+    await api("/messages", { requestId: "smoke-direct", text: "Direct API steer.", steer: true });
+    await until((frame) => frame.includes("Queued messages · 3"));
+    keys.pressKey("p");
+    await until((frame) => frame.includes("Queued messages · 0") && frame.includes("Direct API steer."));
+    current = await api("");
+    expect(current.timeline.filter((turn) => turn.kind === "operator").map((turn) => turn.text)).toEqual([
+      "Steer from the focused input.", "A follow-up to promote.", "Direct API steer.",
+    ]);
+
+    // Editing the spending limit and Ctrl+S must still be a Briefing save, never a message.
+    keys.pressKey("2");
+    keys.pressTab();
+    keys.pressKey("j");
+    keys.pressKey("j");
+    keys.pressEnter();
+    await until(() => setup.renderer.currentFocusedEditor !== null);
+    keys.pressKey("a", { ctrl: true }); // Start of the input, not select-all.
+    keys.pressKey("k", { ctrl: true }); // Delete to its end.
+    await keys.typeText("25");
+    keys.pressEnter();
+    await until((frame) => frame.includes("Unsaved changes") && setup.renderer.currentFocusedEditor === null);
+    keys.pressKey("s", { ctrl: true });
+    await until((frame) => frame.includes("Confirm spending change: Per job limit $20.00 → $25.00"));
+    keys.pressKey("n");
+    keys.pressKey("s", { ctrl: true });
+    await until((frame) => frame.includes("Save agent.json and reopen only this agent?"));
+    keys.pressKey("y");
+    await until((frame) => frame.includes("Saved. Only this agent reopened."));
+    current = await api("");
+    expect(current.spec.limits?.perJobUsd).toBe(25);
+    expect(current.queuedMessages).toHaveLength(0);
+  } finally { setup.renderer.destroy(); other.host.kill("SIGTERM"); }
+}, 60_000);
+
+test("retries an admitted steer without changing ID or mode, and reports a real late-promotion 404", async () => {
+  const other = await startHost();
+  const headers = { authorization: `Bearer ${other.link.hash.slice("#token=".length)}`, "content-type": "application/json" };
+  const path = other.link.origin + "/api/agents/shop";
+  const { setup, until, keys } = await draw(90, 44, other.link.origin, other.link.hash.slice("#token=".length));
+  const fetchReal = globalThis.fetch;
+  const sent: unknown[] = [];
+  let promotions = 0;
+  const requests = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const url = String(input);
+    if (url === path + "/messages" && init?.method === "POST") {
+      sent.push(JSON.parse(String(init.body)));
+      const response = await fetchReal(input, init);
+      if (sent.length === 1) throw new Error("Test dropped admission reply."); // Real admission, lost acknowledgement.
+      return response;
+    }
+    if (url.startsWith(path + "/steer/")) {
+      promotions++;
+      // The UI selected a visible row, but Pi places it before the handler begins.
+      await fetchReal(path + "/paused", { method: "POST", headers, body: JSON.stringify({ value: false }) });
+      for (let i = 0; i < 200; i++) {
+        const current = await (await fetchReal(path, { headers })).json() as ConsoleView;
+        if (!current.queuedMessages.length) break;
+        await Bun.sleep(10);
+      }
+      const response = await fetchReal(input, init);
+      expect(response.status).toBe(404);
+      return response;
+    }
+    return fetchReal(input, init);
+  }, { preconnect: fetchReal.preconnect }));
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    keys.pressKey("p");
+    await until((frame) => frame.includes("● paused"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("Keep this steer and its identity.");
+    keys.pressKey("s", { ctrl: true });
+    await until((frame) => frame.includes("Test dropped admission reply."));
+    // The failed acknowledgement must leave the actual focused input and text intact.
+    expect(setup.captureCharFrame()).toContain("Keep this steer and its identity.");
+    keys.pressEnter(); // Retry with the other shortcut. It must still be a steer.
+    await until((frame) => frame.includes("Steer queued"));
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(sent[1]).toMatchObject({ text: "Keep this steer and its identity.", steer: true });
+    let current = await (await fetchReal(path, { headers })).json() as ConsoleView;
+    expect(current.queuedMessages).toHaveLength(1);
+
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("A late selected follow-up.");
+    keys.pressEnter();
+    await until((frame) => frame.includes("Follow-up queued"));
+    expect(sent[2]).not.toHaveProperty("steer");
+    expect(setup.captureCharFrame()).not.toContain("Queued messages");
+    keys.pressTab();
+    keys.pressTab(); // Queue focus opens the sidebar even without pressing i.
+    await until((frame) => frame.includes("Queued messages · 2"));
+    keys.pressKey("G"); // Select the last row even if the queue loaded after focus.
+    await until((frame) => frame.includes("▶ Follow-up"));
+    keys.pressKey("s");
+    await until((frame) => frame.includes("The agent already has this message."));
+    expect(promotions).toBe(1);
+    await until((frame) => frame.includes("Queued messages · 0"));
+    keys.pressKey("s"); // Stale ID never falls through to a different row or a send.
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("The agent already has this message.");
+    expect(promotions).toBe(1);
+    current = await (await fetchReal(path, { headers })).json() as ConsoleView;
+    expect(current.timeline.filter((turn) => turn.kind === "operator").map((turn) => turn.text)).toEqual([
+      "Keep this steer and its identity.", "A late selected follow-up.",
+    ]);
+  } finally { requests.mockRestore(); setup.renderer.destroy(); other.host.kill("SIGTERM"); }
 }, 60_000);
 
 test("folds the sidebar away below 100 columns", async () => {

@@ -8,7 +8,9 @@ import { screen } from "./screen.js";
 export interface Ui {
   tab: "timeline" | "briefing";
   agent: number;
-  panel: "timeline" | "attention" | "sidebar" | "orders" | "fields";
+  panel: "timeline" | "attention" | "queue" | "orders" | "fields";
+  // Never fall back to an index when a selected message leaves during a refresh.
+  queuedRequestId?: string;
   // Selected timeline item (a reply, or a turn without one) and alert.
   reply: number;
   alert: number;
@@ -21,8 +23,9 @@ export interface Ui {
   // Narrow terminals fold these away.
   sidebar: boolean;
   alerts: boolean;
-  // Which line has the keyboard: keys go to it, not here, until enter or escape.
+  // Which line has the keyboard. The message composer also handles Ctrl+S.
   editing?: "message" | "order" | Field;
+  messageText: string;
   // Briefing: selected order and field, and the agent file being edited.
   order: number;
   field: number;
@@ -30,11 +33,27 @@ export interface Ui {
 }
 export type Effect =
   | { kind: "call"; method: "POST" | "PUT" | "DELETE"; action: string; body?: unknown }
+  | { kind: "notice"; text: string }
+  | { kind: "message"; text: string; mode: MessageMode }
   | { kind: "open"; url: string }
   | { kind: "agent"; index: number }
   | { kind: "retry" }
   | { kind: "quit" };
-export const initialUi = (agent = 0): Ui => ({ agent, tab: "timeline", panel: "timeline", reply: 0, alert: 0, open: [], raw: [], help: false, sidebar: false, alerts: false, order: 0, field: 0 });
+export const initialUi = (agent = 0): Ui => ({ agent, tab: "timeline", panel: "timeline", reply: 0, alert: 0, open: [], raw: [], help: false, sidebar: false, alerts: false, order: 0, field: 0, messageText: "" });
+
+export type MessageMode = ConsoleView["queuedMessages"][number]["mode"];
+export type MessageAttempt = { requestId: string; text: string; mode: MessageMode };
+// A retry of the same text keeps both identity and mode, even if the other shortcut
+// was used. The server might have accepted the first attempt before the link failed.
+export function messageAttempt(previous: MessageAttempt | undefined, text: string, mode: MessageMode, requestId: string): MessageAttempt {
+  return previous?.text === text.trim() ? previous : { requestId, text: text.trim(), mode };
+}
+export function messageBody(attempt: MessageAttempt) {
+  return { requestId: attempt.requestId, text: attempt.text, ...(attempt.mode === "steer" ? { steer: true } : {}) };
+}
+export function actionError(action: string, status: number | undefined, reason: string): string {
+  return action.startsWith("steer/") && (status === 404 || status === 409) ? "The agent already has this message." : reason;
+}
 
 // The agent-file fields the briefing edits, in the order it lists them.
 export const FIELDS = ["goals", "temperament", "perJobUsd", "dailyUsd", "competence", "diligence", "priceSensitivity"] as const;
@@ -63,7 +82,7 @@ export function setField(ui: Ui, view: ConsoleView, field: Field, value: string)
 const money = (n: number | undefined) => (n === undefined ? "none" : Number.isFinite(n) ? `$${n.toFixed(2)}` : "invalid");
 const toggle = (list: string[], key: string) => (list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
 const clamp = (n: number, count: number) => Math.max(0, Math.min(n, count - 1));
-const PANELS: Ui["panel"][] = ["timeline", "attention", "sidebar"];
+const PANELS: Ui["panel"][] = ["timeline", "attention", "queue"];
 
 export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents: number): { ui: Ui; effect?: Effect } {
   // Can't reach the console: only retry and quit.
@@ -77,12 +96,25 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     return { ui: key === "n" || key === "escape" ? { ...ui, confirm: undefined } : ui };
   }
   if (ui.help && key !== "q") return { ui: key === "?" || key === "escape" ? { ...ui, help: false } : ui };
+  if (ui.tab === "timeline" && ui.editing === "message") {
+    if (key === "escape") return { ui: { ...ui, editing: undefined } };
+    const text = ui.messageText.trim();
+    if (text && (key === "enter" || key === "ctrl+s")) return { ui, effect: { kind: "message", text, mode: key === "ctrl+s" ? "steer" : "followUp" } };
+    return { ui };
+  }
   const drawn = screen(view, 0);
   const items = drawn.turns.flatMap((turn): { turn: typeof turn; reply?: typeof turn.replies[number] }[] => (turn.replies.length ? turn.replies.map((reply) => ({ turn, reply })) : [{ turn }]));
   const selected = items[clamp(ui.reply, items.length)];
   const alert = drawn.attention[clamp(ui.alert, drawn.attention.length)];
+  const queue = view.queuedMessages;
+  const moveQueue = (by: number): Ui => {
+    const at = queue.findIndex((message) => message.requestId === ui.queuedRequestId);
+    const from = at < 0 ? (by < 0 ? queue.length : -1) : at;
+    return { ...ui, queuedRequestId: queue[clamp(from + by, queue.length)]?.requestId };
+  };
   const move = (by: number) => (ui.tab === "briefing"
     ? (ui.panel === "orders" ? { ...ui, order: clamp(ui.order + by, view.operator.orders.length) } : { ...ui, field: clamp(ui.field + by, FIELDS.length) })
+    : ui.panel === "queue" ? moveQueue(by)
     : ui.panel === "attention" ? { ...ui, alert: clamp(ui.alert + by, drawn.attention.length) } : { ...ui, reply: clamp(ui.reply + by, items.length) });
   switch (key) {
     case "q": return { ui, effect: { kind: "quit" } };
@@ -95,7 +127,8 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     }
     case "tab": {
       if (ui.tab === "briefing") return { ui: { ...ui, panel: ui.panel === "orders" ? "fields" : "orders" } };
-      return { ui: { ...ui, panel: PANELS[(PANELS.indexOf(ui.panel) + 1) % PANELS.length] } };
+      const panel = PANELS[(PANELS.indexOf(ui.panel) + 1) % PANELS.length];
+      return { ui: { ...ui, panel, ...(panel === "queue" ? { sidebar: true, queuedRequestId: ui.queuedRequestId ?? queue[0]?.requestId } : {}) } };
     }
     case "j": case "down": return { ui: move(1) };
     case "k": case "up": return { ui: move(-1) };
@@ -120,7 +153,12 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     return { ui };
   }
   switch (key) {
-    case "i": return { ui: { ...ui, sidebar: !ui.sidebar } };
+    case "i": return { ui: { ...ui, sidebar: !ui.sidebar, panel: ui.sidebar && ui.panel === "queue" ? "timeline" : ui.panel } };
+    case "s": {
+      const message = ui.panel === "queue" ? queue.find((item) => item.requestId === ui.queuedRequestId) : undefined;
+      if (ui.panel === "queue" && ui.queuedRequestId && !message) return { ui, effect: { kind: "notice", text: "The agent already has this message." } };
+      return message?.mode === "followUp" ? { ui, effect: call("POST", `steer/${encodeURIComponent(message.requestId)}`) } : { ui };
+    }
     case "a": return { ui: { ...ui, alerts: !ui.alerts } };
     case "c": return alert && alert.kind !== "abandoned" ? { ui, effect: call("POST", "checked", { id: alert.id }) } : { ui };
     case "R": return alert?.kind === "abandoned" ? { ui, effect: call("POST", "retry", { eventId: alert.id }) } : { ui };
