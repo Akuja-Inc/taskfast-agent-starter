@@ -8,3 +8,5 @@ agents/
 .env
 # Local shell environment setup can also contain credentials
 .envrc
+# Claude Code puts its worktrees here; they are untracked checkouts
+.claude/worktrees/
