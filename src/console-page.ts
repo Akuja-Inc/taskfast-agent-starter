@@ -337,9 +337,10 @@ function taskSummary(id) {
     task.execution_deadline ? "due " + rel(Date.parse(task.execution_deadline)) : null, !task.worker_agent_id && task.pickup_deadline ? "pickup by " + rel(Date.parse(task.pickup_deadline)) : null];
   return { title: task.title || id, summary: parts.filter(Boolean).join(" · ") };
 }
-// Action names read as words, not enum codes.
-const VIA = { post_task: "Post Task", escrow_sign: "Escrow Sign", bid_create: "Bid", bid_accept: "Accept Bid", bid_reject: "Reject Bid", task_claim: "Claim", task_submit: "Submit" };
-const viaLabel = (via) => VIA[via] || (via || "").replace(/_/g, " ").replace(/^\w| \w/g, (c) => c.toUpperCase());
+// Action names read as words, not enum codes. VIA holds only the labels the fallback
+// cannot reach; the escape is doubled so the browser receives \w, not a plain w.
+const VIA = { bid_create: "Bid", bid_accept: "Accept Bid", bid_reject: "Reject Bid", task_claim: "Claim", task_submit: "Submit" };
+const viaLabel = (via) => VIA[via] || (via || "").replace(/_/g, " ").replace(/^\\w| \\w/g, (c) => c.toUpperCase());
 function taskCard(ref) {
   const { title, summary } = taskSummary(ref.id);
   const href = taskLink(ref.id);
