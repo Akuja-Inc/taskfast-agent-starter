@@ -46,14 +46,14 @@ const bootPage = () => {
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
     "addEventListener", "ResizeObserver", "fetch", "matchMedia",
-    `${script}\nreturn { turnCard, ui };`,
+    `${script}\nreturn { turnCard, ui, viaLabel };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
     () => new Promise(() => {}), () => ({ matches: false }),
-  ) as { turnCard: (turn: unknown, index: number) => FakeNode; ui: { raw: Set<string> } };
+  ) as { turnCard: (turn: unknown, index: number) => FakeNode; ui: { raw: Set<string> }; viaLabel: (via: string | undefined) => string };
 };
 
 it("renders the event turn head as a native button", () => {
@@ -80,6 +80,26 @@ it("keeps a non-event turn head as a plain row", () => {
   expect(head.hasAttribute("role")).toBe(false);
   expect(head.hasAttribute("tabindex")).toBe(false);
   expect(head.listeners.click ?? []).toHaveLength(0);
+});
+
+// The fallback title-cases any action name, so VIA only keeps the entries whose label
+// differs from it. The page script runs inside a TypeScript template literal: a \w that
+// loses its escape reaches the browser as a plain w and this test goes red.
+it("title-cases any action name with the viaLabel fallback", () => {
+  const { viaLabel } = bootPage();
+  expect(viaLabel("some_action")).toBe("Some Action");
+  // The fallback reproduces these, so they need no VIA entry.
+  expect(viaLabel("post_task")).toBe("Post Task");
+  expect(viaLabel("escrow_sign")).toBe("Escrow Sign");
+  // VIA keeps only the labels shorter than the fallback's.
+  expect(viaLabel("bid_create")).toBe("Bid");
+  expect(viaLabel("bid_accept")).toBe("Accept Bid");
+  expect(viaLabel("bid_reject")).toBe("Reject Bid");
+  expect(viaLabel("task_claim")).toBe("Claim");
+  expect(viaLabel("task_submit")).toBe("Submit");
+  // The tasks panel passes an empty via for its group cards.
+  expect(viaLabel("")).toBe("");
+  expect(viaLabel(undefined)).toBe("");
 });
 
 // A stream body that sends `chunks`, then ends unless `stay` keeps it open.
