@@ -12,8 +12,8 @@ export const PAGE = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent console</title>
 <style>
-:root { --yellow: #FFCC00; --ground: #F2F2EF; --panel: #FFFFFF; --ink: #0B0B0B; --soft: #3D3D38; --muted: #5E5E56; --hairline: rgba(11,11,11,.72); --agent: #1D4ED8; --cli: #7C3AED; --ok: #1D6B34; --warn: #B45309; --warn-bg: #FDF3E3; --bad: #B3261E; --bad-bg: #FBE4E1; --task-line: rgba(11,11,11,.72); --square: #0B0B0B; --code-bg: #0B0B0B; --code-ink: #E9E7DC; --sans: "Segoe UI", Frutiger, "Frutiger Next", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, system-ui, sans-serif; accent-color: var(--agent); }
-[data-theme="dark"] { --ground: #131311; --panel: #1C1C19; --ink: #F2F1EA; --soft: #C9C8BE; --muted: #A3A298; --hairline: rgba(242,241,234,.5); --agent: #7AA8FF; --cli: #B794F6; --ok: #56D364; --warn: #D29922; --warn-bg: #3A2E10; --bad: #F85149; --bad-bg: #3D1414; --task-line: rgba(242,241,234,.5); --square: #000000; }
+:root { --yellow: #FFCC00; --ground: #F2F2EF; --panel: #FFFFFF; --ink: #0B0B0B; --soft: #3D3D38; --muted: #5E5E56; --hairline: rgba(11,11,11,.72); --agent: #1D4ED8; --cli: #7C3AED; --ok: #1D6B34; --warn: #B45309; --warn-bg: #FDF3E3; --bad: #B3261E; --bad-bg: #FBE4E1; --square: #0B0B0B; --code-bg: #0B0B0B; --code-ink: #E9E7DC; --sans: "Segoe UI", Frutiger, "Frutiger Next", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, system-ui, sans-serif; accent-color: var(--agent); }
+[data-theme="dark"] { --ground: #131311; --panel: #1C1C19; --ink: #F2F1EA; --soft: #C9C8BE; --muted: #A3A298; --hairline: rgba(242,241,234,.5); --agent: #7AA8FF; --cli: #B794F6; --ok: #56D364; --warn: #D29922; --warn-bg: #3A2E10; --bad: #F85149; --bad-bg: #3D1414; --square: #000000; }
 * { box-sizing: border-box; }
 html { scrollbar-color: var(--muted) var(--ground); }
 body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.45 var(--sans); caret-color: var(--agent); }
@@ -39,8 +39,8 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 header { background: #0B0B0B; color: #F2F1EA; }
 header .row, .page { max-width: 1280px; margin: 0 auto; padding: 10px 24px; display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
-span.sq.brand-sq { background: var(--yellow); color: #14532D; }
-span.sq.brand-sq.paused { color: #7F1D1D; }
+.sq.brand-sq { background: var(--yellow); color: #14532D; }
+.sq.brand-sq.paused { color: #7F1D1D; }
 header .rule { align-self: stretch; width: 1px; background: #4A4E55; }
 header .switcher { display: inline-flex; align-items: center; gap: 6px; background: #1C1C19; border: 1px solid #4A4E55; border-radius: 6px; padding: 4px 6px 4px 4px; }
 header .role-sq { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--yellow); color: #0B0B0B; flex: none; }
@@ -59,19 +59,13 @@ nav a[aria-current="page"] { background: var(--yellow); color: #0B0B0B; font-wei
 .spark-row { display: flex; gap: 2px; align-items: flex-end; height: 24px; }
 .spark { width: 9px; background: var(--muted); opacity: .4; }
 .spark.today { background: var(--ink); opacity: 1; }
-.card.budget { background: var(--square); border-color: var(--square); color: #E9E7DC; padding: calc(16px * 1.4) calc(18px * 1.4); }
-.card.budget .num { color: #E9E7DC; }
+.card.budget { --ink: #E9E7DC; --hairline: #4A4E55; --panel: #17191c; --muted: #A3A298; background: var(--square); border-color: var(--square); color: #E9E7DC; padding: calc(16px * 1.4) calc(18px * 1.4); }
 .card.budget.frozen .num { color: var(--bad); }
-.card.budget .tufte { border-color: #4A4E55; background: #17191c; }
-.card.budget .tufte-spent { background: #E9E7DC; }
-.card.budget .tufte-uncertain { background: var(--warn); }
 .card.budget.frozen .tufte-spent { background: var(--bad); }
-.card.budget .tufte-scale, .card.budget .small { color: #A3A298; }
 .card.budget .spark { background: #4A4E55; opacity: 1; }
 .card.budget .spark.today { background: #E9E7DC; }
 .card.budget.frozen .spark.today { background: var(--bad); }
 .lvtoggle { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; border: 1px solid #4A4E55; border-radius: 4px; background: #17191c; cursor: pointer; font: 700 14px/1 var(--sans); letter-spacing: .04em; color: #E9E7DC; padding: 0 16px; }
-.lvtoggle:focus-visible { outline: 2px solid var(--agent); outline-offset: 2px; }
 .lvtoggle .track { position: relative; flex: none; width: 64px; height: 32px; border-radius: 999px; border: 1px solid #4A4E55; background: #17191c; }
 .lvtoggle .knob { display: block; width: 26px; height: 26px; border-radius: 50%; background: #56D364; transform: translateX(0); transition: transform .3s cubic-bezier(.16, 1, .3, 1), background .2s; }
 .lvtoggle .state-word { flex: 1; text-align: right; color: #56D364; }
@@ -87,7 +81,6 @@ main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; g
 aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .section { display: flex; flex-direction: column; gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 2px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
-.card h2 { margin: 0; font-size: 15px; }
 .card.attn { border-color: var(--warn); }
 .attn-head { display: flex; gap: 10px; align-items: center; }
 .attn-actions { flex: none; margin-left: auto; display: inline-flex; gap: 8px; }
@@ -102,7 +95,7 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .sq { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; background: var(--square); color: #FFF; }
 [data-theme="dark"] .sq { outline: 1px solid rgba(255,255,255,.28); }
 .sq svg { width: 16px; height: 16px; }
-.sq.agent { background: var(--agent); } .sq.you { background: var(--yellow); color: #0B0B0B; } .sq.cli { background: var(--cli); }
+.sq.agent { background: var(--agent); } .sq.you { background: var(--yellow); color: #0B0B0B; outline: 1px solid rgba(11,11,11,.28); } .sq.cli { background: var(--cli); }
 .sq.ok { background: var(--ok); } .sq.warn { background: var(--warn); } .sq.bad { background: var(--bad); }
 .turn { padding: 0; gap: 0; overflow: hidden; }
 .turn > .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--hairline); background: var(--ground); }
@@ -121,14 +114,14 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .call .name { flex: 1 1 240px; overflow-wrap: anywhere; }
 button.calls-chip { position: relative; min-height: 28px; height: 28px; padding: 0 4px; border: none; background: none; color: var(--cli); font-size: 13px; gap: 6px; }
 button.calls-chip::before { content: ""; position: absolute; left: -4px; right: -4px; top: 50%; transform: translateY(-50%); height: 44px; }
-.calls-chip .num { color: var(--ink); font-variant-numeric: tabular-nums; }
+.calls-chip .num { color: var(--ink); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; animation: dotpulse 1.6s ease-in-out infinite; }
 .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
 @keyframes dotpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.68); } }
 @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-.task { display: flex; flex-direction: column; gap: 2px; position: relative; padding: 6px 36px 6px 10px; border: 1px solid var(--task-line); border-radius: 2px; background: var(--panel); color: var(--ink); text-decoration: none; }
+.task { display: flex; flex-direction: column; gap: 2px; position: relative; padding: 6px 36px 6px 10px; border: 1px solid var(--hairline); border-radius: 2px; background: var(--panel); color: var(--ink); text-decoration: none; }
 .task .go { position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; }
-.monu { font-size: clamp(48px, 6vw, 64px); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.monu { font-size: clamp(48px, 6vw, 64px); font-weight: 800; letter-spacing: -.02em; }
 .monu .small { display: block; letter-spacing: 0; }
 pre { margin: 0; padding: 10px 12px; border-radius: 2px; background: var(--code-bg); color: var(--code-ink); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -140,7 +133,6 @@ pre { margin: 0; padding: 10px 12px; border-radius: 2px; background: var(--code-
 .copy.failed { background: var(--bad); border-color: var(--bad); color: #FFF; }
 .check { display: flex; gap: 10px; align-items: center; }
 .check .word { font-weight: 700; min-width: 5em; } .check .word.ok { color: var(--ok); } .check .word.bad { color: var(--warn); }
-.sq.you { outline: 1px solid rgba(11,11,11,.28); }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 640px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 form.inline { display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
@@ -216,7 +208,10 @@ const GLYPH = {
   moon: ["M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"],
   chevron: ["M6 9l6 6 6-6"],
 };
-const pict = (name, size) => icon(ICON[name], size, true);
+// Built once per name and size, then cloned: render() rebuilds the page on every push.
+const picts = {};
+const pict = (name, size) => (picts[name + size] ||= icon(ICON[name], size, true)).cloneNode(true);
+const band = (title, msg) => el("div", { class: "band" }, el("span", { text: title }), msg === undefined ? null : el("span", { class: "msg", text: msg }));
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch {}
   // Fallback for browsers that refuse the async clipboard here.
@@ -363,6 +358,7 @@ function header() {
 
 // One ghost help + one ghost close per alert, at the tag row's right end. Help drafts
 // a fix-it message into the composer; close clears the alert only (never the ledger).
+function draftInto(text) { ui.draft = text; ui.draftId = null; ui.focusComposer = true; render(); }
 function attnActions(id, draftFix) {
   return el("span", { class: "attn-actions" },
     el("button", { class: "sq fix", title: "Drafts a fix-it message into the composer", "aria-label": "Fix this", onclick: draftFix }, pict("wrench", 13)),
@@ -377,11 +373,7 @@ function attention() {
     view.attention.map((item) => {
       if (item.kind === "uncertain") return el("div", { class: "card attn" },
         el("div", { class: "attn-head" }, el("span", { class: "sq warn" }, pict("exclaim", 16)), el("span", { class: "tag warn", text: "UNCERTAIN" }), el("strong", { class: "mono", text: item.id }),
-          attnActions(item.id, () => {
-            ui.draft = "The action " + item.id + " is uncertain and counted as spent. Read the current marketplace state, tell me whether it reached the server, and do not repeat the write.";
-            ui.focusComposer = true;
-            render();
-          })),
+          attnActions(item.id, () => draftInto("The action " + item.id + " is uncertain and counted as spent. Read the current marketplace state, tell me whether it reached the server, and do not repeat the write."))),
         el("div", { text: money(item.amount) + " is counted as spent and the agent will not retry it. The command may or may not have reached the server." }));
       if (item.kind === "abandoned") return el("div", { class: "card attn" },
         el("div", { class: "attn-head" }, el("span", { class: "sq bad" }, pict("exclaim", 16)), el("span", { class: "tag bad", text: "ABANDONED" }), el("strong", { text: (item.event && item.event.event) || item.id }), el("span", { class: "small", text: " · " + item.attempts + " attempts failed" })),
@@ -392,11 +384,7 @@ function attention() {
         el("div", { class: "small", text: "Run again queues one fresh attempt. Writes already made stay blocked from repeating." }));
       return el("div", { class: "card attn" },
         el("div", { class: "attn-head" }, el("span", { class: "sq bad" }, pict("exclaim", 16)), el("span", { class: "tag bad", text: "DEAD-LETTERED" }), el("strong", { text: item.reason }),
-          attnActions(item.id, () => {
-            ui.draft = "A marketplace event was dead-lettered (" + item.reason + ") and will not be redelivered. Read the current marketplace state and continue from where it stopped.";
-            ui.focusComposer = true;
-            render();
-          })),
+          attnActions(item.id, () => draftInto("A marketplace event was dead-lettered (" + item.reason + ") and will not be redelivered. Read the current marketplace state and continue from where it stopped."))),
         el("div", { class: "small", text: "The stream gave up on this event " + rel(Date.parse(item.at)) + " and acknowledged it, so the server will not send it again." }),
         jsonBlock("d:" + item.id, item.line));
     }));
@@ -451,7 +439,7 @@ function readiness() {
   ];
   const problems = checks.filter((c) => !c[2]).length;
   return el("section", { class: "section" },
-    el("div", { class: "band" }, el("span", { text: "Ready to work?" }), el("span", { class: "msg", text: problems ? problems + (problems === 1 ? " problem" : " problems") : "yes" })),
+    band("Ready to work?", problems ? problems + (problems === 1 ? " problem" : " problems") : "yes"),
     el("div", { class: "card" }, checks.map(([label, detail, ok]) => el("div", { class: "check" },
       el("span", { class: "sq " + (ok ? "ok" : "warn") }, pict(ok ? "check" : "exclaim", 16)),
       el("div", {}, el("div", { style: "font-weight:500" }, el("span", { class: "word " + (ok ? "ok" : "bad"), text: ok ? "OK" : "Problem" }), " · " + label), el("div", { class: "small", text: detail }))))));
@@ -462,7 +450,7 @@ function tasksPanel() {
   for (const turn of view.timeline) for (const reply of turn.replies) for (const ref of reply.tasks) if (via[ref.via]) groups[via[ref.via]].set(ref.id, { ...ref, via: via[ref.via] });
   const total = Object.values(groups).reduce((n, g) => n + g.size, 0);
   return el("section", { class: "section" },
-    el("div", { class: "band" }, el("span", { text: "Tasks" }), el("span", { class: "msg", text: total + " in play" })),
+    band("Tasks", total + " in play"),
     el("div", { class: "card" }, Object.entries(groups).map(([name, refs]) => el("div", { style: "display:flex;flex-direction:column;gap:6px" },
       el("div", { class: "small", style: "font-weight:600", text: name + " · " + refs.size }),
       [...refs.values()].map((ref) => taskCard({ id: ref.id, via: "" }))))));
@@ -482,7 +470,7 @@ function spendPanel() {
   });
   const sparkMax = Math.max(limit || 0, ...sparkDays.map((d) => d.v), 0.01);
   return el("section", { class: "section" },
-    el("div", { class: "band" }, el("span", { text: "Budget" }), el("span", { class: "msg", text: "UTC · resets midnight" })),
+    band("Budget", "UTC · resets midnight"),
     el("div", { class: "card budget" + (op.frozen ? " frozen" : "") },
       el("div", { class: "monu num" }, money(spent)),
       limit !== undefined ? el("div", { class: "tufte", role: "img", "aria-label": money(spent) + " of " + money(limit) + " spent today, " + money(uncertain) + " uncertain" },
@@ -504,7 +492,7 @@ function timelineTab() {
     el("main", {},
       op.paused ? el("div", { class: "note", role: "status" }, el("strong", { text: "Paused. " }), "New events are still received and stored, so nothing is lost. " + waiting + " waiting; they run in order when you resume. Check-ins are skipped while paused.") : null,
       attention(),
-      el("div", { class: "band" }, el("span", { text: "Timeline" }), el("span", { class: "msg", text: view.timeline.length + (view.timeline.length === 1 ? " turn" : " turns") })),
+      band("Timeline", view.timeline.length + (view.timeline.length === 1 ? " turn" : " turns")),
       view.timeline.length ? view.timeline.map(turnCard) : el("div", { class: "small", text: "No turns yet." }),
       el("form", { class: "card composer", onsubmit: (e) => {
         e.preventDefault();
@@ -517,12 +505,11 @@ function timelineTab() {
       } },
         el("label", {}, el("span", { class: "sr-only", text: "Message " + (view.spec.character.name || "the agent") }),
           el("textarea", { rows: 2, "aria-label": "Message " + (view.spec.character.name || "the agent"), placeholder: 'e.g. "Post one copy-editing job under $15."', oninput: (e) => { ui.draft = e.target.value; ui.draftId = null; }, onkeydown: (e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.form.requestSubmit(); }
-            else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); e.currentTarget.form.requestSubmit(); }
+            if ((e.key === "Enter" && !e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")) { e.preventDefault(); e.currentTarget.form.requestSubmit(); }
           }, text: ui.draft })),
         el("div", { class: "samples" }, el("span", { class: "samples-label", text: "Try:" }),
           ["Post a job under $15", "Hold off on new bids today", "Summarize the last check-in"].map((s) =>
-            el("button", { type: "button", class: "sample", onclick: () => { ui.draft = s; ui.draftId = null; ui.focusComposer = true; render(); }, text: s }))),
+            el("button", { type: "button", class: "sample", onclick: () => draftInto(s), text: s }))),
         el("button", { type: "submit", class: "primary send", text: "Send" }),
         el("div", { class: "hint" },
           el("span", {}, el("kbd", { text: "Enter" }), " to send · ", el("kbd", { text: "Shift+Enter" }), " for a new line"),
@@ -530,7 +517,7 @@ function timelineTab() {
       el("div", { class: "small", text: "Each send carries its own ID, so a double click or a retry queues it only once." })),
     el("aside", {}, readiness(), tasksPanel(), spendPanel(),
       el("section", { class: "section" },
-        el("div", { class: "band" }, el("span", { text: "Standing orders" }), el("span", { class: "msg", text: "· " + op.orders.length })),
+        band("Standing orders", "· " + op.orders.length),
         el("div", { class: "card" },
           op.orders.map((order) => el("div", { text: order })),
           el("a", { href: "#", style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => { e.preventDefault(); ui.tab = "briefing"; render(); } }, "Edit in Briefing", pict("arrow", 14))))));
@@ -546,7 +533,7 @@ function briefingTab() {
   return el("div", { class: "page" },
     el("main", {},
       el("section", { class: "section" },
-        el("div", { class: "band" }, el("span", { text: "Standing orders" }), el("span", { class: "msg", text: "live from the next turn · the agent cannot remove these" })),
+        band("Standing orders", "live from the next turn · the agent cannot remove these"),
         el("div", { class: "card" },
         el("ol", { style: "margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px" },
           op.orders.map((order, index) => el("li", {}, el("div", { style: "display:flex;gap:12px;align-items:center;justify-content:space-between" }, el("span", { text: order }),
@@ -557,7 +544,7 @@ function briefingTab() {
           el("button", { type: "submit", class: "primary", text: "Add" })),
         el("div", { class: "small", text: "The agent's own notes: " + (view.notes.length ? view.notes.join(" · ") : "none yet.") }))),
       el("section", { class: "section" },
-        el("div", { class: "band" }, el("span", { text: "agent.json" }), el("span", { class: "msg", text: "saving reopens only this agent; the others keep running" })),
+        band("agent.json", "saving reopens only this agent; the others keep running"),
         el("div", { class: "card" },
         el("label", {}, "Goals", el("textarea", { rows: 2, onchange: (e) => set(["character", "goals"], e.target.value), text: draft.character.goals })),
         el("div", { class: "grid" },
@@ -575,7 +562,7 @@ function briefingTab() {
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
         el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
     el("aside", {}, el("section", { class: "section" },
-      el("div", { class: "band" }, el("span", { text: "What the agent reads every turn" })),
+      band("What the agent reads every turn"),
       el("div", { class: "card" }, el("pre", { text: view.prompt })))));
 }
 
@@ -593,16 +580,14 @@ function unlock() {
 }
 
 function render() {
-  const active = document.activeElement;
-  const activeTag = active && active.tagName;
-  const ta = document.querySelector("textarea");
-  const taHadFocus = !!(ta && document.activeElement === ta);
+  const activeTag = document.activeElement && document.activeElement.tagName;
   // Briefing fields and inputs keep the old protection: never rebuild under them.
   if ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "briefing")) return;
   // The composer may be rebuilt while focused: an empty field gets its focus back, a
   // typed draft is only protected while the operator is actually typing in it.
+  const taHadFocus = activeTag === "TEXTAREA";
   if (taHadFocus && ui.draft) return;
-  if (taHadFocus || ui.focusComposer) ui.focusComposer = true;
+  if (taHadFocus) ui.focusComposer = true;
   app.replaceChildren(...(!token ? [unlock()] :
     !list || (!view && !ui.reopening) ? [el("div", { class: "unlock", text: ui.error || "Loading…" })] :
     ui.reopening ? [...header(), el("div", { class: "page" },
@@ -611,7 +596,6 @@ function render() {
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
   const next = document.querySelector("textarea");
   if (ui.focusComposer && next) { next.focus(); ui.focusComposer = false; }
-  else if (taHadFocus && next) next.focus();
 }
 refresh();
 </script>
