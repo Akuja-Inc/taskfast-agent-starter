@@ -106,7 +106,9 @@ If the port is taken, the console tries the next one up, one at a time (up to 10
 - **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text.
 - **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.
 - **Pause:** events are still received and stored; nothing new is handed to the model until you resume. Work the model already had finishes. **Freeze spending:** `post_task` and `escrow_sign` are refused before anything is reserved; reads and messages continue, and an action already reserved finishes.
-- **Messages and standing orders:** a message is the agent's next input, sent once however often you press Send. Standing orders join the system prompt on every turn and only you can change them.
+- **Messages:** Send or Enter queues a follow-up for the next run. Ctrl+S or Cmd+S sends a steer after the current tool round; Shift+Enter adds a new line. Steering is not cancellation and cannot undo a tool or money action already in flight. Each attempted send keeps its ID and initial mode on retry, even if you retry with a different key. Editing the draft creates a new send.
+- **Queued messages:** the list near the composer shows the oldest message first and labels each Follow-up or Steer. Use a follow-up's Steer button to promote it without sending it again. Both sending and promotion work while paused; messages wait for resume. If placement wins the race, the console says "The agent already has this message." This is a notice, not a failed draft send.
+- **Standing orders:** orders join the system prompt on every turn and only you can change them.
 - **Briefing:** edit goals, temperament, dials and limits. Saving checks the agent file strictly, writes it, and reopens only that agent; the others keep running. Saving mid-turn interrupts the agent: a write in flight is recorded as uncertain, as after a restart.
 
 The console reads through the running host. It never opens a store or a second event stream: one store has one owner, and the server allows one stream per agent.
@@ -114,6 +116,8 @@ The console reads through the running host. It never opens a store or a second e
 The page updates live. The host pushes each agent's view after every commit over `GET /api/agents/:id/stream` (server-sent events with the same token and checks, at most 8 open at once). If that stream drops, the page polls every 3 s until it returns.
 
 Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [briefing editor](docs/console/briefing.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
+
+Browser steering: [before/after captures and local validation](docs/console/steer-web-evidence.md).
 
 ### Terminal UI
 
