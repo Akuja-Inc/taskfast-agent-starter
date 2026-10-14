@@ -143,7 +143,12 @@ textarea::placeholder { color: var(--muted); }
 /* The rail: one mark per turn beside the stream, ending above the pinned composer. */
 .railed { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 12px; align-items: start; }
 .railed > .turns { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.rail { position: sticky; top: 56px; height: calc(100vh - 240px); min-height: 120px; display: flex; flex-direction: column; gap: 1px; }
+/* --composer-space is the measured composer plus what follows it, so the rail always ends above the composer. */
+.rail { position: sticky; top: 56px; height: calc(100vh - 56px - var(--composer-space, 240px) - 16px); min-height: 120px; display: flex; flex-direction: column; gap: 1px; }
+/* The rail passes under the band like content, and rises above it only while a peek is open. */
+.rail:hover, .rail:focus-within { z-index: 3; }
+.rail-earlier { flex: none; display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; margin-bottom: 5px; border-bottom: 1px dashed var(--muted); }
+.rail-earlier button.tick { flex: 0 0 4px; max-height: none; }
 button.tick { position: relative; flex: 1 1 0; min-height: 1px; max-height: 14px; padding: 0; border: none; border-radius: 0; background: none; justify-content: flex-end; align-items: stretch; }
 .tick::after { content: ""; width: 12px; background: var(--muted); opacity: .45; }
 .tick.event::after, .tick.resume::after, .tick.other::after { background: var(--ink); opacity: 1; }
@@ -450,25 +455,43 @@ const smooth = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "a
 const lastSaid = (turn) => turn.replies.map((r) => r.text).filter(Boolean).pop() || "";
 
 // A long timeline mounts only its newest turns; older ones load above without moving
-// the reader. The rail beside it keeps one mark per turn, mounted or not, the way a
-// scrollbar would if it knew who spoke: the operator's turns read yellow, failed or
-// uncertain calls keep their money hues. One tab stop; arrow keys move along it.
+// the reader. The rail beside it gives each mounted turn a mark, the way a scrollbar
+// would if it knew who spoke: the operator's turns read yellow, failed or uncertain
+// calls keep their money hues. Turns not yet mounted compress into at most 12 marks
+// above a dashed rule, each standing for its most telling turn. One tab stop; arrow
+// keys move along it.
+const RANK = { bad: 5, warn: 4, operator: 3, event: 2, resume: 2, other: 2, poll: 1 };
+function tickClass(turn) {
+  const outcomes = turn.replies.flatMap((r) => r.calls.map((c) => c.outcome));
+  return turn.kind + (outcomes.includes("uncertain") ? " warn" : outcomes.includes("failed") ? " bad" : "");
+}
+const rank = (turn) => Math.max(...tickClass(turn).split(" ").map((c) => RANK[c]));
 function timelineTurns() {
   const tl = view.timeline, from = Math.max(0, tl.length - ui.windowN);
   if (ui.railAt < 0 || ui.railAt >= tl.length) ui.railAt = tl.length - 1;
+  const size = Math.ceil(from / 12), groups = [];
+  for (let a = 0; a < from; a += size) {
+    const b = Math.min(from, a + size);
+    let pick = a;
+    for (let i = a + 1; i < b; i++) if (rank(tl[i]) > rank(tl[pick])) pick = i;
+    groups.push([pick, a, b]);
+  }
+  const tick = (i, span) => {
+    const turn = tl[i], who = TAG[turn.kind][2];
+    const said = turn.kind === "operator" ? turn.text : turn.kind === "event" ? (turn.event && turn.event.event) || "event" : lastSaid(turn) || "(no reply text)";
+    const where = span && span[1] - span[0] > 1 ? "Turns " + (span[0] + 1) + "–" + span[1] + " of " + tl.length + ", not loaded · " : "";
+    return el("button", { class: "tick " + tickClass(turn), "data-i": i, tabindex: i === ui.railAt ? "0" : "-1", "aria-current": String(i === ui.railAt), "aria-label": where + who + ", " + rel(turn.at), onclick: () => jumpTo(i),
+      onkeydown: (e) => { const d = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0; if (d && tl[i + d]) { e.preventDefault(); jumpTo(i + d); document.querySelector('.tick[data-i="' + (i + d) + '"]').focus(); } } },
+      el("span", { class: "peek" }, where ? el("span", { class: "small", text: where.slice(0, -3) }) : null, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
+  };
   return el("div", { class: "railed" },
     el("div", { class: "turns" },
       from ? el("div", { class: "card earlier" }, el("span", { class: "small", text: from + (from === 1 ? " earlier turn" : " earlier turns") }),
         el("button", { onclick: () => showFrom(from - 20), text: "Show " + Math.min(20, from) + " more" })) : null,
       tl.slice(from).map((t, k) => turnCard(t, from + k))),
-    el("nav", { class: "rail", "aria-label": "Jump to a turn" }, tl.map((turn, i) => {
-      const outcomes = turn.replies.flatMap((r) => r.calls.map((c) => c.outcome));
-      const who = TAG[turn.kind][2];
-      const said = turn.kind === "operator" ? turn.text : turn.kind === "event" ? (turn.event && turn.event.event) || "event" : lastSaid(turn) || "(no reply text)";
-      return el("button", { class: "tick " + turn.kind + (outcomes.includes("uncertain") ? " warn" : outcomes.includes("failed") ? " bad" : ""), "data-i": i, tabindex: i === ui.railAt ? "0" : "-1", "aria-current": String(i === ui.railAt), "aria-label": who + ", " + rel(turn.at), onclick: () => jumpTo(i),
-        onkeydown: (e) => { const d = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0; if (d && tl[i + d]) { e.preventDefault(); jumpTo(i + d); document.querySelector('.tick[data-i="' + (i + d) + '"]').focus(); } } },
-        el("span", { class: "peek" }, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
-    })));
+    el("nav", { class: "rail", "aria-label": "Jump to a turn" },
+      from ? el("div", { class: "rail-earlier", title: from + (from === 1 ? " earlier turn" : " earlier turns") + ", not loaded" }, groups.map(([pick, a, b]) => tick(pick, [a, b]))) : null,
+      tl.slice(from).map((t, k) => tick(from + k))));
 }
 // Mount turns from index i onward, keeping the reader's place.
 function showFrom(i) {
@@ -493,6 +516,23 @@ const toNewest = (behavior) => { const end = document.querySelector(".send-note"
 // render() rebuilds the page on every push, so scroll-driven marks are reapplied to
 // whatever is mounted. ponytail: linear scan of mounted turns per frame; the window
 // keeps that small unless the operator loads the whole history.
+// The rail must fit between the band and the pinned composer even at the page end,
+// where the send note and page padding sit below the composer too. Both change height
+// as chips wrap or the field is resized; render() replaces them, so re-observe.
+const composerSize = new ResizeObserver(() => {
+  const form = document.querySelector("form.composer"), note = document.querySelector(".send-note");
+  if (!form || !note) return;
+  // The note is never sticky, so its box shows what really follows the composer: to the
+  // page end, or to the end of the column plus the page gap when the sidebar wraps below.
+  const at = (box) => box.getBoundingClientRect()[box === note ? "top" : "bottom"] + scrollY;
+  const end = Math.min(document.documentElement.scrollHeight, at(note.closest("main")) + 24);
+  const below = end - at(note) + 16;
+  document.documentElement.style.setProperty("--composer-space", Math.ceil(form.offsetHeight + below) + "px");
+});
+function measureComposer() {
+  composerSize.disconnect();
+  for (const node of document.querySelectorAll("form.composer, .send-note")) composerSize.observe(node);
+}
 let scrollFrame = 0;
 addEventListener("scroll", () => { scrollFrame ||= requestAnimationFrame(onScroll); }, { passive: true });
 function onScroll() {
@@ -675,6 +715,7 @@ function render() {
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
   // The timeline opens at its newest turn, as a chat does.
   if (ui.toEnd && view && ui.tab === "timeline") { ui.toEnd = false; toNewest("auto"); }
+  measureComposer();
   onScroll();
   const next = document.querySelector("textarea");
   if (ui.focusComposer && next) { next.focus(); ui.focusComposer = false; }
