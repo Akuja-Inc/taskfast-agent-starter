@@ -51,8 +51,9 @@ export function messageAttempt(previous: MessageAttempt | undefined, text: strin
 export function messageBody(attempt: MessageAttempt) {
   return { requestId: attempt.requestId, text: attempt.text, ...(attempt.mode === "steer" ? { steer: true } : {}) };
 }
+const ALREADY_PLACED = "The agent already has this message.";
 export function actionError(action: string, status: number | undefined, reason: string): string {
-  return action.startsWith("steer/") && (status === 404 || status === 409) ? "The agent already has this message." : reason;
+  return action.startsWith("steer/") && (status === 404 || status === 409) ? ALREADY_PLACED : reason;
 }
 
 // The agent-file fields the briefing edits, in the order it lists them.
@@ -156,7 +157,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     case "i": return { ui: { ...ui, sidebar: !ui.sidebar, panel: ui.sidebar && ui.panel === "queue" ? "timeline" : ui.panel } };
     case "s": {
       const message = ui.panel === "queue" ? queue.find((item) => item.requestId === ui.queuedRequestId) : undefined;
-      if (ui.panel === "queue" && ui.queuedRequestId && !message) return { ui, effect: { kind: "notice", text: "The agent already has this message." } };
+      if (ui.panel === "queue" && ui.queuedRequestId && !message) return { ui, effect: { kind: "notice", text: ALREADY_PLACED } };
       return message?.mode === "followUp" ? { ui, effect: call("POST", `steer/${encodeURIComponent(message.requestId)}`) } : { ui };
     }
     case "a": return { ui: { ...ui, alerts: !ui.alerts } };

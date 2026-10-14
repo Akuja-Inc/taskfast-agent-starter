@@ -189,6 +189,7 @@ export function App(p: AppProps) {
   });
   const agent = () => list()?.agents[ui().agent];
   const draft = () => ui().draft ?? view()?.spec;
+  const queueSelected = (requestId: string) => ui().panel === "queue" && ui().queuedRequestId === requestId;
 
   return (
     <box flexDirection="column" width="100%" height="100%">
@@ -299,8 +300,8 @@ export function App(p: AppProps) {
                     <text fg={ui().panel === "queue" ? ACCENT : undefined}><b>{`Queued messages · ${s().sidebar.queued.length}`}</b></text>
                     <text fg={MUTED}>Tab focus · j/k select · s steer</text>
                     <For each={s().sidebar.queued} fallback={<text fg={MUTED}>None waiting.</text>}>{(row) => (
-                      <box id={`queue-${row.requestId}`} flexDirection="column" backgroundColor={ui().panel === "queue" && ui().queuedRequestId === row.requestId ? SELECTED : undefined}>
-                        <text><Span fg={ACCENT}>{`${ui().panel === "queue" && ui().queuedRequestId === row.requestId ? "▶ " : "  "}${row.label}`}</Span><Span fg={MUTED}>{row.mode === "followUp" ? " · s to steer" : " · after tool round"}</Span></text>
+                      <box id={`queue-${row.requestId}`} flexDirection="column" backgroundColor={queueSelected(row.requestId) ? SELECTED : undefined}>
+                        <text><Span fg={ACCENT}>{`${queueSelected(row.requestId) ? "▶ " : "  "}${row.label}`}</Span><Span fg={MUTED}>{row.mode === "followUp" ? " · s to steer" : " · after tool round"}</Span></text>
                         <text>{row.text}</text>
                       </box>
                     )}</For>
