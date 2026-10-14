@@ -133,4 +133,4 @@ The console in a terminal: a separate Bun client of the console API, never part 
 Generated offline by `scripts/gen-providers.mjs` from the installed exact Pi-ai pin. Not edited by hand.
 
 **Pin:**
-An exact dependency version or the exact commit downstream TaskFast tooling uses. Pi packages are experimental and pinned to 1.1.0. Downstream consumers must replace removed `actors`, `self` and `turn` imports with the new `agent`, `policy` and `storage` lifecycle; no compatibility or state-migration tooling is supplied.
+An exact dependency version or the exact commit downstream TaskFast tooling uses. Pi packages are experimental and pinned to 1.2.0. Downstream consumers must replace removed `actors`, `self` and `turn` imports with the new `agent`, `policy` and `storage` lifecycle; no compatibility or state-migration tooling is supplied.

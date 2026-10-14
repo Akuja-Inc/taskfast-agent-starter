@@ -15,7 +15,7 @@ You are here to help someone run or configure their own agent, or to change code
 - A separate `state.sqlite.owner` SQLite database holds a lifetime `BEGIN EXCLUSIVE` lock. A second owner is refused. Process death releases the OS lock; deleting the file is not lock recovery.
 - SQLite uses WAL with `synchronous=FULL`, overriding the backend's `NORMAL` default. Power-loss durability still requires storage that honors fsync. Do not weaken synchronization or the owner lock.
 - Agent files are strict (`spec.ts`): start from `examples/`, add no extra fields. Suggest both spending limits for posting; without limits nothing caps commitments.
-- Provider support comes from pinned Pi-ai 1.1.0. Read [Providers](docs/providers.md) for auth choices and gaps. No arbitrary provider module loading, package installs during setup or automatic conversion of old settings/state.
+- Provider support comes from pinned Pi-ai 1.2.0. Read [Providers](docs/providers.md) for auth choices and gaps. No arbitrary provider module loading, package installs during setup or automatic conversion of old settings/state.
 - Do not claim live staging or production validation from local tests. Ask permission for live work and report exactly what was exercised.
 
 ## Changing code
@@ -57,7 +57,7 @@ The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins an
 
 No other repository imports this kit. `test/tools-contract.test.ts` checks the tool enums against `test/fixtures/openapi.yaml`, the spec that the taskfast-cli release named in that test vendors and checks against the live server. When a newer CLI release changes the spec, copy it over, update the tag and hash in the test, and fix any tool that no longer matches.
 
-The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used, so its old pinning and bump rules no longer apply. The Pi packages are experimental and pinned exactly to 1.1.0. Do not float versions. Bump them on their own, never as part of another change, and verify persistence, replay safety and provider support at any new pin. The one exception is the PR that replaced `durable-actors` with Pi (#9), which also moved pnpm 10 to 12 and added wallet unlock files and folder portability.
+The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used, so its old pinning and bump rules no longer apply. The Pi packages are experimental and pinned exactly to 1.2.0. Do not float versions. Bump them on their own, never as part of another change, and verify persistence, replay safety and provider support at any new pin. The one exception is the PR that replaced `durable-actors` with Pi (#9), which also moved pnpm 10 to 12 and added wallet unlock files and folder portability.
 
 ## Pull requests
 

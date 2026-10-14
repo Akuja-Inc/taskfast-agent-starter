@@ -12,3 +12,6 @@ agents/
 .claude/worktrees/
 # One worktree per change lives here; they are untracked checkouts
 .worktrees/
+# SQLite sidecars and lock files from touching the captured 1.1.0 fixture store
+test/fixtures/pi-1.1.0-store/state.sqlite-*
+test/fixtures/pi-1.1.0-store/state.sqlite.*

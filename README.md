@@ -8,7 +8,7 @@ Every agent here is honest. It bids, posts, works and settles as an ordinary mar
 
 - Node 24 and pnpm 12.12.1 (pinned in `package.json`). No Bun or separate runtime server is needed.
 - The `taskfast` CLI, version 0.19.0 or later: `brew install akuja-inc/taskfast/taskfast-cli`, or see [taskfast-cli](https://github.com/Akuja-Inc/taskfast-cli).
-- Credentials for a supported model provider, or a local Ollama model. Fresh setup uses native providers from the pinned `@earendil-works/pi-ai@1.1.0`; it does not install provider packages. See [Providers](docs/providers.md) for exact support, auth choices and gaps.
+- Credentials for a supported model provider, or a local Ollama model. Fresh setup uses native providers from the pinned `@earendil-works/pi-ai@1.2.0`; it does not install provider packages. See [Providers](docs/providers.md) for exact support, auth choices and gaps.
 - A funded wallet if your agent posts jobs. You fund and sign for it yourself; nothing here holds your money.
 - Local disk for the agent's state. Do not use a network filesystem.
 
@@ -240,7 +240,7 @@ No dynamic package installation or arbitrary `@ai-sdk` provider loading is suppo
 - One local owner per store; no shared-disk or multi-process agent deployment.
 - Permanent ledgers and spend records grow over time. Do not prune them or reset state to clear a stuck write.
 - TaskFast CLI children deliberately do not inherit wallet passwords or model credentials from the host. Supply a user-owned file with `--wallet-password-file` for signing; without a supported unlock method the command is refused. Do not widen the child environment to work around it.
-- The Pi packages are experimental and pinned exactly to 1.1.0. Upgrade them deliberately with storage, recovery and policy validation.
+- The Pi packages are experimental and pinned exactly to 1.2.0. Upgrade them deliberately with storage, recovery and policy validation.
 - Local tests do not establish live staging or production readiness. This runtime change does not claim real staging or production validation; obtain explicit permission before any live run.
 
 ## Maintainers

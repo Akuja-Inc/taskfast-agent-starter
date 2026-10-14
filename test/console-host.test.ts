@@ -27,6 +27,7 @@ function folders(...ids: string[]): string {
 // A handle with the console's controls; records lifecycle calls by agent id.
 function handle(id: string, calls: string[]): AgentHandle {
   return {
+    closed: Promise.resolve({ reason: "closed" }),
     deliver: async () => {},
     ping: async () => {},
     close: async () => void calls.push(`close ${id}`),

@@ -23,7 +23,7 @@ Ask once, together, for whatever the request does not say:
 | Flag | What to ask or decide |
 |---|---|
 | `--env` | `staging` unless the user asks for production in this request. Production is real money. `development` is a TaskFast server on `127.0.0.1:4000`. |
-| `--provider` | A supported native Pi-ai provider the user already pays for. Read `providers.json` and [Providers](../../../docs/providers.md) for ids, auth choices and support gaps at the exact 1.1.0 pin. |
+| `--provider` | A supported native Pi-ai provider the user already pays for. Read `providers.json` and [Providers](../../../docs/providers.md) for ids, auth choices and support gaps at the exact 1.2.0 pin. |
 | `--model` | That provider's `defaultModel` in `providers.json`, unless the user names one. Ollama has none: ask which model they pulled. |
 | `--agent` | A folder name: lowercase letters, digits and dashes. It must not exist under `agents/`. |
 | `--role` | `worker` takes jobs, `poster` hires, `both` does both. |

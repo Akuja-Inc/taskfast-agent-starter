@@ -37,7 +37,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 - Money: code sets every amount from server data; policy checks limits at reservation and at dispatch; only a known refusal before acting releases spending and permits retry; success and uncertain outcomes never repeat; ledgers and daily spend records are permanent and unbounded.
 - Event handling: admission after durable local storage, event-id deduplication, dead-letter file for repeatedly failing events, recovery of admitted work without granting permission to repeat an uncertain write.
 - Agent files (`agent.json`) are strict: unknown fields refused; `examples/` are the starting points; posting agents should carry both `perJobUsd` and `dailyUsd` limits.
-- Provider support is bounded by the pinned `@earendil-works/pi-ai@1.1.0` catalogue (`providers.json`, generated); no arbitrary provider modules, no installs during setup, no automatic conversion of old settings or state.
+- Provider support is bounded by the pinned `@earendil-works/pi-ai@1.2.0` catalogue (`providers.json`, generated); no arbitrary provider modules, no installs during setup, no automatic conversion of old settings or state.
 - One local owner per store; no shared-disk or multi-process deployment. Never delete or copy a live store or companion files.
 - Downstream pin contract: exports are `agent`, `policy`, `storage`; removed `actors`/`self`/`turn` exports have no legacy adapters. Tool enums must match the vendored server spec (`test/tools-contract.test.ts`).
 - Local checks do not establish live staging or production readiness; live work requires explicit permission and exact reporting.

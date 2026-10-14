@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";import { afterEach, expect, it, vi } from "vitest";
+import type { Storage } from "@earendil-works/pi-durable";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENT_RETRY, openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
 import { cliEnv, runCli } from "../src/core/cli.js";
@@ -12,6 +13,7 @@ import { runEventPump, runEventPumpForever } from "../src/core/pump.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import type { MarketEvent, Runtime } from "../src/core/types.js";
 import { runAgents } from "../src/run.js";
+import { failingStorage } from "./failing-storage.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -64,8 +66,8 @@ const identityCommand: Command = async (_runtime, args) => {
   if (JSON.stringify(args) !== JSON.stringify(["me"])) throw new Error("event lifecycle fixture permits only the identity read");
   return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
 };
-async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand, now, log }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime; command?: Command; now?: () => Date; log?: (line: string) => void }) {
-  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs, command, now, log });
+async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand, now, log, openStorage }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime; command?: Command; now?: () => Date; log?: (line: string) => void; openStorage?: (file: string) => Promise<Storage> }) {
+  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs, command, now, log, openStorage });
   agents.push(agent);
   return agent;
 }
@@ -349,6 +351,34 @@ function hostAgent({ root, id }: { root: string; id: string }) {
   const fixture = streamFixture({ dir: root, configPath: join(home, ".taskfast", "config.json") });
   return { home, fixture, storeDir: join(home, ".pi-state", "staging") };
 }
+
+it("a failed session stops that agent: the host logs it and closes its stream before its store", async () => {
+  const root = directory();
+  const { storeDir } = hostAgent({ root, id: "worker" });
+  const order: string[] = [];
+  const logs: string[] = [];
+  let armed = false;
+  const stop = stopSignal();
+  const host = runAgents({
+    agentsDir: join(root, "agents"), env: "staging", signal: stop.signal, pingEveryMs: 30,
+    log: (line) => logs.push(line),
+    listen: () => ({ close: async () => { order.push("listener"); } }),
+    openAgent: async ({ runtime, storePath }) => {
+      const agent = await open({ dir: dirname(storePath), selected: selectedModels([fauxAssistantMessage("Poll complete")]), runtime, openStorage: (file) => failingStorage(file, () => armed) });
+      armed = true; // The first host ping's write hits storage and fails the session.
+      return { ...agent, close: async () => { order.push("agent"); await agent.close(); } };
+    },
+  });
+  runs.push(host);
+  try {
+    await expect.poll(() => order.join(","), { timeout: 4000 }).toBe("listener,agent");
+    expect(logs.some((line) => line.includes("worker: session failed: injected storage failure; stopping the agent"))).toBe(true);
+  } finally {
+    stop.abort();
+    await host;
+  }
+  expect(order).toEqual(["listener", "agent"]);
+});
 
 it("the host's periodic poll survives restart and abort closes real agents and listeners", async () => {
   const root = directory();
