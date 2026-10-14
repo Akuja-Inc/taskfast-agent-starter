@@ -1,7 +1,7 @@
 {
   "generatedBy": "scripts/gen-providers.mjs",
   "package": "@earendil-works/pi-ai",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "modelsFrom": "installed pi-ai chat catalog (tool calling only)",
   "providers": [
     {
@@ -9,7 +9,7 @@
       "nativeId": "anthropic",
       "package": "@earendil-works/pi-ai",
       "export": "anthropicProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Anthropic",
       "settings": [
         {
@@ -93,7 +93,7 @@
       "nativeId": "openai",
       "package": "@earendil-works/pi-ai",
       "export": "openaiProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "OpenAI",
       "settings": [
         {
@@ -156,7 +156,7 @@
       "nativeId": "google",
       "package": "@earendil-works/pi-ai",
       "export": "googleProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Google",
       "settings": [
         {
@@ -198,7 +198,7 @@
       "nativeId": "moonshotai",
       "package": "@earendil-works/pi-ai",
       "export": "moonshotaiProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Moonshot AI",
       "settings": [
         {
@@ -221,7 +221,7 @@
       "nativeId": "xai",
       "package": "@earendil-works/pi-ai",
       "export": "xaiProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "xAI",
       "settings": [
         {
@@ -244,7 +244,7 @@
       "nativeId": "deepseek",
       "package": "@earendil-works/pi-ai",
       "export": "deepseekProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "DeepSeek",
       "settings": [
         {
@@ -265,7 +265,7 @@
       "nativeId": "mistral",
       "package": "@earendil-works/pi-ai",
       "export": "mistralProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Mistral",
       "settings": [
         {
@@ -324,7 +324,7 @@
       "nativeId": "groq",
       "package": "@earendil-works/pi-ai",
       "export": "groqProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Groq",
       "settings": [
         {
@@ -350,7 +350,7 @@
       "nativeId": "openrouter",
       "package": "@earendil-works/pi-ai",
       "export": "openrouterProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "OpenRouter",
       "settings": [
         {
@@ -488,7 +488,7 @@
         "inception/mercury-2.5",
         "inclusionai/ling-3.0-flash",
         "inclusionai/ling-3.0-flash-fin",
-        "inclusionai/ling-3.0-flash-sante:free",
+        "inclusionai/ling-3.0-flash-sante",
         "inclusionai/ling-3.0-flash-vl",
         "inclusionai/ling-3.1-flash",
         "liquid/lfm-2.5-2.6b:free",
@@ -504,6 +504,7 @@
         "meta/muse-spark-1.2-contributor",
         "meta/muse-spark-1.3",
         "meta/muse-spark-1.3-contributor",
+        "meta/muse-wonder",
         "minimax/minimax-m1",
         "minimax/minimax-m2",
         "minimax/minimax-m2.1",
@@ -631,6 +632,8 @@
         "openai/gpt-6-sol:batch",
         "openai/gpt-6.1-sol",
         "openai/gpt-6.1-sol-pro",
+        "openai/gpt-6.1-sol-pro:batch",
+        "openai/gpt-6.1-sol:batch",
         "openai/gpt-audio",
         "openai/gpt-audio-mini",
         "openai/gpt-chat-latest",
@@ -662,32 +665,22 @@
         "qwen/qwen-2.5-72b-instruct",
         "qwen/qwen-2.5-7b-instruct",
         "qwen/qwen-plus",
-        "qwen/qwen-plus-2025-07-28",
         "qwen/qwen3-14b",
-        "qwen/qwen3-235b-a22b",
         "qwen/qwen3-235b-a22b-2507",
         "qwen/qwen3-235b-a22b-thinking-2507",
         "qwen/qwen3-30b-a3b",
         "qwen/qwen3-30b-a3b-instruct-2507",
-        "qwen/qwen3-30b-a3b-thinking-2507",
         "qwen/qwen3-32b",
-        "qwen/qwen3-8b",
         "qwen/qwen3-coder",
         "qwen/qwen3-coder-30b-a3b-instruct",
         "qwen/qwen3-coder-flash",
         "qwen/qwen3-coder-next",
-        "qwen/qwen3-coder-plus",
-        "qwen/qwen3-max",
-        "qwen/qwen3-max-thinking",
         "qwen/qwen3-next-80b-a3b-instruct",
         "qwen/qwen3-next-80b-a3b-thinking",
         "qwen/qwen3-vl-235b-a22b-instruct",
-        "qwen/qwen3-vl-235b-a22b-thinking",
         "qwen/qwen3-vl-30b-a3b-instruct",
         "qwen/qwen3-vl-30b-a3b-thinking",
-        "qwen/qwen3-vl-32b-instruct",
         "qwen/qwen3-vl-8b-instruct",
-        "qwen/qwen3-vl-8b-thinking",
         "qwen/qwen3.5-122b-a10b",
         "qwen/qwen3.5-27b",
         "qwen/qwen3.5-35b-a3b",
@@ -699,7 +692,6 @@
         "qwen/qwen3.6-27b",
         "qwen/qwen3.6-35b-a3b",
         "qwen/qwen3.6-flash",
-        "qwen/qwen3.6-max-preview",
         "qwen/qwen3.6-plus",
         "qwen/qwen3.7-flash",
         "qwen/qwen3.7-max",
@@ -716,9 +708,9 @@
         "sakana/fugu-ultra",
         "sakana/fugu-ultra-v2",
         "sakana/sakana-namazu",
-        "sao10k/l3.1-euryale-70b",
         "stepfun/step-3.5-flash",
         "stepfun/step-3.7-flash",
+        "stepfun/step-5-preview",
         "tencent/hy3",
         "tencent/hy3-preview",
         "tencent/hy4-preview",
@@ -770,7 +762,7 @@
       "nativeId": "ollama",
       "package": "@earendil-works/pi-ai",
       "export": "createProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Ollama (models on your machine)",
       "settings": [
         {
@@ -794,7 +786,7 @@
       "nativeId": "vercel-ai-gateway",
       "package": "@earendil-works/pi-ai",
       "export": "vercelAIGatewayProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Vercel AI Gateway (gateway)",
       "settings": [
         {
@@ -809,20 +801,13 @@
         "alibaba/qwen-3-235b",
         "alibaba/qwen-3-30b",
         "alibaba/qwen-3-32b",
-        "alibaba/qwen-3.6-max-preview",
-        "alibaba/qwen3-235b-a22b-thinking",
         "alibaba/qwen3-coder",
         "alibaba/qwen3-coder-30b-a3b",
         "alibaba/qwen3-coder-next",
-        "alibaba/qwen3-coder-plus",
-        "alibaba/qwen3-max",
-        "alibaba/qwen3-max-preview",
         "alibaba/qwen3-max-thinking",
         "alibaba/qwen3-next-80b-a3b-instruct",
         "alibaba/qwen3-next-80b-a3b-thinking",
-        "alibaba/qwen3-vl-235b-a22b-instruct",
         "alibaba/qwen3-vl-instruct",
-        "alibaba/qwen3-vl-thinking",
         "alibaba/qwen3.5-flash",
         "alibaba/qwen3.5-plus",
         "alibaba/qwen3.6-27b",
@@ -841,12 +826,10 @@
         "amazon/nova-lite",
         "amazon/nova-micro",
         "amazon/nova-pro",
-        "anthropic/claude-3-haiku",
         "anthropic/claude-fable-5",
         "anthropic/claude-fable-5.1",
         "anthropic/claude-haiku-4.5",
         "anthropic/claude-haiku-5.5",
-        "anthropic/claude-opus-4",
         "anthropic/claude-opus-4.5",
         "anthropic/claude-opus-4.6",
         "anthropic/claude-opus-4.7",
@@ -865,6 +848,7 @@
         "bytedance/seed-1.6",
         "bytedance/seed-1.8",
         "bytedance/seed-2.1-turbo",
+        "callstack/apex",
         "cohere/command-a",
         "deepseek/deepseek-r1",
         "deepseek/deepseek-v3.1",
@@ -913,6 +897,7 @@
         "meta/muse-spark-1.2-contributor",
         "meta/muse-spark-1.3",
         "meta/muse-spark-1.3-contributor",
+        "meta/muse-wonder-1.0",
         "minimax/minimax-m2",
         "minimax/minimax-m2.1",
         "minimax/minimax-m2.1-lightning",
@@ -1065,7 +1050,7 @@
       "nativeId": "amazon-bedrock",
       "package": "@earendil-works/pi-ai",
       "export": "amazonBedrockProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Amazon Bedrock",
       "settings": [
         {
@@ -1355,7 +1340,7 @@
       "nativeId": "ant-ling",
       "package": "@earendil-works/pi-ai",
       "export": "antLingProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Ant Ling",
       "settings": [
         {
@@ -1377,7 +1362,7 @@
       "nativeId": "azure",
       "package": "@earendil-works/pi-ai",
       "export": "azureProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Azure",
       "settings": [
         {
@@ -1467,7 +1452,7 @@
       "nativeId": "baseten",
       "package": "@earendil-works/pi-ai",
       "export": "basetenProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Baseten",
       "settings": [
         {
@@ -1508,7 +1493,7 @@
       "nativeId": "cerebras",
       "package": "@earendil-works/pi-ai",
       "export": "cerebrasProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Cerebras",
       "settings": [
         {
@@ -1529,7 +1514,7 @@
       "nativeId": "cloudflare-ai-gateway",
       "package": "@earendil-works/pi-ai",
       "export": "cloudflareAIGatewayProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Cloudflare AI Gateway",
       "settings": [
         {
@@ -1553,6 +1538,7 @@
         "claude-fable-5",
         "claude-fable-5-1",
         "claude-haiku-4-5",
+        "claude-haiku-5-5",
         "claude-opus-4-5",
         "claude-opus-4-6",
         "claude-opus-4-7",
@@ -1614,7 +1600,7 @@
       "nativeId": "cloudflare-workers-ai",
       "package": "@earendil-works/pi-ai",
       "export": "cloudflareWorkersAIProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Cloudflare Workers AI",
       "settings": [
         {
@@ -1656,7 +1642,7 @@
       "nativeId": "fireworks",
       "package": "@earendil-works/pi-ai",
       "export": "fireworksProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Fireworks",
       "settings": [
         {
@@ -1697,7 +1683,7 @@
       "nativeId": "github-copilot",
       "package": "@earendil-works/pi-ai",
       "export": "githubCopilotProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "GitHub Copilot",
       "settings": [
         {
@@ -1711,6 +1697,7 @@
         "claude-fable-5",
         "claude-fable-5.1",
         "claude-haiku-4.5",
+        "claude-haiku-5.5",
         "claude-opus-4.7",
         "claude-opus-4.8",
         "claude-opus-5",
@@ -1751,7 +1738,7 @@
       "nativeId": "google-vertex",
       "package": "@earendil-works/pi-ai",
       "export": "googleVertexProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Google Vertex AI",
       "settings": [
         {
@@ -1806,15 +1793,14 @@
         "gemini-2.5-pro",
         "gemini-3-flash-preview",
         "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-image",
         "gemini-3.1-pro-preview",
         "gemini-3.1-pro-preview-customtools",
         "gemini-3.5-flash",
         "gemini-3.5-flash-lite",
         "gemini-3.6-flash",
         "gemini-3.7-flash",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-flash-lite-latest"
+        "gemini-3.8-flash"
       ],
       "defaultModel": "gemini-2.5-flash",
       "note": "Google Cloud API key, or project/location plus ADC: place the credential file inside the agent folder and set GOOGLE_APPLICATION_CREDENTIALS to its relative path. No key is needed with ADC."
@@ -1824,7 +1810,7 @@
       "nativeId": "huggingface",
       "package": "@earendil-works/pi-ai",
       "export": "huggingfaceProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Hugging Face",
       "settings": [
         {
@@ -1854,6 +1840,7 @@
         "google/gemma-4-31B-it",
         "meta-llama/Llama-3.1-8B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
+        "MiniMaxAI/MiniMax-M1-80k",
         "MiniMaxAI/MiniMax-M2",
         "MiniMaxAI/MiniMax-M2.1",
         "MiniMaxAI/MiniMax-M2.5",
@@ -1881,6 +1868,7 @@
         "Qwen/Qwen3-Next-80B-A3B-Thinking",
         "Qwen/Qwen3-VL-235B-A22B-Instruct",
         "Qwen/Qwen3-VL-235B-A22B-Thinking",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct",
         "Qwen/Qwen3.5-122B-A10B",
         "Qwen/Qwen3.5-27B",
         "Qwen/Qwen3.5-35B-A3B",
@@ -1919,7 +1907,7 @@
       "nativeId": "kimi-coding",
       "package": "@earendil-works/pi-ai",
       "export": "kimiCodingProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Kimi For Coding",
       "settings": [
         {
@@ -1942,7 +1930,7 @@
       "nativeId": "meta",
       "package": "@earendil-works/pi-ai",
       "export": "metaProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Meta",
       "settings": [
         {
@@ -1957,7 +1945,8 @@
         "muse-spark-1.2",
         "muse-spark-1.2-contributor",
         "muse-spark-1.3",
-        "muse-spark-1.3-contributor"
+        "muse-spark-1.3-contributor",
+        "muse-wonder-1.0"
       ],
       "defaultModel": "muse-spark-1.1"
     },
@@ -1966,7 +1955,7 @@
       "nativeId": "minimax",
       "package": "@earendil-works/pi-ai",
       "export": "minimaxProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "MiniMax",
       "settings": [
         {
@@ -1989,7 +1978,7 @@
       "nativeId": "minimax-cn",
       "package": "@earendil-works/pi-ai",
       "export": "minimaxCnProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "MiniMax CN",
       "settings": [
         {
@@ -2011,7 +2000,7 @@
       "nativeId": "moonshotai-cn",
       "package": "@earendil-works/pi-ai",
       "export": "moonshotaiCnProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Moonshot AI CN",
       "settings": [
         {
@@ -2034,7 +2023,7 @@
       "nativeId": "nvidia",
       "package": "@earendil-works/pi-ai",
       "export": "nvidiaProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "NVIDIA",
       "settings": [
         {
@@ -2074,7 +2063,7 @@
       "nativeId": "opencode",
       "package": "@earendil-works/pi-ai",
       "export": "opencodeProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "OpenCode Zen",
       "settings": [
         {
@@ -2116,7 +2105,6 @@
         "deepseek-v4-pro",
         "deepseek-v4.1-flash",
         "exo-free",
-        "fledge-alpha-free",
         "glm-5",
         "glm-5.1",
         "glm-5.2",
@@ -2138,6 +2126,7 @@
         "nemotron-3.5-lightning-free",
         "qwen3.8-max",
         "space-bunny-free",
+        "step-5-preview-free",
         "gpt-5",
         "gpt-5-codex",
         "gpt-5-nano",
@@ -2176,7 +2165,7 @@
       "nativeId": "opencode-go",
       "package": "@earendil-works/pi-ai",
       "export": "opencodeGoProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "OpenCode Go",
       "settings": [
         {
@@ -2211,6 +2200,7 @@
         "mimo-v2.6-pro",
         "minimax-m2.7",
         "space-bunny",
+        "step-5-preview-free",
         "gpt-5.6-luna",
         "gpt-6-luna",
         "grok-4.6",
@@ -2225,7 +2215,7 @@
       "nativeId": "qwen-token-plan",
       "package": "@earendil-works/pi-ai",
       "export": "qwenTokenPlanProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Qwen Token Plan",
       "settings": [
         {
@@ -2264,7 +2254,7 @@
       "nativeId": "qwen-token-plan-cn",
       "package": "@earendil-works/pi-ai",
       "export": "qwenTokenPlanCnProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Qwen Token Plan CN",
       "settings": [
         {
@@ -2303,7 +2293,7 @@
       "nativeId": "qwen-token-plan-individual",
       "package": "@earendil-works/pi-ai",
       "export": "qwenTokenPlanIndividualProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Qwen Token Plan Individual",
       "settings": [
         {
@@ -2331,7 +2321,7 @@
       "nativeId": "radius",
       "package": "@earendil-works/pi-ai",
       "export": "radiusProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Radius",
       "settings": [
         {
@@ -2347,6 +2337,7 @@
         "claude-fable-5",
         "claude-fable-5-1",
         "claude-haiku-4-5",
+        "claude-haiku-5-5",
         "claude-opus-4-5",
         "claude-opus-4-8",
         "claude-opus-5",
@@ -2378,7 +2369,7 @@
       "nativeId": "together",
       "package": "@earendil-works/pi-ai",
       "export": "togetherProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Together",
       "settings": [
         {
@@ -2414,7 +2405,7 @@
       "nativeId": "together",
       "package": "@earendil-works/pi-ai",
       "export": "togetherProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Together (togetherai)",
       "settings": [
         {
@@ -2450,7 +2441,7 @@
       "nativeId": "vercel-ai-gateway",
       "package": "@earendil-works/pi-ai",
       "export": "vercelAIGatewayProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Vercel AI Gateway",
       "settings": [
         {
@@ -2465,20 +2456,13 @@
         "alibaba/qwen-3-235b",
         "alibaba/qwen-3-30b",
         "alibaba/qwen-3-32b",
-        "alibaba/qwen-3.6-max-preview",
-        "alibaba/qwen3-235b-a22b-thinking",
         "alibaba/qwen3-coder",
         "alibaba/qwen3-coder-30b-a3b",
         "alibaba/qwen3-coder-next",
-        "alibaba/qwen3-coder-plus",
-        "alibaba/qwen3-max",
-        "alibaba/qwen3-max-preview",
         "alibaba/qwen3-max-thinking",
         "alibaba/qwen3-next-80b-a3b-instruct",
         "alibaba/qwen3-next-80b-a3b-thinking",
-        "alibaba/qwen3-vl-235b-a22b-instruct",
         "alibaba/qwen3-vl-instruct",
-        "alibaba/qwen3-vl-thinking",
         "alibaba/qwen3.5-flash",
         "alibaba/qwen3.5-plus",
         "alibaba/qwen3.6-27b",
@@ -2497,12 +2481,10 @@
         "amazon/nova-lite",
         "amazon/nova-micro",
         "amazon/nova-pro",
-        "anthropic/claude-3-haiku",
         "anthropic/claude-fable-5",
         "anthropic/claude-fable-5.1",
         "anthropic/claude-haiku-4.5",
         "anthropic/claude-haiku-5.5",
-        "anthropic/claude-opus-4",
         "anthropic/claude-opus-4.5",
         "anthropic/claude-opus-4.6",
         "anthropic/claude-opus-4.7",
@@ -2521,6 +2503,7 @@
         "bytedance/seed-1.6",
         "bytedance/seed-1.8",
         "bytedance/seed-2.1-turbo",
+        "callstack/apex",
         "cohere/command-a",
         "deepseek/deepseek-r1",
         "deepseek/deepseek-v3.1",
@@ -2569,6 +2552,7 @@
         "meta/muse-spark-1.2-contributor",
         "meta/muse-spark-1.3",
         "meta/muse-spark-1.3-contributor",
+        "meta/muse-wonder-1.0",
         "minimax/minimax-m2",
         "minimax/minimax-m2.1",
         "minimax/minimax-m2.1-lightning",
@@ -2721,7 +2705,7 @@
       "nativeId": "xiaomi",
       "package": "@earendil-works/pi-ai",
       "export": "xiaomiProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Xiaomi",
       "settings": [
         {
@@ -2746,7 +2730,7 @@
       "nativeId": "xiaomi-token-plan-ams",
       "package": "@earendil-works/pi-ai",
       "export": "xiaomiTokenPlanAmsProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Xiaomi Token Plan AMS",
       "settings": [
         {
@@ -2769,7 +2753,7 @@
       "nativeId": "xiaomi-token-plan-cn",
       "package": "@earendil-works/pi-ai",
       "export": "xiaomiTokenPlanCnProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Xiaomi Token Plan CN",
       "settings": [
         {
@@ -2792,7 +2776,7 @@
       "nativeId": "xiaomi-token-plan-sgp",
       "package": "@earendil-works/pi-ai",
       "export": "xiaomiTokenPlanSgpProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Xiaomi Token Plan SGP",
       "settings": [
         {
@@ -2815,7 +2799,7 @@
       "nativeId": "zai",
       "package": "@earendil-works/pi-ai",
       "export": "zaiProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Z.AI",
       "settings": [
         {
@@ -2842,7 +2826,7 @@
       "nativeId": "zai-coding-cn",
       "package": "@earendil-works/pi-ai",
       "export": "zaiCodingCnProvider",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "label": "Z.AI Coding CN",
       "settings": [
         {

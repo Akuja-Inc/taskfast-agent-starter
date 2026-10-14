@@ -24,7 +24,7 @@ export function taskfastEnv(name: string): Env {
   return environment[1];
 }
 // The console shows only agents whose handle carries its controls.
-export type AgentHandle = Pick<MarketplaceAgent, "deliver" | "ping" | "close"> & Partial<ConsoleAgent["agent"]>;
+export type AgentHandle = Pick<MarketplaceAgent, "closed" | "deliver" | "ping" | "close"> & Partial<ConsoleAgent["agent"]>;
 export interface RunOptions {
   agentsDir: string;
   env: Env;
@@ -112,6 +112,17 @@ export async function runAgents(o: RunOptions): Promise<void> {
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
   let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
   const streams = new Map<string, HostFacts["stream"]>();
+  // Removes one agent from the roster and closes its stream before its store, as at
+  // shutdown, so no event can be ACKed after its ownership closed.
+  async function detach(item: Item): Promise<void> {
+    const at = running.findIndex((owned) => owned.id === item.id);
+    if (at < 0) return;
+    const [owned] = running.splice(at, 1);
+    streams.delete(item.id);
+    await consoleServer?.closeStreams(item.id);
+    await owned.listener?.close();
+    await owned.agent.close();
+  }
   // Opens one agent's store, then its stream, keeping its place among the others.
   async function start(item: Item, at = running.length): Promise<void> {
     const agent = o.openAgent
@@ -125,6 +136,13 @@ export async function runAgents(o: RunOptions): Promise<void> {
     }
     running.splice(at, 0, owned);
     streams.set(item.id, "starting");
+    // A failed session has already closed its store: stop this agent cleanly and
+    // keep the others running. Every later deliver() rejects, so nothing is ACKed.
+    void agent.closed.then((end) => {
+      if (end.reason !== "failed" || o.signal.aborted) return;
+      o.log(`${item.id}: session failed: ${end.error instanceof Error ? end.error.message : String(end.error)}; stopping the agent`);
+      void detach(item);
+    }).catch(() => {});
     try {
       owned.listener = (o.listen ?? startListener)({ runtime: item.runtime, deliver: (event) => agent.deliver(event), log: (line) => {
         const stream = streamStatus(line);
@@ -192,13 +210,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     const file = findUnlockFile(item.agentDir);
     item.runtime = { env: item.runtime.env, configPath: item.runtime.configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) };
     const at = running.findIndex((owned) => owned.id === item.id);
-    if (at >= 0) {
-      const [owned] = running.splice(at, 1);
-      // Streams before store, as at shutdown.
-      await consoleServer?.closeStreams(item.id);
-      await owned.listener?.close();
-      await owned.agent.close();
-    }
+    if (at >= 0) await detach(item);
     try { await start(item, at >= 0 ? at : running.length); }
     catch (error) {
       // A transient reopen failure must not leave a file the next start cannot load.

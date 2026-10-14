@@ -49,6 +49,7 @@ describe("runAgents", () => {
     const calls: unknown[] = [];
     const stop = new AbortController();
     const agent: AgentHandle = {
+      closed: Promise.resolve({ reason: "closed" }),
       deliver: async () => {},
       ping: async () => (calls.push(["ping"]), stop.abort()),
       close: async () => void calls.push(["close"]),
@@ -67,7 +68,7 @@ describe("runAgents", () => {
     const stop = new AbortController();
     await runAgents({ agentsDir: dir, env: "staging", signal: stop.signal, log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async ({ id, storePath, runtime }) => {
       opened.push({ id, storePath, file: runtime.walletPasswordFile });
-      return { deliver: async () => {}, ping: async () => { stop.abort(); }, close: async () => {} };
+      return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => { stop.abort(); }, close: async () => {} };
     } });
     expect(opened).toEqual(["me", "two"].map((id) => ({ id, storePath: join(dir, id, ".pi-state", "staging", "state.sqlite"), file: join(dir, id, ".taskfast", "wallet-password") })));
   });
@@ -84,7 +85,7 @@ describe("runAgents", () => {
     let opens = 0;
     await expect(runAgents({ agentsDir: dir, env: "staging", signal: AbortSignal.abort(), log: () => {}, openAgent: async () => {
       opens++;
-      return { deliver: async () => {}, ping: async () => {}, close: async () => {} };
+      return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => {}, close: async () => {} };
     } })).rejects.toThrow(/symlink/);
     expect(opens).toBe(0);
   });
@@ -101,7 +102,7 @@ describe("runAgents", () => {
     let opens = 0;
     await expect(runAgents({ agentsDir: dir, env: "staging", signal: AbortSignal.abort(), log: () => {}, openAgent: async () => {
       opens++;
-      return { deliver: async () => {}, ping: async () => {}, close: async () => {} };
+      return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => {}, close: async () => {} };
     } })).rejects.toThrow(/prior.*store|previous.*store/);
     expect(opens).toBe(0);
     expect(readFileSync(prior, "utf8")).toBe("simulated permanent history");
@@ -123,7 +124,7 @@ describe("runAgents", () => {
     let opens = 0;
     await expect(runAgents({ agentsDir: dir, env: "staging", signal: AbortSignal.abort(), log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async () => {
       opens++;
-      return { deliver: async () => {}, ping: async () => {}, close: async () => {} };
+      return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => {}, close: async () => {} };
     } })).rejects.toThrow(/relative|inside the agent folder|symlink/);
     expect(opens).toBe(0);
     expect(readFileSync(outside, "utf8")).toBe("synthetic wallet outside");

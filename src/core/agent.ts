@@ -3,7 +3,7 @@ import { Type, StringEnum, type Message, type Models, type TSchema } from "@eare
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
 import { createTimeout } from "retry";
-import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
@@ -43,6 +43,8 @@ export interface AgentOptions {
   now?: () => Date;
   recoverEveryMs?: number;
   log?: (line: string) => void;
+  // Tests substitute a wrapping opener to inject storage failures.
+  openStorage?: (file: string) => Promise<Storage>;
 }
 export interface MarketplaceAgent {
   conversation: Conversation;
@@ -55,6 +57,10 @@ export interface MarketplaceAgent {
   transcript(limit: number): Promise<Message[]>;
   // Calls `listener` after every commit to this agent's store; returns the unsubscribe.
   changes(listener: () => void): () => void;
+  // Resolves when the Pi session ends: { reason: "closed" } after close(), or
+  // { reason: "failed", error } when a storage error failed it. A failed session
+  // has already closed its store, so the host must stop the agent without ACKing.
+  closed: Promise<SessionEnd>;
   waitForIdle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -97,7 +103,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   const models = o.models ?? await createAgentModels(spec.model, { agentDir, settings: providerSettings(agentDir) });
   const log = (line: string) => { try { o.log?.(line); } catch {} };
   const now = () => (o.now?.() ?? new Date()).getTime();
-  const storage = await openAgentStorage(o.storePath);
+  const storage = await (o.openStorage ?? openAgentStorage)(o.storePath);
   let pi: PiEngine | undefined;
   try {
     const registry = createRegistry();
@@ -108,7 +114,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       execute: async (args, api, ctx) => {
         if (!policy || api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("marketplace policy is unavailable");
         const result = await policy.execute({ tool: name, input: args, commit: (change) => api.commit(change, ctx), signal: ctx.abortSignal });
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        return { output: [{ type: "text", text: JSON.stringify(result) }] };
       },
     }));
     registry.install(defineExtension({
@@ -269,13 +275,18 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     return {
       conversation, deliver, ping, recover, status: activePolicy.snapshot, operator, transcript,
       // Every commit, not viewState(): that view skips commits to session documents (operator, policy, events).
-      changes: (listener) => owner.subscribeCommits(() => { try { listener(); } catch {} }),
+      // A throwing listener is Pi's to report through onReport, which logs it.
+      changes: (listener) => owner.subscribeCommits(listener),
+      closed: owner.closed,
       waitForIdle: () => conversation.waitForIdle(context),
       close: async () => {
         if (closed) return;
         closed = true;
         clearInterval(timer);
-        try { await recovering; }
+        // A recovery still in flight when the session failed rejects with
+        // SessionFailed; the host logs the failure itself, so closing must still
+        // finish and release ownership.
+        try { await recovering?.catch(() => {}); }
         finally { await owner.close(context); }
       },
     };

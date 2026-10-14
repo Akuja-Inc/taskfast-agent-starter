@@ -1,6 +1,6 @@
 # Providers
 
-Fresh setup uses the installed `@earendil-works/pi-ai@1.1.0` package. It never installs provider packages or converts old agent files/settings. The tables below replace the older README provider instructions for this migration.
+Fresh setup uses the installed `@earendil-works/pi-ai@1.2.0` package. It never installs provider packages or converts old agent files/settings. The tables below replace the older README provider instructions for this migration.
 
 Run `node scripts/gen-providers.mjs` after installing the exact package pin. Generation is offline: factory exports, environment auth resolvers, cloud adapter configuration and tool-calling chat catalogs come from that installed version. Unexpected provider/setting losses fail before writes. Prompt defaults and recorded removals live in the generator. Suggested models are the first text chat entry in the pinned catalog, not a claim about release date. Image/classifier entries are not offered.
 

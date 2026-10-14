@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { createSession, defineDoc } from "@earendil-works/pi-durable";
+import { createSession, defineDoc, type Storage } from "@earendil-works/pi-durable";
 import { afterEach, expect, it } from "vitest";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
@@ -47,6 +47,17 @@ async function open(options: Partial<Parameters<typeof openMarketplaceAgent>[0]>
   return { agent, calls, ...selected, dir };
 }
 async function run(agent: MarketplaceAgent) { await agent.ping(); await agent.waitForIdle(); }
+// Delegates everything to the real store until armed; then every method except
+// close throws, so the Session fails while its self-close still reaches storage.
+function failingStorage(file: string, armed: () => boolean): Promise<Storage> {
+  return openAgentStorage(file).then((storage) => new Proxy(storage, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key);
+      if (typeof value !== "function" || key === "close" || key === "then" || !armed()) return typeof value === "function" ? value.bind(target) : value;
+      return async () => { throw new Error("injected storage failure"); };
+    },
+  }));
+}
 
 it("moves a stopped agent folder without losing notes, spend or completed business keys", async () => {
   const root = mkdtempSync(join(tmpdir(), "marketplace-move-"));
@@ -334,4 +345,25 @@ it("does not allow forks to create separate marketplace policy owners", async ()
   await run(kit.agent);
   const entries = await kit.agent.conversation.entries({}, 1, undefined, context);
   await expect(kit.agent.conversation.fork(entries.items[0].id, { ownership: { kind: "ownerless" } }, context)).rejects.toThrow(/forks are disabled/);
+});
+
+it("a storage error fails the session: nothing is admitted afterwards, closing still finishes and ownership is released", async () => {
+  let armed = false;
+  const kit = await open({ openStorage: (file) => failingStorage(file, () => armed) });
+  await expect(kit.agent.deliver({ event_id: "evt-fail", event: "task.updated", task_id: task })).resolves.toBeUndefined();
+  armed = true;
+  // A new event key forces a real commit; the deduplicated resend above would not.
+  await expect(kit.agent.deliver({ event_id: "evt-fail-2", event: "task.updated", task_id: task })).rejects.toThrow(/injected storage failure/);
+  const end = await kit.agent.closed;
+  if (end.reason !== "failed") throw new Error("the session end was not a failure");
+  expect(end.error).toBeInstanceOf(Error);
+  expect(end.error instanceof Error && end.error.message).toContain("injected storage failure");
+  // Every later call refuses, so the pump can never ACK another event.
+  await expect(kit.agent.deliver({ event_id: "evt-fail", event: "task.updated", task_id: task })).rejects.toThrow(/session/i);
+  await expect(kit.agent.ping()).rejects.toThrow(/session/i);
+  await kit.agent.close();
+  expect(kit.calls).toEqual([["me"]]);
+  // The failed session closed its own storage; the owner lock is free again.
+  const reopened = await openAgentStorage(join(kit.dir, "state.sqlite"));
+  await reopened.close(context);
 });

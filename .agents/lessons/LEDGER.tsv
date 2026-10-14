@@ -1,2 +1,3 @@
 source_id	origin	first_seen	disposition	target	note
 hand:85974fb5fbc1	hand	2026-10-14T20:34:36Z	agents_md	AGENTS.md	Main-checkout work on the #29 branch collided with the gh38 pi-1.2.0 bump reworking package.json and pnpm-lock.yaml under it.
+hand:eddef8721dda	kimi	2026-10-14T20:39:24Z	lesson	.agents/lessons/pi-storage-failure-injection.md	storage failure tests need a state-changing commit
