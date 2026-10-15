@@ -128,7 +128,7 @@ export function skillsPrompt(skills: readonly Skill[]): string {
     ...skills.map((skill) => `- ${skill.name}: ${skill.description}`),
     "",
     `Skills may be written for agents with a shell. You have no shell and no taskfast command; use your tools. ${Object.entries(SKILL_COMMANDS).map(([command, tool]) => `\`taskfast ${command}\` is ${tool}`).join(", ")}. task_submit takes a summary only, no artifacts.`,
-    `No tool runs ${UNSUPPORTED_COMMANDS.map((command) => `\`taskfast ${command}\``).join(", ")}. When a skill needs one of those, do not work around it: tell your operator what is missing.`,
+    `No tool runs ${UNSUPPORTED_COMMANDS.map((command) => `\`taskfast ${command}\``).join(", ")}. You work on your own, so never wait for help with one of those and never work around it: do not bid on or claim work that needs one, such as a task that requires a performance bond or file artifacts, and choose work your tools can finish. If work you already hold turns out to need one, keep a note of what was missing with remember, so your operator sees it.`,
     "Your tools' rules win over any skill: never repeat a write whose result was uncertain, escrow_sign included, and leave restarts, event polling and webhooks to the host.",
   ].join("\n");
 }
