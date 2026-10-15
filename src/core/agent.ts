@@ -10,6 +10,8 @@ import { agentDirectory, providerSettings } from "./folder.js";
 import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult, type WithdrawResult } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { marketplacePrompt } from "./prompt.js";
+import { connectMcp } from "./mcp.js";
+import { loadMcpConfig } from "./mcp-config.js";
 import { loadSkills, readSkill, skillsPrompt } from "./skills.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
@@ -119,7 +121,15 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   // A malformed skill throws here, before the store opens or the server is asked anything.
   const skills = loadSkills(agentDir);
   if (skills.length) log(`skills: ${skills.map((skill) => skill.name).join(", ")}`);
-  const storage = await (o.openStorage ?? openAgentStorage)(o.storePath);
+  // Every MCP server is connected and its approved tools checked before the store opens;
+  // any failure closes the servers already started and stops this agent.
+  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: [...Object.keys(TOOLS), "skill_read"] });
+  let storage: Storage;
+  try { storage = await (o.openStorage ?? openAgentStorage)(o.storePath); }
+  catch (error) {
+    await mcp.close();
+    throw error;
+  }
   let pi: PiEngine | undefined;
   try {
     const registry = createRegistry();
@@ -155,6 +165,11 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       })],
       sections: [section("skills", () => skillsPrompt(skills), { tag: false })],
     }));
+    // MCP tools run outside the marketplace policy: approved reads only, never a TaskFast write.
+    if (mcp.prompt) {
+      const prompt = mcp.prompt;
+      registry.install(defineExtension({ name: "mcp", tools: mcp.tools, sections: [section("mcp", () => prompt, { tag: false })] }));
+    }
     pi = await PiRuntime.open(storage, {
       models, registry, settings: { toolExecution: "sequential", retry: { maxRetries: 3 } },
       conversationCreated: (_tx, conversation) => {
@@ -468,11 +483,13 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         await recovering?.catch(() => {});
         await operatorLine;
         await owner.close(context);
+        await mcp.close();
       },
     };
   } catch (error) {
     if (pi) await pi.close(context);
     else await storage.close(context);
+    await mcp.close();
     throw error;
   }
 }

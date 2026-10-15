@@ -1,6 +1,8 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { approve, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -652,6 +654,81 @@ it("refuses a model's path outside the skill as a tool error, and the run carrie
   expect(requests[0]).toContain("taskfast-agent has no file ../../../.env");
   expect(requests[0]).not.toContain("agent-secret");
   expect(kit.faux.state.callCount).toBe(2);
+});
+
+it("uses an approved MCP read in the durable conversation, and refuses bad arguments before the server sees them", async () => {
+  const dir = agentFolder(false);
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { search: approve("search") } } });
+  const logs: string[] = [];
+  const kit = await open({ dir, log: (line) => logs.push(line) });
+  const requests: string[] = [];
+  kit.faux.setResponses([
+    seen(requests, fauxAssistantMessage([fauxToolCall("mcp_docs_search", { topic: "bonds" })], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage([fauxToolCall("mcp_docs_search", { query: "bond rules" }, { id: "second" })], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage("Found it.")),
+  ]);
+  await run(kit.agent);
+  expect(logs).toContain("mcp docs: tools mcp_docs_search");
+  expect(requests[0]).toContain("Tools named mcp_* come from external servers your operator approved as reads");
+  // Pi checks the call against the server's schema; a call that does not fit never reaches it.
+  expect(requests[1]).not.toContain("results for");
+  expect(requests[1]).toContain("Validation failed for tool \\\"mcp_docs_search\\\"");
+  expect(requests[2]).toContain("results for bond rules");
+  expect(kit.calls).toEqual([["me"]]);
+});
+
+it("fails closed on a changed MCP tool before opening the store, and leaves no server running", async () => {
+  const dir = agentFolder(false);
+  const pidfile = join(dir, "grandchild.pid");
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], env: { FIXTURE_MODE: "MODE", FIXTURE_PIDFILE: "PIDFILE" }, tools: { search: approve("search") } } }, { MODE: "changed", PIDFILE: pidfile });
+  const calls: string[][] = [];
+  await expect(open({ dir, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/mcp docs: tool search changed since you approved it/);
+  expect(calls).toEqual([]);
+  expect(existsSync(join(dir, "state.sqlite"))).toBe(false);
+  const pid = Number(readFileSync(pidfile, "utf8"));
+  for (let wait = 0; wait < 50; wait++) {
+    try { process.kill(pid, 0); } catch { break; }
+    await sleep(20);
+  }
+  expect(() => process.kill(pid, 0)).toThrow();
+});
+
+it("keeps two agents' same-named servers apart: own process, own credential", async () => {
+  const kits = [];
+  for (const secret of ["first-token", "second-token"]) {
+    const dir = agentFolder(false);
+    writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], env: { DOCS_TOKEN: "DOCS_SECRET" }, tools: { env: approve("env") } } }, { DOCS_SECRET: secret });
+    kits.push(await open({ dir }));
+  }
+  const seenBy: string[][] = [[], []];
+  kits.forEach((kit, at) => kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("mcp_docs_env", {})], { stopReason: "toolUse" }),
+    seen(seenBy[at]!, fauxAssistantMessage("Done")),
+  ]));
+  await Promise.all(kits.map((kit) => run(kit.agent)));
+  for (const requests of seenBy) {
+    expect(requests[0]).toContain("[redacted]");
+    expect(requests[0]).not.toMatch(/first-token|second-token/);
+  }
+  await kits[0]!.agent.close();
+  kits[1]!.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_env", {}, { id: "after" })], { stopReason: "toolUse" }), fauxAssistantMessage("Still here")]);
+  await run(kits[1]!.agent);
+  expect(kits[1]!.faux.state.callCount).toBe(4);
+});
+
+it("abandons an MCP call a restart interrupted instead of running it again", async () => {
+  const dir = agentFolder(false);
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { slow: approve("slow") } } });
+  const first = await open({ dir });
+  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_slow", { ms: 60_000 })], { stopReason: "toolUse" })]);
+  await first.agent.ping();
+  for (let wait = 0; wait < 100 && !(await first.agent.conversation.entries({ order: "descending" }, 5, undefined, context)).items.some((entry) => JSON.stringify(entry).includes("mcp_docs_slow")); wait++) await sleep(20);
+  await first.agent.close();
+  const second = await open({ dir });
+  const requests: string[] = [];
+  second.faux.setResponses([seen(requests, fauxAssistantMessage("Left it."))]);
+  await run(second.agent);
+  expect(requests[0]).toMatch(/Tool mcp_docs_slow was not started|abandoned|interrupted/i);
 });
 
 it("keeps an agent without skills as before: no skill tool, no skills prompt", async () => {
