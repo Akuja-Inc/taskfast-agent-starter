@@ -388,7 +388,7 @@ it("reads the wallet once more after an in-flight read when money moves during i
   });
 });
 
-it("keeps the wallet for one ping interval and task reads for a minute", async () => {
+it("keeps the wallet for just under one ping interval and task reads for a minute", async () => {
   const task = "11111111-1111-4111-8111-111111111111";
   const reads: string[] = [];
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -405,10 +405,10 @@ it("keeps the wallet for one ping interval and task reads for a minute", async (
       const start = Date.now();
       await get(link!, "/api/agents/me");
       expect(reads).toEqual(["wallet", "task"]);
-      vi.setSystemTime(start + PING_MS - 1);
+      vi.setSystemTime(start + PING_MS - 1_001);
       await get(link!, "/api/agents/me");
       expect(reads).toEqual(["wallet", "task"]);
-      vi.setSystemTime(start + PING_MS);
+      vi.setSystemTime(start + PING_MS - 1_000);
       await get(link!, "/api/agents/me");
       expect(reads).toEqual(["wallet", "task", "wallet"]);
       vi.setSystemTime(start + 60_000);

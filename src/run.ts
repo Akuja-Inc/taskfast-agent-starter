@@ -41,6 +41,9 @@ export interface RunOptions {
 }
 
 const READ_TTL_MS = 60_000;
+// Just under one ping: a read starts a little after the ping timer does, so a full ping
+// would let some pings find it still fresh. This way every ping refreshes an idle console.
+const WALLET_TTL_MS = PING_MS - 1_000;
 type Ledger = Parameters<NonNullable<ConsoleAgent["host"]>>[1];
 // Events that move an agent's money. A resolved dispute refunds or pays out its escrow.
 const PAYMENTS = new Set(["payment_held", "payment_released", "payment_disbursed", "dispute_resolved"]);
@@ -220,8 +223,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     return {
       unlockFile: unlock !== undefined && existsSync(unlock),
       stream: streams.get(item.id) ?? "starting",
-      // The wallet lives one ping, so an outside deposit shows on an idle console.
-      wallet: await read(item, ["wallet", "balance"], PING_MS, moves(seen)),
+      wallet: await read(item, ["wallet", "balance"], WALLET_TTL_MS, moves(seen)),
       tasks: Object.fromEntries(await Promise.all(taskIds.filter((id) => UUID.test(id)).map(async (id) => [id, await read(item, ["task", "get", "--", id])]))),
       deadLetters,
     };
