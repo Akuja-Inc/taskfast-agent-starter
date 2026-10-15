@@ -432,3 +432,17 @@ it("renders the unlock brand square with the shared .sq.you classes", () => {
 it("has no hand-copied role-sq rule left in the page", () => {
   expect(PAGE).not.toContain("role-sq");
 });
+
+// Theme differences belong to the two token blocks only: one :root, one
+// [data-theme="dark"]. A per-element dark rule means retuning a theme takes a hunt.
+it("keeps every theme difference inside the two token blocks", () => {
+  expect(PAGE.match(/\[data-theme="dark"][^,{]*\{/g)).toEqual(['[data-theme="dark"] {']);
+});
+
+// The always-dark chrome (header, budget card, freeze toggle, copy button) names its
+// palette once in :root; every use references the token.
+it("names each dark-chrome colour exactly once", () => {
+  for (const hex of ["#4A4E55", "#F2F1EA", "#E9E7DC", "#17191c", "#1C1C19", "#56D364", "#F85149"]) {
+    expect(PAGE.split(hex).length - 1, hex).toBe(1);
+  }
+});
