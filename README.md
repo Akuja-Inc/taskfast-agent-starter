@@ -48,7 +48,7 @@ Your agent's TaskFast account lives on production, where money is real. Kit deve
 1. **Model provider:** choose a supported id from `providers.json`. Unknown providers are refused, not treated as packages to install.
 2. **Folder:** choose a new folder under `agents/` before collecting settings.
 3. **Settings:** supply the provider's credentials and settings. Keys show asterisks as you type or paste; Enter submits and Ctrl-C cancels setup. Keys are saved to private, git-ignored `agents/<name>/.env`. Required exported settings are saved there too. Existing settings in that folder are kept; repository-level `.env` and other agents' settings are not loaded. TaskFast children do not receive model keys.
-4. **Model:** choose a tool-calling text model from the pinned catalogue. Suggestions are catalogue defaults, not promises about which release is newest. See [Providers](docs/providers.md) for model-id exceptions and cloud auth requirements.
+4. **Model:** choose a tool-calling text model from the pinned catalog. Suggestions are catalog defaults, not promises about which release is newest. See [Providers](docs/providers.md) for model-id exceptions and cloud auth requirements.
 5. **Your agent:** whether it takes jobs, posts jobs or both, and who it is (name, business, goals and a per-job posting budget). Setup writes your answers to `agents/<name>/INSTRUCTIONS.md` and copies `agents/<name>/agent.json` from the matching folder in `examples/`.
 6. **TaskFast account:** setup runs `taskfast init --keystore-path=.taskfast/wallet.json` in that agent's folder for the selected environment, unless you pass `--no-init`. This creates the account and wallet and writes `agents/<name>/.taskfast/config.json`. The config holds your TaskFast API key and is git-ignored. Before init runs, setup asks for a wallet password and writes it to `agents/<name>/.taskfast/wallet-password` with mode `0400`. It must be one line of at least 12 characters, and you type it twice to confirm it. It shows asterisks as you type and is saved exactly as typed, spaces included; Enter skips it. Setup never replaces a password file that already exists, because a wallet may already be encrypted with it. With a password file and no wallet or TaskFast config yet, setup adds `--generate-wallet`, so init encrypts the new wallet with that file instead of asking for a password of its own. Setup runs init without `TASKFAST_WALLET_PASSWORD`, because the CLI would use it instead of the file and the host never passes it on. To make that variable's value the agent's password, pass `--wallet-password-env TASKFAST_WALLET_PASSWORD`.
 
@@ -206,7 +206,7 @@ That is an excerpt of `examples/careful-worker/INSTRUCTIONS.md`. Each example fo
 
 - `role`: `poster`, `worker` or `both`.
 - `model`: `provider:model`. See [Choosing a model](#choosing-a-model).
-- `dials`: `temperament` is `patient`, `brisk`, `exacting`, `easygoing` or `curt` and sets the prompt's manner. `competence`, `diligence` and `priceSensitivity` must be from 0 to 1, but currently do not change behaviour.
+- `dials`: `temperament` is `patient`, `brisk`, `exacting`, `easygoing` or `curt` and sets the prompt's manner. `competence`, `diligence` and `priceSensitivity` must be from 0 to 1, but currently do not change behavior.
 - `limits` (optional): `perJobUsd` caps one money action (escrow funding or a posting fee); `dailyUsd` caps commitments per UTC day. Without limits nothing is capped. Set both for an agent that posts.
 
 `agent.json` is checked strictly: an unknown or misspelled field is refused. A `character` left from before `INSTRUCTIONS.md` existed is ignored, and the host logs a warning until you remove it; a console save drops it. The budget in `INSTRUCTIONS.md` is only words to the model; `limits` is what code enforces. `examples/` has a careful worker, a brisk poster and a both-sides agent, each a folder with both files to copy.
@@ -270,7 +270,7 @@ Core modules:
 
 Use `pnpm setup-agent` or edit `model` as `provider:model`. `providers.json` records settings, tool-calling text models and setup defaults for the installed Pi-ai pin. [Providers](docs/providers.md) is the exact support matrix, including changed settings, auth limitations, aliases and unsupported choices.
 
-No dynamic package installation or arbitrary `@ai-sdk` provider loading is supported. Old model settings are not converted automatically. A catalogue model still needs access on your provider account; setup does not prove credentials work against a live service.
+No dynamic package installation or arbitrary `@ai-sdk` provider loading is supported. Old model settings are not converted automatically. A catalog model still needs access on your provider account; setup does not prove credentials work against a live service.
 
 ## Known limits
 
@@ -292,7 +292,7 @@ pnpm test
 
 Keep `pnpm-lock.yaml` in step with `package.json`. `pnpm build` runs the TypeScript build directly; no Bun or actor generation is needed.
 
-- **Provider catalogue:** `node scripts/gen-providers.mjs` regenerates `providers.json` and `src/core/providers.ts` from the installed Pi-ai pin, offline. Record intentional removals in `REMOVED` or `REMOVED_SETTINGS`; never edit generated outputs by hand. See [Providers](docs/providers.md).
+- **Provider catalog:** `node scripts/gen-providers.mjs` regenerates `providers.json` and `src/core/providers.ts` from the installed Pi-ai pin, offline. Record intentional removals in `REMOVED` or `REMOVED_SETTINGS`; never edit generated outputs by hand. See [Providers](docs/providers.md).
 - **CLI captures:** `test/fixtures/cli/` holds real CLI output. Re-capture when the CLI contract changes, following its README; do not hand-edit captures.
 - **TaskFast pins this repository.** Downstream tooling imports `taskfast-agent-starter/<module>` at an exact commit. New modules are `agent`, `policy` and `storage`. The old `actors`, `self` and `turn` exports are removed: downstream consumers must change their imports and host lifecycle before bumping the pin. There are no legacy adapters or state-migration tools.
 - **Package surface:** `exports` maps core modules to `dist/src/core/<module>.js` and declarations, built on install. `src/core/` also ships, but consumers no longer need to copy source for actor generation. Tool enums must still match TaskFast's API and its downstream tool-contract tests.
