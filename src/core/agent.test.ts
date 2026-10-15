@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -543,4 +543,74 @@ it("a storage error fails the session: nothing is admitted afterwards, closing s
   // The failed session closed its own storage; the owner lock is free again.
   const reopened = await openAgentStorage(join(kit.dir, "state.sqlite"));
   await reopened.close(context);
+});
+
+// The real bundle `taskfast skills --yes` writes; see test/fixtures/cli/README.md.
+const BUNDLE = join(import.meta.dirname, "../../test/fixtures/cli/skills/taskfast-agent");
+function agentFolder(skill = true): string {
+  const dir = mkdtempSync(join(tmpdir(), "marketplace-skills-"));
+  dirs.push(dir);
+  if (skill) cpSync(BUNDLE, join(dir, ".agents/skills/taskfast-agent"), { recursive: true });
+  return dir;
+}
+// Records what the model was sent (system prompt, tool declarations, history) before answering.
+function seen(requests: string[], message: ReturnType<typeof fauxAssistantMessage>): FauxResponseFactory {
+  return (input) => { requests.push(JSON.stringify(input)); return message; };
+}
+
+it("reads the CLI's real skill and a role reference in the durable conversation, then uses the matching tool", async () => {
+  const logs: string[] = [];
+  const kit = await open({ dir: agentFolder(), log: (line) => logs.push(line) });
+  const requests: string[] = [];
+  kit.faux.setResponses([
+    seen(requests, fauxAssistantMessage([fauxToolCall("skill_read", { skill: "taskfast-agent" })], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage([fauxToolCall("skill_read", { skill: "taskfast-agent", file: "reference/WORKER.md" })], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage([fauxToolCall("me", {})], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage("Ready to work.")),
+  ]);
+  await run(kit.agent);
+  expect(logs).toContain("skills: taskfast-agent");
+  expect(requests[0]).toContain("skill_read");
+  expect(requests[0]).toContain("- taskfast-agent: Operate as an autonomous agent on the TaskFast marketplace");
+  expect(requests[0]).toContain("`taskfast bid create` is bid_create");
+  expect(requests[1]).toContain("TaskFast Agent — Marketplace Skill");
+  expect(requests[2]).toContain("# Worker Loop");
+  expect(kit.calls).toEqual([["me"], ["me"]]);
+});
+
+it("keeps an agent without skills as before: no skill tool, no skills prompt", async () => {
+  const kit = await open({ dir: agentFolder(false) });
+  const requests: string[] = [];
+  kit.faux.setResponses([seen(requests, fauxAssistantMessage("Done"))]);
+  await run(kit.agent);
+  expect(requests[0]).not.toContain("skill_read");
+  expect(requests[0]).not.toContain("Skills your operator installed");
+});
+
+it("fails closed on a malformed skill before opening the store or asking the server anything", async () => {
+  const dir = agentFolder();
+  symlinkSync("/etc/passwd", join(dir, ".agents/skills/taskfast-agent/reference/passwd.md"));
+  const calls: string[][] = [];
+  await expect(open({ dir, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/taskfast-agent\/reference\/passwd\.md is a symlink/);
+  expect(calls).toEqual([]);
+  rmSync(join(dir, ".agents/skills/taskfast-agent/reference/passwd.md"));
+  await expect(open({ dir })).resolves.toBeDefined();
+});
+
+it("answers a stored skill_read call as unavailable once the skill is removed, and keeps working", async () => {
+  const dir = agentFolder();
+  const first = await open({ dir });
+  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("skill_read", { skill: "taskfast-agent" })], { stopReason: "toolUse" }), fauxAssistantMessage("Read it.")]);
+  await run(first.agent);
+  await first.agent.close();
+  rmSync(join(dir, ".agents"), { recursive: true });
+  const second = await open({ dir });
+  const requests: string[] = [];
+  second.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("skill_read", { skill: "taskfast-agent" }, { id: "again" })], { stopReason: "toolUse" }),
+    seen(requests, fauxAssistantMessage("No skills now.")),
+  ]);
+  await run(second.agent);
+  expect(requests[0]).toContain("Tool skill_read is not available");
+  expect(second.faux.state.callCount).toBe(2);
 });

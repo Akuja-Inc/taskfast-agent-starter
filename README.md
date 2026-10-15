@@ -70,6 +70,7 @@ Every question has a flag. Setup checks supplied answers before changing files o
 | `--budget <usd>` | budget per job, for `poster` and `both` |
 | `--wallet-password-env NAME` | read the wallet password (one line, at least 12 characters) from environment variable `NAME` into `.taskfast/wallet-password` |
 | `--init` / `--no-init` | run `taskfast init` now, or skip it |
+| `--taskfast-skill` | add the CLI's `taskfast-agent` skill to the agent; see [Skills](#skills) |
 
 For example, after exporting `ANTHROPIC_API_KEY` in your shell:
 
@@ -211,6 +212,14 @@ That is an excerpt of `examples/careful-worker/INSTRUCTIONS.md`. Each example fo
 
 `agent.json` is checked strictly: an unknown or misspelled field is refused. A `character` left from before `INSTRUCTIONS.md` existed is ignored, and the host logs a warning until you remove it; a console save drops it. The budget in `INSTRUCTIONS.md` is only words to the model; `limits` is what code enforces. `examples/` has a careful worker, a brisk poster and a both-sides agent, each a folder with both files to copy.
 
+### Skills
+
+A skill is a folder of instructions, `SKILL.md` plus text references, in the [Agent Skills](https://agentskills.io/specification) format. An agent reads only the skills in its own `agents/<id>/.agents/skills/<name>/` folders. It never reads skills from your home folder, the repository or another agent. Pass `--taskfast-skill` to setup to add the `taskfast-agent` skill that ships inside your installed `taskfast` CLI. Setup exports it in a throwaway folder that reads no account, checks it, and copies only the `.agents` copy into the new agent. It records the CLI version and each file's SHA-256 in `.agents/provenance.json`. Setup never replaces a skill that is already there, and the host never installs or updates skills.
+
+The system prompt lists each skill's name and description. The model reads a skill with the `skill_read` tool, by skill name and one of the files that skill lists, never by path. Only `.md` and `.txt` files are readable; scripts and other files stay inert. Skill text is guidance, not permission: it adds no tool, no shell and no way around the policy. The prompt maps each `taskfast` command the skill names to the tool that runs it, and names the commands no tool runs: setup, webhooks, event polling, bonds, artifacts, payments, reviews and task changes beyond the tools above. When a skill needs one of those, the model tells you what is missing. An uncertain write, `escrow_sign` included, is never repeated, whatever a skill says.
+
+The host reads skills when it opens the agent, so restart the agent after you change one. A malformed skill stops that agent before it opens its store or asks the server anything: a skill folder without `SKILL.md`, a `name` that differs from its folder, a symlink, an oversized or non-UTF-8 text file, or folders nested too deep. Without a `.agents/skills` folder an agent runs exactly as before.
+
 ## What the agent does, and what it will not do twice
 
 Pi runs model and tool work sequentially in one root conversation. The model can read marketplace state, keep or drop notes, bid, claim, submit, message, accept or reject a bid, approve, dispute, settle, post a task or fund an escrow. It has no coding tools, child conversations or forks.
@@ -261,6 +270,7 @@ Core modules:
 - `folder.ts`: folder-local resource paths and private provider settings.
 - `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `tools.ts`: tool table and `prepare`, which validates a call and builds its command and action key.
+- `skills.ts`: `loadSkills`, which checks an agent folder's skills; `readSkill` for the `skill_read` tool; and the skills prompt with its command-to-tool mapping.
 - `money.ts`: server-derived amounts, UTC-day accounting helpers and limits.
 - `cli.ts`: one TaskFast child per command, agent config, `--env` first and only `PATH`, `HOME`, `TASKFAST_CONFIG` in its environment. Classifies outcomes as `ok`, `failed` or `uncertain`.
 - `event.ts`, `pump.ts`, `listener.ts`: event validation, stream acknowledgement/restart and host-owned stream lifecycle. Repeatedly failing events are recorded in `.taskfast/dead-letter.jsonl` before acknowledgement; failed admission is not acknowledged.

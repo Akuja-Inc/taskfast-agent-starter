@@ -13,3 +13,11 @@ PlatformConfigController returns, with a subset of its keys):
 
 Tests read these files, so the client's parsing is checked against what the CLI
 actually prints. Re-capture them when the pinned CLI version changes.
+
+`skills/taskfast-agent/` is the bundle `taskfast` 0.19.7 writes with `taskfast --config=<empty
+dir>/absent.json --no-trace skills --yes`, run in an empty folder that was also its HOME, with
+only PATH set. The command wrote identical copies under `.agents/skills/` and
+`.claude/skills/`; this is the `.agents` copy, unchanged. `SKILL.md` has SHA-256
+`8732dbba4a8bcb781a9055adfab44cd945b3799e51806798b9db0fdcb312b7a7`. Re-capture it the same
+way when the CLI changes; the mapping test in `src/core/skills.test.ts` then names any new
+command that needs a tool or an explicit "no tool" entry.

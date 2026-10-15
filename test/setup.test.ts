@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { providerSource } from "../src/core/model.js";
+import { loadSkills } from "../src/core/skills.js";
 import { splitModel } from "../src/core/spec.js";
 import { taskfastEnv } from "../src/run.js";
 import { installedVersion, parseSetupArgs, readCatalogue, setup, upsertEnv, type SetupIO, type SetupOptions } from "../src/setup.js";
@@ -16,7 +17,18 @@ const entry = (id: string) => {
   return p;
 };
 
-function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: string; agentEnv?: { id: string; text: string }; runStatus?: number } = {}) {
+// The real bundle `taskfast skills --yes` writes; see test/fixtures/cli/README.md.
+const BUNDLE = join(ROOT, "test/fixtures/cli/skills/taskfast-agent");
+// A stand-in taskfast CLI: --version, and `skills --yes`, which writes the real capture to
+// both folders the CLI writes, under its working directory.
+function fakeCli(cmd: string, args: string[], cwd: string): { status: number; stdout: string } {
+  if (cmd !== "taskfast") return { status: 127, stdout: "" };
+  if (args[0] === "--version") return { status: 0, stdout: "taskfast 0.19.7\n" };
+  for (const folder of [".agents", ".claude"]) cpSync(BUNDLE, join(cwd, folder, "skills/taskfast-agent"), { recursive: true });
+  return { status: 0, stdout: '{"ok":true}\n' };
+}
+
+function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: string; agentEnv?: { id: string; text: string }; runStatus?: number; capture?: SetupIO["capture"] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "kit-"));
   writeFileSync(join(root, "package.json"), readFileSync(join(ROOT, "package.json")));
   cpSync(join(ROOT, "examples"), join(root, "examples"), { recursive: true });
@@ -30,6 +42,7 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
   const asked: { question: string; hidden: boolean }[] = [];
   const ran: { cmd: string; args: string[]; cwd: string }[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
+  const captured: { cmd: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
   const logs: string[] = [];
   const io: SetupIO = {
     root, env: opts.env ?? {},
@@ -40,11 +53,12 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
       return answer;
     },
     run: (cmd, args, cwd, env) => (ran.push({ cmd, args, cwd }), envs.push(env), opts.runStatus ?? 0),
+    capture: (cmd, args, cwd, env) => (captured.push({ cmd, args, cwd, env }), (opts.capture ?? fakeCli)(cmd, args, cwd, env)),
     log: (line) => void logs.push(line),
   };
   const agent = (id: string) => JSON.parse(readFileSync(join(root, "agents", id, "agent.json"), "utf8"));
   const instructions = (id: string) => readFileSync(join(root, "agents", id, "INSTRUCTIONS.md"), "utf8");
-  return { root, io, asked, ran, envs, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
+  return { root, io, asked, ran, envs, captured, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
 }
 const ME = ["Ada Lovelace", "Ada Analytics", "Data clean-up for small charities."];
 // Running init asks for a wallet password; an empty answer skips it.
@@ -385,12 +399,71 @@ describe("setup", () => {
   });
 });
 
+describe("--taskfast-skill", () => {
+  const skillDir = (root: string) => join(root, "agents", "flagged", ".agents/skills/taskfast-agent");
+  it("exports the CLI's skill in a throwaway folder and publishes only the .agents copy, with its provenance", async () => {
+    const k = kit([], { env: { PATH: "/usr/bin", HOME: "/home/someone", TASKFAST_API_KEY: "secret-key" } });
+    await k.run({ ...ALL, env: "staging", init: false, taskfastSkill: true });
+    const [version, exported] = k.captured;
+    expect(k.captured.map(({ cmd, args }) => [cmd, ...args.map((arg) => arg.replace(version!.cwd, "<tmp>"))])).toEqual([
+      ["taskfast", "--version"], ["taskfast", "--config=<tmp>/absent.json", "--no-trace", "skills", "--yes"],
+    ]);
+    // An empty home and no TaskFast key or config: the export reads no account.
+    expect(exported!.env).toEqual({ PATH: "/usr/bin", HOME: version!.cwd });
+    expect(exported!.cwd).toBe(version!.cwd);
+    expect(existsSync(version!.cwd)).toBe(false);
+    for (const file of ["SKILL.md", ...readdirSync(join(BUNDLE, "reference")).map((name) => `reference/${name}`)]) {
+      expect(readFileSync(join(skillDir(k.root), file), "utf8")).toBe(readFileSync(join(BUNDLE, file), "utf8"));
+    }
+    expect(readdirSync(join(k.root, "agents", "flagged", ".agents")).sort()).toEqual(["provenance.json", "skills"]);
+    expect(existsSync(join(k.root, "agents", "flagged", ".claude"))).toBe(false);
+    const provenance = JSON.parse(readFileSync(join(k.root, "agents", "flagged", ".agents/provenance.json"), "utf8"));
+    expect(provenance["taskfast-agent"]).toMatchObject({ source: "taskfast-cli", version: "0.19.7", files: { "SKILL.md": "8732dbba4a8bcb781a9055adfab44cd945b3799e51806798b9db0fdcb312b7a7" } });
+    expect(Object.keys(provenance["taskfast-agent"].files)).toHaveLength(7);
+    expect(loadSkills(join(k.root, "agents", "flagged")).map((skill) => skill.name)).toEqual(["taskfast-agent"]);
+    expect(k.logs).toContain("Added the taskfast-agent skill from taskfast 0.19.7 to agents/flagged/.agents/skills (file hashes in .agents/provenance.json)");
+  });
+  it("never runs the export without the flag", async () => {
+    const k = kit([]);
+    await k.run({ ...ALL, env: "staging", init: false });
+    expect(k.captured).toEqual([]);
+    expect(existsSync(join(k.root, "agents", "flagged", ".agents"))).toBe(false);
+  });
+  const failures: { name: string; capture: SetupIO["capture"]; error: RegExp }[] = [
+    { name: "a missing CLI", capture: () => ({ status: 127, stdout: "" }), error: /taskfast skills did not finish/ },
+    { name: "a failed export", capture: (cmd, args, cwd, env) => args[0] === "--version" ? fakeCli(cmd, args, cwd) : { status: 1, stdout: "" }, error: /taskfast skills did not finish/ },
+    { name: "an export with no skill", capture: (cmd, args, cwd) => args[0] === "--version" ? fakeCli(cmd, args, cwd) : { status: 0, stdout: "" }, error: /exported no skill, not taskfast-agent/ },
+    { name: "an invalid bundle", capture: (cmd, args, cwd) => {
+      const result = fakeCli(cmd, args, cwd);
+      if (args[0] !== "--version") symlinkSync("/etc/passwd", join(cwd, ".agents/skills/taskfast-agent/reference/passwd.md"));
+      return result;
+    }, error: /passwd\.md is a symlink/ },
+  ];
+  it.each(failures)("stops on $name before writing any agent file", async ({ capture, error }) => {
+    const k = kit([], { capture });
+    await expect(k.run({ ...ALL, env: "staging", taskfastSkill: true })).rejects.toThrow(error);
+    expect(existsSync(join(k.root, "agents", "flagged"))).toBe(false);
+    expect(k.ran).toEqual([]);
+  });
+  it("never replaces a skill already in the agent folder", async () => {
+    const k = kit([]);
+    mkdirSync(skillDir(k.root), { recursive: true });
+    writeFileSync(join(skillDir(k.root), "SKILL.md"), "owner edits\n");
+    await expect(k.run({ ...ALL, env: "staging", taskfastSkill: true })).rejects.toThrow(/agents\/flagged\/.agents\/skills\/taskfast-agent already exists; setup never replaces a skill/);
+    expect(readFileSync(join(skillDir(k.root), "SKILL.md"), "utf8")).toBe("owner edits\n");
+    expect(k.captured).toEqual([]);
+    expect(existsSync(join(k.root, "agents", "flagged", "agent.json"))).toBe(false);
+  });
+});
+
 describe("command line", () => {
   it("reads every flag, repeated --set and --no-init", () => {
     expect(parseSetupArgs(["--env", "staging", "--provider", "openai", "--set", "A=1", "--set", "B", "--model", "m", "--agent", "x", "--role", "both", "--name", "n", "--business", "b", "--description", "d", "--goals", "g", "--budget", "5", "--wallet-password-env", "PW", "--no-init"])).toEqual({
       env: "staging", provider: "openai", set: ["A=1", "B"], model: "m", agent: "x", role: "both", name: "n", business: "b", description: "d", goals: "g", budget: "5", walletPasswordEnv: "PW", init: false,
     });
     expect(parseSetupArgs(["--init"]).init).toBe(true);
+    expect(parseSetupArgs(["--taskfast-skill"]).taskfastSkill).toBe(true);
+    expect(parseSetupArgs(["--no-taskfast-skill"]).taskfastSkill).toBe(false);
     expect(() => parseSetupArgs(["--envv", "staging"])).toThrow(/Unknown option '--envv'/);
   });
   it("maps only the kit environment names to TaskFast", () => {

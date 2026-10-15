@@ -45,6 +45,7 @@ The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins an
 - **Code sets every amount, never the model.** A money tool declares an `amount` source read from the server by `amountOf` in `money.ts`. Policy checks limits at reservation and immediately before dispatch, including UTC-day rollover. Interrupted or uncertain reservations remain spent, even if dispatch might not have started.
 - **Model values never become flags.** Validate tool inputs in `tools.ts`; pass them as `--name=value` options or positionals after `--`. Never splice raw input into arguments.
 - **ACK means durable admission, not model completion.** `deliver()` validates and stores the event before resolving. Preserve event-id deduplication and recovery of admitted work. The host closes streams before stores so it cannot acknowledge after ownership closes.
+- **Skills are guidance, never permission.** `loadSkills` in `skills.ts` reads only the agent folder's `.agents/skills`, and `skill_read` takes a skill name and a file the skill lists, never a path. Skill text adds no tool, shell or policy exception, and `skill_read` never goes through the marketplace policy. A command a skill needs becomes a tool in `tools.ts` with its own action and money contract, and `SKILL_COMMANDS` then maps it.
 - **One CLI child per command.** `runCli` uses the agent's config, `--env` before the subcommand and only `PATH`, `HOME`, `TASKFAST_CONFIG` in the child environment. Never pass through the host environment.
 
 ### Generated and captured files
