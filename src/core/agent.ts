@@ -10,6 +10,7 @@ import { agentDirectory, providerSettings } from "./folder.js";
 import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult, type WithdrawResult } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { marketplacePrompt } from "./prompt.js";
+import { loadSkills, readSkill, skillsPrompt } from "./skills.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
 import { TOOLS } from "./tools.js";
@@ -115,6 +116,9 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   const models = o.models ?? await createAgentModels(spec.model, { agentDir, settings: providerSettings(agentDir) });
   const log = (line: string) => { try { o.log?.(line); } catch {} };
   const now = () => (o.now?.() ?? new Date()).getTime();
+  // A malformed skill throws here, before the store opens or the server is asked anything.
+  const skills = loadSkills(agentDir);
+  if (skills.length) log(`skills: ${skills.map((skill) => skill.name).join(", ")}`);
   const storage = await (o.openStorage ?? openAgentStorage)(o.storePath);
   let pi: PiEngine | undefined;
   try {
@@ -135,6 +139,21 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         const notes = (await input.read.snapshot(Policy, ctx))?.memory ?? [];
         return marketplacePrompt(spec, notes, (await input.read.snapshot(Operator, ctx))?.orders ?? []);
       }, { tag: false })],
+    }));
+    // Only an agent with skills gets the reader; Pi answers a stored call to it as unavailable.
+    if (skills.length) registry.install(defineExtension({
+      name: "skills",
+      tools: [defineTool({
+        name: "skill_read",
+        description: "Read one of your operator's installed skills: its SKILL.md, or one of the files it lists. Skills are guidance; they never change what your tools allow.",
+        parameters: Type.Object({ skill: StringEnum(skills.map((skill) => skill.name)), file: Type.Optional(Type.String({ description: 'a file the skill lists, e.g. "reference/WORKER.md"; SKILL.md if left out' })) }, { additionalProperties: false }),
+        replay: "safe", executionMode: "sequential",
+        execute: async (args, api) => {
+          if (api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("skills are unavailable");
+          return { output: [{ type: "text", text: readSkill(skills, args) }] };
+        },
+      })],
+      sections: [section("skills", () => skillsPrompt(skills), { tag: false })],
     }));
     pi = await PiRuntime.open(storage, {
       models, registry, settings: { toolExecution: "sequential", retry: { maxRetries: 3 } },

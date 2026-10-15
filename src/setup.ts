@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
@@ -9,6 +11,7 @@ import input from "@inquirer/input";
 import password from "@inquirer/password";
 import { createAgentModels, providerSource } from "./core/model.js";
 import { credentialSetting, folderFile, PASSWORD_PATH, WALLET_PATH } from "./core/folder.js";
+import { loadSkills, SKILLS_PATH } from "./core/skills.js";
 import { agentFile, INSTRUCTIONS_PATH, parseAgentFile, parseAgentSpec } from "./core/spec.js";
 import type { Role } from "./core/types.js";
 import { ENVIRONMENTS, taskfastEnv, type Environment } from "./run.js";
@@ -72,6 +75,8 @@ export interface SetupOptions {
   // The name of an environment variable holding the new wallet's password.
   walletPasswordEnv?: string;
   init?: boolean;
+  // Add the taskfast CLI's own taskfast-agent skill to the new agent folder.
+  taskfastSkill?: boolean;
 }
 
 export const USAGE = `Usage: pnpm setup-agent [options]
@@ -100,6 +105,8 @@ Sets up a model provider and one agent. Anything you leave out is asked.
                           .taskfast/wallet-password (at least 12 characters). Asked only
                           when setup asks about init.
   --init / --no-init      Run taskfast init for the agent now, or skip it
+  --taskfast-skill        Add the taskfast CLI's taskfast-agent skill to the agent's
+                          .agents/skills folder, with the CLI version and file hashes
   -h, --help              Show this help`;
 
 // The example folder each role starts from, and its suggested goals. Setup copies the
@@ -130,6 +137,8 @@ export interface SetupIO {
   ask(question: string, hidden?: boolean): Promise<string>;
   // Runs a command with the terminal attached and the given environment; returns its exit status.
   run(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): number;
+  // Runs a command without the terminal; returns its exit status and stdout.
+  capture(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): { status: number; stdout: string };
   log(line: string): void;
 }
 
@@ -169,6 +178,41 @@ const agentProblem = (root: string, v: string) => {
   const taken = ["agent.json", INSTRUCTIONS_PATH].find((file) => existsSync(join(root, "agents", v, file)));
   return taken ? `agents/${v} already has an ${taken}; pick another name` : null;
 };
+
+const SKILL = "taskfast-agent";
+type Bundle = { version: string; files: Map<string, string> };
+// The CLI's embedded skill, exported into a throwaway folder that is also its home, with
+// no config or key, so it reads no account; then checked as the agent will load it.
+function exportTaskfastSkill(io: SetupIO, cliEnv: string): Bundle {
+  const tmp = mkdtempSync(join(tmpdir(), "taskfast-skill-"));
+  try {
+    const env = { PATH: io.env.PATH ?? "", HOME: tmp };
+    const version = /^taskfast (\S+)\s*$/.exec(io.capture("taskfast", ["--version"], tmp, env).stdout)?.[1];
+    const args = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), `--config=${join(tmp, "absent.json")}`, "--no-trace", "skills", "--yes"];
+    if (!version || io.capture("taskfast", args, tmp, env).status !== 0) {
+      throw new Error("taskfast skills did not finish; install the taskfast CLI, or run setup without --taskfast-skill");
+    }
+    const skills = loadSkills(tmp);
+    if (skills.length !== 1 || skills[0]!.name !== SKILL) throw new Error(`taskfast skills exported ${skills.map((skill) => skill.name).join(", ") || "no skill"}, not ${SKILL}`);
+    return { version, files: skills[0]!.files };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+// Writes the checked files beside the skills folder, records where they came from, then
+// renames them into place, so a skill folder is never half written.
+function publishSkill(dir: string, bundle: Bundle): void {
+  mkdirSync(join(dir, SKILLS_PATH), { recursive: true, mode: 0o700 });
+  const staging = mkdtempSync(join(dir, ".agents", `.${SKILL}-`));
+  const files: Record<string, string> = {};
+  for (const [path, text] of [...bundle.files].sort(([a], [b]) => a.localeCompare(b))) {
+    mkdirSync(dirname(join(staging, path)), { recursive: true });
+    writeFileSync(join(staging, path), text);
+    files[path] = createHash("sha256").update(text).digest("hex");
+  }
+  writeFileSync(join(dir, ".agents", "provenance.json"), `${JSON.stringify({ [SKILL]: { source: "taskfast-cli", version: bundle.version, files } }, null, 2)}\n`);
+  renameSync(staging, join(dir, SKILLS_PATH, SKILL));
+}
 
 // Checks every flag before setup changes anything, so a typo cannot leave a half-done
 // setup. Returns the --set values by name.
@@ -279,6 +323,11 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   const envPath = folderFile({ agentDir: dir, path: ".env", resource: "provider settings" });
   for (const path of ["agent.json", INSTRUCTIONS_PATH, ".taskfast/config.json", WALLET_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
   const passwordPath = folderFile({ agentDir: dir, path: PASSWORD_PATH, resource: "agent resource" });
+  // Owner edits win: an existing skill is never replaced. Export and check before any write.
+  if (o.taskfastSkill && existsSync(folderFile({ agentDir: dir, path: `${SKILLS_PATH}/${SKILL}`, resource: "agent resource" }))) {
+    throw new Error(`agents/${id}/${SKILLS_PATH}/${SKILL} already exists; setup never replaces a skill`);
+  }
+  const bundle = o.taskfastSkill ? exportTaskfastSkill(io, taskfastEnv(environment)) : undefined;
   let envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   const save = (name: string, value: string) => {
     envText = upsertEnv(envText, name, credentialSetting({ agentDir: dir, name, value }));
@@ -351,6 +400,10 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   writeFileSync(join(dir, INSTRUCTIONS_PATH), spec.instructions);
   io.log(`\nWrote agents/${id}/${INSTRUCTIONS_PATH} from your answers; edit it any time to change who the agent is and what it wants.`);
   io.log(`Wrote agents/${id}/agent.json (dials, temperament and limits come from examples/${EXAMPLE[role].folder}; edit them there any time).`);
+  if (bundle) {
+    publishSkill(dir, bundle);
+    io.log(`Added the ${SKILL} skill from taskfast ${bundle.version} to agents/${id}/${SKILLS_PATH} (file hashes in .agents/provenance.json)`);
+  }
 
   // 4. The agent's TaskFast account, in the environment given by --env.
   const cliEnv = taskfastEnv(environment);
@@ -403,10 +456,11 @@ export function parseSetupArgs(argv: string[]): SetupOptions & { help?: boolean 
     options: {
       env: s, provider: s, set: { type: "string", multiple: true }, model: s, agent: s, role: s,
       name: s, business: s, description: s, goals: s, budget: s, "wallet-password-env": s,
-      init: { type: "boolean" }, help: { type: "boolean", short: "h" },
+      init: { type: "boolean" }, "taskfast-skill": { type: "boolean" }, help: { type: "boolean", short: "h" },
     },
   });
-  return { ...values, ...(walletPasswordEnv === undefined ? {} : { walletPasswordEnv }) };
+  const { "taskfast-skill": taskfastSkill, ...rest } = values;
+  return { ...rest, ...(walletPasswordEnv === undefined ? {} : { walletPasswordEnv }), ...(taskfastSkill === undefined ? {} : { taskfastSkill }) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -451,6 +505,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       } finally {
         rl?.resume();
       }
+    },
+    capture: (cmd, args, cwd, env) => {
+      const r = spawnSync(cmd, args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+      if (r.error) console.error(`${cmd}: ${r.error.message}`);
+      return { status: r.status ?? 1, stdout: r.stdout ?? "" };
     },
   };
   try {
