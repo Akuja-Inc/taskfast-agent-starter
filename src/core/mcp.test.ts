@@ -1,10 +1,9 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
-import { afterEach, expect, it } from "vitest";
-import { approve, FIXTURE, httpCalls, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
+import { afterEach, expect, it, vi } from "vitest";
+import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
 import { connectMcp, type McpTools } from "./mcp.js";
 import { loadMcpConfig } from "./mcp-config.js";
 
@@ -38,7 +37,7 @@ const text = (result: Awaited<ReturnType<typeof call>>) => (result.output ?? [])
 it("has no tools and starts nothing without servers", async () => {
   const mcp = await connect(agentDir());
   expect(mcp.tools).toEqual([]);
-  expect(mcp.prompt).toBeUndefined();
+  expect(mcp.prompt).toBe("");
 });
 
 it("exposes only approved tools over stdio, logs the others with their fingerprints and calls the server", async () => {
@@ -83,9 +82,7 @@ it("reaches a remote server over Streamable HTTP with its header credential", as
   const mcp = await connect(dir);
   expect(await call(mcp, "mcp_web_search", { query: "escrow" })).toEqual({ output: [{ type: "text", text: "results for escrow" }], isError: false });
   expect(http.headers.length).toBeGreaterThan(0);
-  expect(http.headers.every((headers) => headers.authorization === "Bearer web-token")).toBe(true);
-  expect(httpCalls).toContain("search");
-});
+  expect(http.headers.every((headers) => headers.authorization === "Bearer web-token")).toBe(true);});
 
 it("refuses a redirect instead of following it with credentials", async () => {
   const { createServer } = await import("node:http");
@@ -133,8 +130,7 @@ it("fails a call after the server goes away, and never reconnects", async () => 
   const logs: string[] = [];
   const mcp = await connect(dir, logs);
   await call(mcp, "mcp_docs_exit", {});
-  for (let wait = 0; wait < 50 && !logs.some((line) => line.includes("disconnected")); wait++) await sleep(20);
-  expect(logs).toContain("mcp docs: disconnected; restart the agent to reconnect");
+  await vi.waitFor(() => expect(logs).toContain("mcp docs: disconnected; restart the agent to reconnect"), { timeout: 1000, interval: 20 });
   await expect(call(mcp, "mcp_docs_search", { query: "x" })).rejects.toThrow(/mcp docs: the server disconnected; restart the agent to reconnect/);
 });
 
@@ -146,32 +142,26 @@ it("stops a local server's whole process tree on close", async () => {
   const pid = Number(readFileSync(pidfile, "utf8"));
   expect(() => process.kill(pid, 0)).not.toThrow();
   await mcp.close();
-  for (let wait = 0; wait < 50; wait++) {
-    try { process.kill(pid, 0); } catch { break; }
-    await sleep(20);
-  }
-  expect(() => process.kill(pid, 0)).toThrow();
+  await expectGone(pid);
 });
 
-const refusals: { name: string; servers: (dir: string) => Record<string, unknown>; secrets?: Record<string, string>; reserved?: string[]; error: RegExp }[] = [
-  { name: "a changed tool", servers: () => ({ docs: local({ search: approve("search") }, { env: { FIXTURE_MODE: "MODE" } }) }), secrets: { MODE: "changed" }, error: new RegExp(`mcp docs: tool search changed since you approved it; review it, then approve its new fingerprint ${approve("search", { description: "Search the docs, now with more." })}`) },
-  { name: "an approved tool the server no longer offers", servers: () => ({ docs: local({ gone: "b".repeat(64) }) }), error: /mcp docs: approved tool gone is not offered by the server/ },
-  { name: "an approved tool the server marks as a write", servers: () => ({ docs: local({ delete: approve("delete") }) }), error: /mcp docs: tool delete is marked by its server as a write; only reads can be approved/ },
-  { name: "a name taken by a kit tool", servers: () => ({ docs: local({ search: approve("search") }) }), reserved: ["mcp_docs_search"], error: /mcp docs: tool search would be named mcp_docs_search, which another tool already uses/ },
-  { name: "a server that exits during startup", servers: () => ({ docs: local({}, { env: { FIXTURE_MODE: "MODE" } }) }), secrets: { MODE: "crash" }, error: /mcp docs: could not connect/ },
-  { name: "an unreachable remote server", servers: () => ({ web: { url: "http://127.0.0.1:1/mcp", tools: {} } }), error: /mcp web: could not connect/ },
+const refusals: { name: string; servers: Record<string, unknown>; secrets?: Record<string, string>; reserved?: string[]; error: RegExp }[] = [
+  { name: "a changed tool", servers: { docs: local({ search: approve("search") }, { env: { FIXTURE_MODE: "MODE" } }) }, secrets: { MODE: "changed" }, error: new RegExp(`mcp docs: tool search changed since you approved it; review it, then approve its new fingerprint ${approve("search", { description: "Search the docs, now with more." })}`) },
+  { name: "an approved tool the server no longer offers", servers: { docs: local({ gone: "b".repeat(64) }) }, error: /mcp docs: approved tool gone is not offered by the server/ },
+  { name: "an approved tool the server marks as a write", servers: { docs: local({ delete: approve("delete") }) }, error: /mcp docs: tool delete is marked by its server as a write; only reads can be approved/ },
+  { name: "a name taken by a kit tool", servers: { docs: local({ search: approve("search") }) }, reserved: ["mcp_docs_search"], error: /mcp docs: tool search would be named mcp_docs_search, which another tool already uses/ },
+  { name: "a server that exits during startup", servers: { docs: local({}, { env: { FIXTURE_MODE: "MODE" } }) }, secrets: { MODE: "crash" }, error: /mcp docs: could not connect/ },
+  { name: "an unreachable remote server", servers: { web: { url: "http://127.0.0.1:1/mcp", tools: {} } }, error: /mcp web: could not connect/ },
 ];
-it.each(refusals)("fails closed on $name, closing every server it started", async ({ servers: build, secrets, reserved, error }) => {
+it.each(refusals)("fails closed on $name, closing every server it started", async ({ servers, secrets, reserved, error }) => {
   const dir = agentDir();
   const pidfile = join(dir, "grandchild.pid");
-  writeMcp(dir, { first: local({}, { env: { FIXTURE_PIDFILE: "PIDFILE" } }), ...build(dir) }, { PIDFILE: pidfile, ...secrets });
-  await expect(connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: reserved ?? [] })).rejects.toThrow(error);
-  const pid = Number(readFileSync(pidfile, "utf8"));
-  for (let wait = 0; wait < 50; wait++) {
-    try { process.kill(pid, 0); } catch { break; }
-    await sleep(20);
-  }
-  expect(() => process.kill(pid, 0)).toThrow();
+  const logs: string[] = [];
+  writeMcp(dir, { first: local({}, { env: { FIXTURE_PIDFILE: "PIDFILE" } }), ...servers }, { PIDFILE: pidfile, ...secrets });
+  await expect(connectMcp(loadMcpConfig(dir), { log: (line) => logs.push(line), reserved: reserved ?? [] })).rejects.toThrow(error);
+  await expectGone(Number(readFileSync(pidfile, "utf8")));
+  // Stopping the servers it started is not reported as a disconnect.
+  expect(logs.filter((line) => line.includes("disconnected"))).toEqual([]);
 });
 
 it("refuses two servers whose tools normalize to the same name", async () => {

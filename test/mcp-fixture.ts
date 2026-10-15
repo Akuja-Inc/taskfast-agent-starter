@@ -1,13 +1,17 @@
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
+import { expect, vi } from "vitest";
 import { toolHash } from "../src/core/mcp-config.js";
-import { calls, handle, TOOLS } from "./fixtures/mcp/server.mjs";
+import { handle, TOOLS } from "./fixtures/mcp/server.mjs";
 
 // The local MCP server the tests start: run by this Node, from the fixtures folder.
 export const FIXTURE = join(import.meta.dirname, "fixtures/mcp/server.mjs");
-export { calls as httpCalls };
+// Waits up to a second for a process to be gone, as after a server's whole tree is stopped.
+export async function expectGone(pid: number): Promise<void> {
+  await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 1000, interval: 20 });
+}
 // The fingerprint the host logs for one of the fixture's tools, as its owner would approve it.
 export function approve(name: string, changes: Partial<(typeof TOOLS)[number]> = {}): string {
   const tool = TOOLS.find((candidate) => candidate.name === name);
@@ -19,7 +23,6 @@ export function approve(name: string, changes: Partial<(typeof TOOLS)[number]> =
 export function writeMcp(dir: string, servers: Record<string, unknown>, secrets?: Record<string, string>): void {
   writeFileSync(join(dir, "mcp.json"), JSON.stringify({ servers }));
   if (!secrets) return;
-  mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, ".mcp.env"), Object.entries(secrets).map(([name, value]) => `${name}=${value}\n`).join(""));
   chmodSync(join(dir, ".mcp.env"), 0o600);
 }
