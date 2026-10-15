@@ -46,7 +46,8 @@ async function draw(width: number, height: number, origin = link.origin, key = t
 }
 
 test("draws a live agent and steers it through the console API", async () => {
-  const { setup, until, keys, opened, quits } = await draw(130, 44);
+  // Tall enough that the whole timeline, markdown reply included, stays in view.
+  const { setup, until, keys, opened, quits } = await draw(130, 64);
   const timeline = await until((frame) => frame.includes("A new bid arrived"));
   expect(timeline).toContain("DEVELOPMENT · local TaskFast server · no real money");
   expect(timeline).toContain("Needs attention · 2");
@@ -56,6 +57,14 @@ test("draws a live agent and steers it through the console API", async () => {
   expect(timeline).toContain("Edit 12 product photos");
   expect(timeline).toContain("http://localhost:4000/tasks/11111111-1111-4111-8111-111111111111");
   expect(timeline).toContain("Ready to work? yes");
+  // The markdown reply draws without its markers; raw HTML and a javascript: link stay text.
+  expect(timeline).toContain("A new bid arrived on the copywriting job. I will wait for your check on the");
+  expect(timeline).toContain("• The acceptance of bid 44444444 is uncertain and counted as spent");
+  expect(timeline).toContain("  • read the task on the task page (https://example.com/tasks/22222222)");
+  expect(timeline).toContain("1. Check the bid");
+  expect(timeline).toContain("<script>alert(1)</script>");
+  expect(timeline).toContain("[x](javascript:alert(1))");
+  for (const marker of ["**", "```", "###", "`44444444`"]) expect(timeline).not.toContain(marker);
 
   // The first reply holds the tool calls: show them, then open its task.
   keys.pressKey("g");
@@ -268,10 +277,11 @@ test("folds the sidebar away below 100 columns", async () => {
 test("drops a stale view for the can't-reach screen when the host stops", async () => {
   const other = await startHost();
   const { setup, until, keys } = await draw(120, 30, other.link.origin, other.link.hash.slice("#token=".length));
-  await until((frame) => frame.includes("A new bid arrived"));
+  // The sidebar, not the timeline: at 30 rows the long markdown reply scrolls past.
+  await until((frame) => frame.includes("Ready to work? yes"));
   other.host.kill("SIGTERM");
   const down = await until((frame) => frame.includes("Can't reach the console"));
-  expect(down).not.toContain("A new bid arrived");
+  expect(down).not.toContain("Ready to work? yes");
   keys.pressKey("r");
   await until((frame) => frame.includes("Can't reach the console"));
   setup.renderer.destroy();
