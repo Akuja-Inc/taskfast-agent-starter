@@ -20,8 +20,6 @@ export const TOOLS = [
   { name: "delete", description: "Deletes a document.", inputSchema: object({ id: { type: "string" } }, ["id"]), annotations: { destructiveHint: true } },
   { name: "sample", description: "Asks the client for a model completion first.", inputSchema: object() },
 ];
-// Every call this process answered, by tool name, so a test can tell a refused call never arrived.
-export const calls = [];
 const text = (value) => ({ content: [{ type: "text", text: value }] });
 // Requests this server sends its client (stdio only), answered through `handle`.
 let send = () => { throw new Error("no channel to the client"); };
@@ -49,7 +47,6 @@ export async function handle(message) {
   }
   if (method === "tools/call") {
     const args = params.arguments ?? {};
-    calls.push(params.name);
     if (params.name === "search") return reply(text(`results for ${args.query}`));
     if (params.name === "env") return reply(text(JSON.stringify(process.env)));
     if (params.name === "slow") { await new Promise((done) => setTimeout(done, args.ms)); return reply(text("slow done")); }

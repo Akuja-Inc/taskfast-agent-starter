@@ -1,8 +1,7 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
-import { approve, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
+import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -685,12 +684,7 @@ it("fails closed on a changed MCP tool before opening the store, and leaves no s
   await expect(open({ dir, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/mcp docs: tool search changed since you approved it/);
   expect(calls).toEqual([]);
   expect(existsSync(join(dir, "state.sqlite"))).toBe(false);
-  const pid = Number(readFileSync(pidfile, "utf8"));
-  for (let wait = 0; wait < 50; wait++) {
-    try { process.kill(pid, 0); } catch { break; }
-    await sleep(20);
-  }
-  expect(() => process.kill(pid, 0)).toThrow();
+  await expectGone(Number(readFileSync(pidfile, "utf8")));
 });
 
 it("keeps two agents' same-named servers apart: own process, own credential", async () => {
@@ -722,7 +716,7 @@ it("abandons an MCP call a restart interrupted instead of running it again", asy
   const first = await open({ dir });
   first.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_slow", { ms: 60_000 })], { stopReason: "toolUse" })]);
   await first.agent.ping();
-  for (let wait = 0; wait < 100 && !(await first.agent.conversation.entries({ order: "descending" }, 5, undefined, context)).items.some((entry) => JSON.stringify(entry).includes("mcp_docs_slow")); wait++) await sleep(20);
+  await vi.waitFor(async () => expect(JSON.stringify((await first.agent.conversation.entries({ order: "descending" }, 5, undefined, context)).items)).toContain("mcp_docs_slow"), { timeout: 2000, interval: 20 });
   await first.agent.close();
   const second = await open({ dir });
   const requests: string[] = [];

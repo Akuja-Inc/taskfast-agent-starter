@@ -66,22 +66,23 @@ export function loadMcpConfig(agentDir: string): McpServer[] {
     const where = `servers.${name}`;
     if (!SERVER.test(name)) bad(`${where}: a server name is 1-32 lowercase letters, digits and dashes`);
     const local = isRecord(value) && "command" in value;
-    const remote = isRecord(value) && "url" in value;
-    if (local === remote) bad(`${where} needs exactly one of command or url`);
+    if (local === (isRecord(value) && "url" in value)) bad(`${where} needs exactly one of command or url`);
     const server = fields(value, where, local ? ["command", "args", "cwd", "env", "tools"] : ["url", "headers", "tools"]);
     const tools = strings(server.tools, `${where}.tools`, /^.{1,128}$/s, "a tool name is 1-128 characters");
     for (const [tool, hash] of Object.entries(tools)) if (!HASH.test(hash)) bad(`${where}.tools.${tool} must be the 64-character sha256 fingerprint the host logs for it`);
+    // A local server's credentials are environment variables; a remote server's are headers.
+    const kind = local ? "env" : "headers";
     const bindings = local
-      ? strings(server.env, `${where}.env`, SETTING, "an environment variable name is uppercase letters, digits and _")
-      : strings(server.headers, `${where}.headers`, HEADER, "a header name is letters, digits and dashes");
+      ? strings(server.env, `${where}.${kind}`, SETTING, "an environment variable name is uppercase letters, digits and _")
+      : strings(server.headers, `${where}.${kind}`, HEADER, "a header name is letters, digits and dashes");
     const credentials: Record<string, string> = {};
     for (const [target, secret] of Object.entries(bindings)) {
-      const at = `${where}.${local ? "env" : "headers"}.${target}`;
+      const at = `${where}.${kind}.${target}`;
       if (local && (target === "PATH" || target === "HOME")) bad(`${at}: PATH and HOME are set by the host`);
       if (!SETTING.test(secret)) bad(`${at} must name a setting in ${MCP_SECRETS}, such as DOCS_TOKEN`);
       credentials[target] = vault.get(secret) ?? bad(`${at}: ${secret} is not set in ${MCP_SECRETS}`);
     }
-    if (remote) {
+    if (!local) {
       let url: URL;
       try { url = new URL(String(server.url)); }
       catch { return bad(`${where}.url must be a URL`); }

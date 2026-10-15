@@ -121,55 +121,49 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   // A malformed skill throws here, before the store opens or the server is asked anything.
   const skills = loadSkills(agentDir);
   if (skills.length) log(`skills: ${skills.map((skill) => skill.name).join(", ")}`);
+  const registry = createRegistry();
+  let policy: MarketplacePolicy | undefined;
+  const tools: ToolRegistration[] = Object.entries(TOOLS).map(([name, tool]) => defineTool({
+    name, description: tool.description, parameters: parameters(tool.schema),
+    replay: tool.kind === "read" ? "safe" : "unsafe", executionMode: "sequential",
+    execute: async (args, api, ctx) => {
+      if (!policy || api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("marketplace policy is unavailable");
+      const result = await policy.execute({ tool: name, input: args, commit: (change) => api.commit(change, ctx), signal: ctx.abortSignal });
+      return { output: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  }));
+  registry.install(defineExtension({
+    name: "taskfast", tools,
+    sections: [section("marketplace", async (input, ctx) => {
+      const notes = (await input.read.snapshot(Policy, ctx))?.memory ?? [];
+      return marketplacePrompt(spec, notes, (await input.read.snapshot(Operator, ctx))?.orders ?? []);
+    }, { tag: false })],
+  }));
+  // Only an agent with skills gets the reader; Pi answers a stored call to it as unavailable.
+  if (skills.length) registry.install(defineExtension({
+    name: "skills",
+    tools: [defineTool({
+      name: "skill_read",
+      description: "Read one of your operator's installed skills: its SKILL.md, or one of the files it lists. Skills are guidance; they never change what your tools allow.",
+      parameters: Type.Object({ skill: StringEnum(skills.map((skill) => skill.name)), file: Type.Optional(Type.String({ description: 'a file the skill lists, e.g. "reference/WORKER.md"; SKILL.md if left out' })) }, { additionalProperties: false }),
+      replay: "safe", executionMode: "sequential",
+      execute: async (args, api) => {
+        if (api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("skills are unavailable");
+        return { output: [{ type: "text", text: readSkill(skills, args) }] };
+      },
+    })],
+    sections: [section("skills", () => skillsPrompt(skills), { tag: false })],
+  }));
   // Every MCP server is connected and its approved tools checked before the store opens;
-  // any failure closes the servers already started and stops this agent.
-  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: [...Object.keys(TOOLS), "skill_read"] });
-  let storage: Storage;
-  try { storage = await (o.openStorage ?? openAgentStorage)(o.storePath); }
-  catch (error) {
-    await mcp.close();
-    throw error;
-  }
+  // any failure closes the servers already started and stops this agent. Pi lets a later
+  // extension's tool replace an earlier one's of the same name, so every installed name is reserved.
+  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name) });
+  let storage: Storage | undefined;
   let pi: PiEngine | undefined;
   try {
-    const registry = createRegistry();
-    let policy: MarketplacePolicy | undefined;
-    const tools: ToolRegistration[] = Object.entries(TOOLS).map(([name, tool]) => defineTool({
-      name, description: tool.description, parameters: parameters(tool.schema),
-      replay: tool.kind === "read" ? "safe" : "unsafe", executionMode: "sequential",
-      execute: async (args, api, ctx) => {
-        if (!policy || api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("marketplace policy is unavailable");
-        const result = await policy.execute({ tool: name, input: args, commit: (change) => api.commit(change, ctx), signal: ctx.abortSignal });
-        return { output: [{ type: "text", text: JSON.stringify(result) }] };
-      },
-    }));
-    registry.install(defineExtension({
-      name: "taskfast", tools,
-      sections: [section("marketplace", async (input, ctx) => {
-        const notes = (await input.read.snapshot(Policy, ctx))?.memory ?? [];
-        return marketplacePrompt(spec, notes, (await input.read.snapshot(Operator, ctx))?.orders ?? []);
-      }, { tag: false })],
-    }));
-    // Only an agent with skills gets the reader; Pi answers a stored call to it as unavailable.
-    if (skills.length) registry.install(defineExtension({
-      name: "skills",
-      tools: [defineTool({
-        name: "skill_read",
-        description: "Read one of your operator's installed skills: its SKILL.md, or one of the files it lists. Skills are guidance; they never change what your tools allow.",
-        parameters: Type.Object({ skill: StringEnum(skills.map((skill) => skill.name)), file: Type.Optional(Type.String({ description: 'a file the skill lists, e.g. "reference/WORKER.md"; SKILL.md if left out' })) }, { additionalProperties: false }),
-        replay: "safe", executionMode: "sequential",
-        execute: async (args, api) => {
-          if (api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("skills are unavailable");
-          return { output: [{ type: "text", text: readSkill(skills, args) }] };
-        },
-      })],
-      sections: [section("skills", () => skillsPrompt(skills), { tag: false })],
-    }));
     // MCP tools run outside the marketplace policy: approved reads only, never a TaskFast write.
-    if (mcp.prompt) {
-      const prompt = mcp.prompt;
-      registry.install(defineExtension({ name: "mcp", tools: mcp.tools, sections: [section("mcp", () => prompt, { tag: false })] }));
-    }
+    if (mcp.tools.length) registry.install(defineExtension({ name: "mcp", tools: mcp.tools, sections: [section("mcp", () => mcp.prompt, { tag: false })] }));
+    storage = await (o.openStorage ?? openAgentStorage)(o.storePath);
     pi = await PiRuntime.open(storage, {
       models, registry, settings: { toolExecution: "sequential", retry: { maxRetries: 3 } },
       conversationCreated: (_tx, conversation) => {
@@ -488,9 +482,10 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       },
     };
   } catch (error) {
-    if (pi) await pi.close(context);
-    else await storage.close(context);
-    await mcp.close();
+    try {
+      if (pi) await pi.close(context);
+      else await storage?.close(context);
+    } finally { await mcp.close(); }
     throw error;
   }
 }
