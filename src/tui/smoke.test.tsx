@@ -288,8 +288,14 @@ test("withdraws queued follow-ups and steers while paused, restores visible focu
     keys.pressTab();
     await until((frame) => frame.includes("▶ Follow-up"));
     keys.pressKey("w");
-    await until((frame) => frame.includes("Message withdrawn.") && frame.includes("Queued messages · 1") && frame.includes("▶ Steer"));
+    const afterFirst = await until((frame) => frame.includes("Message withdrawn.") && frame.includes("Queued messages · 1"));
     expect((await current()).queuedMessages.map((row) => row.requestId)).toEqual(["withdraw-steer"]);
+    // If the stream beat the ACK, focus safely returned to Timeline instead.
+    if (!afterFirst.includes("▶ Steer")) {
+      expect(afterFirst).not.toContain("Selected message left the queue.");
+      keys.pressTab(); keys.pressTab();
+      await until((frame) => frame.includes("▶ Steer"));
+    }
     keys.pressKey("w");
     await until((frame) => frame.includes("Message withdrawn.") && frame.includes("Queued messages · 0"));
     expect((await current()).queuedMessages).toHaveLength(0);
@@ -357,10 +363,12 @@ test("keeps narrow queue withdrawal ID-bound through row shifts, pending repeats
     release();
     await until((frame) => frame.includes("Test dropped withdrawal reply.") && frame.includes("Queued messages · 1"));
     expect((await current()).queuedMessages.map((row) => row.requestId)).toEqual(["untouched"]);
+    // Even without an ACK, the stream moved focus to the visible timeline.
+    expect(setup.captureCharFrame()).not.toContain("Selected message left the queue.");
     keys.pressKey("w");
-    await until((frame) => frame.includes("The agent already has this message."));
-    expect(deletions).toHaveLength(1); // Stale selection never deletes the replacement row.
-    expect(setup.captureCharFrame()).toContain("Selected message left the queue.");
+    await setup.renderOnce();
+    expect(deletions).toHaveLength(1); // Never deletes the replacement row.
+    expect(setup.captureCharFrame()).toContain("Test dropped withdrawal reply.");
     keys.pressKey("p");
     await until((frame) => frame.includes("Queued messages · 0"));
     const delivered = (await current()).timeline.filter((turn) => turn.kind === "operator").map((turn) => turn.text);

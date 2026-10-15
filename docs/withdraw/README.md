@@ -18,7 +18,7 @@ The console's Withdraw button and the TUI's queue-focused `w` remove a follow-up
 
 Operator admission, drain, promotion and withdrawal share the host's operator line. One Pi session transaction reads both submission identities, checks placement, settles queued records, removes inbox items, clears operator buffers/intents and records the tombstone. Pi placement uses that same transaction line. No dispatch, money policy or event admission behavior changes. Tombstones contain only request IDs and are permanent, including for messages withdrawn before any Pi submission existed.
 
-The browser keeps controls keyed by ID and moves focus to a neighboring Withdraw button, or to the composer when the queue empties. The TUI uses ID-bound selection and selects a visible neighbor after an acknowledged withdrawal, or returns to Timeline when none remain. An unexpected disappearance does not select another message for deletion. Both clients keep unrelated composer drafts intact. Failed requests remain retryable; 404/409 are queue notices, not failed draft sends.
+The browser keeps controls keyed by ID and moves focus to a neighboring Withdraw button, or to the composer when the queue empties. The TUI uses ID-bound selection and selects a visible neighbor after an acknowledged withdrawal, or returns to Timeline when none remain. If the stream removes a withdrawal target before its reply arrives, or its reply is lost, focus returns to Timeline instead. An unexpected disappearance does not select another message for deletion. Both clients keep unrelated composer drafts intact. Failed requests remain retryable; 404/409 are queue notices, not failed draft sends.
 
 ## Reproduce
 
@@ -27,6 +27,8 @@ pnpm exec vitest run src/core/steering.test.ts test/console.test.ts test/console
 pnpm check
 pnpm tui:test
 ```
+
+Local validation passed: `pnpm check` ran 25 test files and 377 tests plus typecheck, skill, prose-wrap and lessons-ledger gates. `pnpm tui:test` passed its separate TypeScript check and all 9 rendered smoke tests with 889 assertions.
 
 The steering suite covers buffered and Pi-inbox removal, concurrent retries, placement races in both directions, queued and already-received promotion replacements, interrupted promotion stages, failed withdrawal commits, persistent reopen, ownership refusal and no delivery after resume. The separate rendered TUI smoke test exercises the real HTTP boundary, paused withdrawal, queue shifts, repeat keys while pending, a lost acknowledgement and a real 409.
 

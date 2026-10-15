@@ -87,6 +87,7 @@ export function App(p: AppProps) {
   // Retries keep identity AND mode. Scope attempts and in-flight guards to the agent.
   const attempts = new Map<string, MessageAttempt>();
   const pending = new Set<string>();
+  const withdrawalAttempts = new Set<string>();
   let stop = () => {};
   // Retry and agent switches fire unawaited connects; each is numbered so a stale one
   // can't assign its follow later or overwrite the newer agent's view.
@@ -146,6 +147,7 @@ export function App(p: AppProps) {
     const withdrawal = effect.method === "DELETE" && effect.action.startsWith("messages/")
       ? { requestId: decodeURIComponent(effect.action.slice("messages/".length)), before: view()?.queuedMessages ?? [] }
       : undefined;
+    if (withdrawal) withdrawalAttempts.add(`${id}/${withdrawal.requestId}`);
     try {
       setNotice("");
       await api(effect.method, `${agentPath(id)}/${effect.action}`, effect.body);
@@ -155,8 +157,8 @@ export function App(p: AppProps) {
         // Remove it locally on ACK too, so the next selected ID is already visible.
         const current = view();
         const after = (current?.queuedMessages ?? []).filter((row) => row.requestId !== withdrawal.requestId);
-        if (current) setView({ ...current, queuedMessages: after });
         setUi(withdrawnSelection(ui(), withdrawal.requestId, withdrawal.before, after));
+        if (current) setView({ ...current, queuedMessages: after });
         setNotice("Message withdrawn.");
       }
       if (effect.action.startsWith("steer/")) setNotice("Message set to Steer.");
@@ -226,6 +228,15 @@ export function App(p: AppProps) {
   });
   const agent = () => list()?.agents[ui().agent];
   const draft = () => ui().draft ?? view()?.spec;
+  // A stream can confirm removal before DELETE replies, or after its reply is
+  // lost. Leave a vanished withdrawal target on a visible, non-destructive panel.
+  createEffect(() => {
+    const selected = ui().queuedRequestId, current = view();
+    if (ui().panel === "queue" && selected && withdrawalAttempts.has(`${agentId()}/${selected}`)
+      && current && !current.queuedMessages.some((row) => row.requestId === selected)) {
+      setUi({ ...ui(), panel: "timeline", queuedRequestId: undefined });
+    }
+  });
   const queueSelected = (requestId: string) => ui().panel === "queue" && ui().queuedRequestId === requestId;
 
   return (
