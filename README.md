@@ -220,6 +220,39 @@ The system prompt lists each skill's name and description. The model reads a ski
 
 The host reads skills when it opens the agent, so restart the agent after you change one. A malformed skill stops that agent before it opens its store or asks the server anything: a skill folder without `SKILL.md`, a `name` that differs from its folder, a symlink, an oversized or non-UTF-8 text file, or folders nested too deep. Without a `.agents/skills` folder an agent runs exactly as before.
 
+### MCP servers
+
+An agent can use read tools from [MCP](https://modelcontextprotocol.io) servers that you configure for it and approve one tool at a time. List the servers in `agents/<id>/mcp.json`. Put their credentials in `agents/<id>/.mcp.env`, apart from the model settings in `.env`. Run `chmod 600 .mcp.env` so only you can read it. `mcp.json` names a credential, never its value:
+
+```json
+{
+  "servers": {
+    "docs": {
+      "command": "/usr/local/bin/docs-mcp",
+      "args": ["--read-only"],
+      "cwd": "mcp/docs",
+      "env": { "DOCS_TOKEN": "DOCS_TOKEN" },
+      "tools": { "search": "<fingerprint>" }
+    },
+    "web": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "WEB_AUTHORIZATION" },
+      "tools": {}
+    }
+  }
+}
+```
+
+A local server runs `command`, an absolute path to an installed program, with `args` and no shell, from `cwd` inside the agent folder. It gets only `PATH`, `HOME` and the variables in its `env`. Each `env` entry maps a variable the server reads to a setting in `.mcp.env`. A remote server is reached at `url` over Streamable HTTP. It must use `https`, except `http` to `127.0.0.1`, `localhost` or `[::1]`. Each `headers` entry maps a header to a setting in `.mcp.env`, for example `WEB_AUTHORIZATION=Bearer <token>`. Redirects are refused, and there is no OAuth.
+
+To approve a tool, start the agent and read its log. For every tool a server offers that is not approved, the host logs a line such as `mcp docs: tool search is not approved; to approve it, add "search": "<fingerprint>" to servers.docs.tools in mcp.json`. The fingerprint is the SHA-256 of the tool's name, description, schemas and the server's annotations. Approve only tools that read. A tool its server marks as a write cannot be approved. If an approved tool later changes or disappears, the agent stops until you review it and approve the new fingerprint. A read-only label from the server approves nothing; your fingerprint does.
+
+The model sees an approved tool as `mcp_<server>_<tool>`. Pi checks each call against the tool's input schema before it reaches the server, and may convert a value to the schema's type, such as the number 7 to the string "7". Results are capped at 32 KiB, and every credential value is replaced with `[redacted]` in results, errors and logs. A call times out after 30 seconds. MCP tools never go through the marketplace policy and cannot reach TaskFast. A call interrupted by a restart is reported to the model as not finished and is never run again. An external read can still cost money or reveal what the agent sends, and TaskFast spending limits do not cover it.
+
+The host connects every server and checks every approved tool when it opens the agent, before it opens the store. A malformed `mcp.json`, a missing credential, an unreachable server or a changed tool stops that agent. At host start, that stops the host, as any agent that fails to open does today ([#73](https://github.com/Akuja-Inc/taskfast-agent-starter/issues/73) tracks running the others). When a server disconnects later, its tools fail until you restart the agent; the host does not reconnect. Closing the agent stops each local server's whole process tree. Without `mcp.json` an agent starts no process and opens no connection.
+
+A local server runs as you, with your permissions. Its folder and its short environment are not a sandbox, so configure only servers you trust. Moving a stopped agent folder keeps `mcp.json` and `.mcp.env`, but the programs and services they name are prerequisites that do not move with it.
+
 ## What the agent does, and what it will not do twice
 
 Pi runs model and tool work sequentially in one root conversation. The model can read marketplace state, keep or drop notes, bid, claim, submit, message, accept or reject a bid, approve, dispute, settle, post a task or fund an escrow. It has no coding tools, child conversations or forks.
@@ -271,6 +304,8 @@ Core modules:
 - `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `tools.ts`: tool table and `prepare`, which validates a call and builds its command and action key.
 - `skills.ts`: `loadSkills`, which checks an agent folder's skills; `readSkill` for the `skill_read` tool; and the skills prompt with its command-to-tool mapping.
+- `mcp-config.ts`: `loadMcpConfig`, which checks `mcp.json` and binds credentials from `.mcp.env`; `toolHash`, the fingerprint an owner approves; and `redact`.
+- `mcp.ts`: `connectMcp`, one pinned `@earendil-works/pi-mcp` client per server, checking approved tools at open and registering them as `mcp_<server>_<tool>`.
 - `money.ts`: server-derived amounts, UTC-day accounting helpers and limits.
 - `cli.ts`: one TaskFast child per command, agent config, `--env` first and only `PATH`, `HOME`, `TASKFAST_CONFIG` in its environment. Classifies outcomes as `ok`, `failed` or `uncertain`.
 - `event.ts`, `pump.ts`, `listener.ts`: event validation, stream acknowledgement/restart and host-owned stream lifecycle. Repeatedly failing events are recorded in `.taskfast/dead-letter.jsonl` before acknowledgement; failed admission is not acknowledged.
