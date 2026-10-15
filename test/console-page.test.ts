@@ -206,7 +206,7 @@ it("serializes paused promotion and reports placement and stale-row races as not
     });
     page.setView({ ...demoView(), queuedMessages: [{ requestId: 'stable/id', text: 'Visible', mode: 'followUp' }] }); page.render(); page.ui.draft = 'Unrelated draft';
     const first = page.promoteMessage('stable/id', 'shop'), second = page.promoteMessage('stable/id', 'shop');
-    expect(requests).toEqual(['/api/agents/shop/steer/stable%2Fid']); expect(page.app.querySelector('.queue-promote')?.disabled).toBe(true);
+    expect(requests).toEqual(['/api/agents/shop/steer/stable%2Fid']); expect(page.app.querySelector('.queue-promote')?.getAttribute('aria-disabled')).toBe('true');
     resolve(new Response(JSON.stringify({ error: status === 409 ? 'The agent already has this message.' : 'Unknown message' }), { status })); await Promise.all([first, second]);
     expect(page.app.querySelector('.queue-notice')?.textContent).toBe('The agent already has this message.');
     expect(page.app.querySelector('.message-status')?.textContent).toBe(''); expect(page.ui.draft).toBe('Unrelated draft');
@@ -218,7 +218,7 @@ it("keeps failed promotions retryable without marking the draft send failed", as
   const page = bootPage((_path, init) => { if ((init as { method: string }).method === 'POST') { posts++; return Promise.reject(new Error('offline')); } return new Promise<never>(() => {}); });
   page.setView({ ...demoView(), queuedMessages: [{ requestId: 'first', text: 'Visible', mode: 'followUp' }] }); page.render();
   await page.promoteMessage('first', 'shop'); expect(page.app.querySelector('.queue-error')?.textContent).toContain('Could not steer this message. Try again.');
-  expect(page.app.querySelector('.queue-promote')?.disabled).toBe(false); expect(page.app.querySelector('.message-status')?.textContent).toBe('');
+  expect(page.app.querySelector('.queue-promote')?.getAttribute('aria-disabled')).toBe('false'); expect(page.app.querySelector('.message-status')?.textContent).toBe('');
   await page.promoteMessage('first', 'shop'); expect(posts).toBe(2);
 });
 
@@ -290,9 +290,34 @@ it("pins queue prose below its mode even without a promotion button", () => {
   expect(PAGE).toContain('.queue-mode, .queue-text { grid-column: 1; }');
 });
 
-it("marks each queued row with a muted Queued watermark behind its content", () => {
+it("marks each queued row with a muted sentence-case Queued that screen readers skip and text never runs under", () => {
   expect(PAGE).toMatch(/\.queue-row \{[^}]*background: var\(--ground\); border-style: dashed; color: var\(--soft\);/);
-  expect(PAGE).toMatch(/\.queue-row::before \{ content: "Queued";[^}]*z-index: -1;/);
+  expect(PAGE).toMatch(/\.queue-row::before \{ content: "Queued"; content: "Queued" \/ ""; grid-column: 1; grid-row: 1; justify-self: end;[^}]*font-size: 24px;/);
+  expect(PAGE).not.toMatch(/\.queue-row::before \{[^}]*text-transform/);
+  expect(PAGE).toMatch(/\.queue-mode \{ grid-row: 1; padding-right: 104px;/);
+});
+
+it("says when each queued message runs, lists the rows and keeps focus on Steer while it is promoted", async () => {
+  let resolve!: (response: Response) => void;
+  const page = bootPage((_path, init) => (init as { method: string }).method === 'POST'
+    ? new Promise<Response>((done) => { resolve = done; })
+    : Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] }))));
+  const queued =[{ requestId: 'first', text: 'Hold the photo task', mode: 'followUp' }, { requestId: 'second', text: 'Skip big bids', mode: 'steer' }];
+  page.setView({ ...demoView(), queuedMessages: queued }); page.render();
+  const modes = page.app.querySelectorAll('.queue-mode').map((node) => node.textContent);
+  expect(modes).toEqual(['Queued Follow-up · waits until you resume', 'Queued Steer · waits until you resume']);
+  page.setView({ ...demoView(), operator: { ...demoView().operator, paused: false }, queuedMessages: queued }); page.render();
+  expect(page.app.querySelectorAll('.queue-when').map((node) => node.textContent)).toEqual([" · waits for the agent's next run", ' · reaches the agent after its current tool round']);
+  expect(page.app.querySelector('.queued-rows')?.getAttribute('role')).toBe('list');
+  expect(page.app.querySelectorAll('.queue-row').map((row) => row.getAttribute('role'))).toEqual(['listitem', 'listitem']);
+  const button = page.app.querySelector('.queue-promote')!;
+  expect(button.getAttribute('aria-label')).toBeNull();
+  expect(button.getAttribute('aria-describedby')).toBe(page.app.querySelector('.queue-text')?.getAttribute('id'));
+  page.document.activeElement = button;
+  const promotion = page.promoteMessage('first', 'shop');
+  expect(page.app.querySelector('.queue-promote')).toBe(button); expect(button.getAttribute('aria-disabled')).toBe('true'); expect(button.textContent).toBe('Steering…');
+  resolve(new Response(null, { status: 204 })); await promotion;
+  expect(page.app.querySelector('.queue-notice')?.textContent).toBe('Changed to a steer.');
 });
 
 it("renders the event turn head as a native button", () => {

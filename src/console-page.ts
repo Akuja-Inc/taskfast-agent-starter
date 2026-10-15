@@ -137,15 +137,17 @@ form.inline label { flex: 1 1 280px; }
 .hint { display: flex; justify-content: flex-end; gap: 14px; font-size: 12px; color: var(--muted); }
 kbd { font: 600 11px ui-monospace, monospace; background: var(--ground); border: 1px solid var(--hairline); border-bottom-width: 2px; border-radius: 3px; padding: 1px 5px; color: var(--soft); }
 textarea::placeholder { color: var(--muted); }
-.queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: start; position: relative; isolation: isolate; overflow: hidden; background: var(--ground); border-style: dashed; color: var(--soft); }
-.queue-row::before { content: "Queued"; position: absolute; inset: 0; z-index: -1; display: flex; align-items: center; justify-content: center; font-size: 48px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); opacity: .14; pointer-events: none; }
+.queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: start; background: var(--ground); border-style: dashed; color: var(--soft); }
+.queue-row::before { content: "Queued"; content: "Queued" / ""; grid-column: 1; grid-row: 1; justify-self: end; align-self: center; font-size: 24px; font-weight: 700; line-height: 1; color: var(--muted); opacity: .2; pointer-events: none; }
 .queue-mode, .queue-text { grid-column: 1; }
-.queue-mode { font-size: 13px; font-weight: 700; }
+.queue-mode { grid-row: 1; padding-right: 104px; font-size: 13px; font-weight: 700; }
+.queue-when { font-weight: 400; color: var(--muted); }
+.queue-text { grid-row: 2; }
 .queue-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .queue-promote { grid-column: 2; grid-row: 1 / 3; }
 .queue-error { grid-column: 1 / -1; }
 .queue-error:empty, .queue-notice:empty { display: none; }
-button:disabled { cursor: wait; opacity: .6; }
+button:disabled, .queue-promote[aria-disabled="true"] { cursor: wait; opacity: .6; }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
 /* The rail: marks beside the turns, sized from --composer-space to end above the pinned composer. --under-band clears the sticky band. */
@@ -678,6 +680,7 @@ async function promoteMessage(requestId, agent) {
   try {
     await api("POST", "/api/agents/" + encodeURIComponent(agent) + "/steer/" + encodeURIComponent(requestId));
     state.done = true;
+    ui.notices.set(agent, "Changed to a steer.");
     await refresh();
   } catch (error) {
     // This ID came from a visible follow-up. A 404 means it left the queue before
@@ -689,34 +692,39 @@ async function promoteMessage(requestId, agent) {
     } else state.error = "Could not steer this message. Try again. " + error.message;
   } finally { state.pending = false; render(); }
 }
+let queueTextIds = 0;
 function queueRow(message) {
-  const row = el("div", { class: "card queue-row", "data-request-id": message.requestId },
-    el("div", { class: "queue-mode" }), el("div", { class: "queue-text" }),
+  const row = el("div", { class: "card queue-row", role: "listitem", "data-request-id": message.requestId },
+    el("div", { class: "queue-mode" }), el("div", { class: "queue-text", id: "queue-text-" + ++queueTextIds }),
     el("div", { class: "error queue-error", role: "status" }));
   updateQueueRow(row, message);
   return row;
 }
+// The mode line says when the message reaches the agent. The watermark is hidden
+// from screen readers, so "Queued" is spoken from here instead.
 function updateQueueRow(row, message) {
-  row.querySelector(".queue-mode").textContent = modeLabel(message.mode);
+  const when = view.operator.paused ? "waits until you resume" : message.mode === "steer" ? "reaches the agent after its current tool round" : "waits for the agent's next run";
+  row.querySelector(".queue-mode").replaceChildren(el("span", { class: "sr-only", text: "Queued " }), modeLabel(message.mode), el("span", { class: "queue-when", text: " · " + when }));
   const text = row.querySelector(".queue-text");
   if (text.textContent !== message.text) text.textContent = message.text;
   const state = ui.promotions.get(promotionKey(ui.agent, message.requestId));
   row.querySelector(".queue-error").textContent = state ? state.error : "";
   let button = row.querySelector(".queue-promote");
   if (message.mode === "followUp") {
-    if (!button) { const agent = ui.agent; button = el("button", { type: "button", class: "queue-promote", onclick: () => promoteMessage(message.requestId, agent) }); row.append(button); }
+    if (!button) { const agent = ui.agent; button = el("button", { type: "button", class: "queue-promote", "aria-describedby": text.getAttribute("id"), onclick: () => promoteMessage(message.requestId, agent) }); row.append(button); }
     button.textContent = state && state.pending ? "Steering…" : state && state.done ? "Sent" : "Steer";
-    button.disabled = !!(state && (state.pending || state.done));
-    button.setAttribute("aria-label", "Steer queued message: " + message.text);
+    // aria-disabled, not disabled: disabling the focused button would drop keyboard
+    // focus to the page. promoteMessage already ignores a pending or finished click.
+    button.setAttribute("aria-disabled", String(!!(state && (state.pending || state.done))));
   } else if (button) { if (document.activeElement === button) row.closest("section").focus(); button.remove(); }
 }
-// No band: each waiting row is muted and marked "Queued" in its background. The
+// No band: each waiting row is muted and marked "Queued" at its top right. The
 // section stays in the page, hidden while empty, so a stream update can fill it in
 // place. The notice sits outside it and stays visible.
 function queuedMessages() {
   const queue = view.queuedMessages;
   return [el("section", { class: "section", id: "queued-messages", "data-agent": ui.agent, tabindex: "-1", "aria-label": "Queued messages", hidden: !queue.length },
-    el("div", { class: "section queued-rows" }, queue.map(queueRow))),
+    el("div", { class: "section queued-rows", role: "list" }, queue.map(queueRow))),
     el("div", { class: "small queue-notice", role: "status", "aria-live": "polite", text: ui.notices.get(ui.agent) || "" })];
 }
 function updateQueuedMessages() {
