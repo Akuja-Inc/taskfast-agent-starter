@@ -18,7 +18,11 @@ export interface ConsoleAgent {
   saveSpec?(spec: AgentSpec): Promise<void>;
   // What only the host knows, with server reads for the given task IDs. `seen` is the
   // ledger this view read, so the host can tell when money has moved.
-  host?(taskIds: string[], seen: { actions: Record<string, Action>; events: Record<string, EventWork> }): Promise<HostFacts>;
+  host?(taskIds: string[], seen: Ledger): Promise<HostFacts>;
+}
+export interface Ledger {
+  actions: Record<string, Action>;
+  events: Record<string, EventWork>;
 }
 export interface HostFacts {
   unlockFile: boolean;
