@@ -468,6 +468,8 @@ it("renders a reply's markdown subset node by node and leaves raw HTML and unsaf
   expect(md("Output:\n```\nline one")).toBe("<p>Output:</p><pre>line one</pre>");
   expect(md("Intro with **")).toBe("<p>Intro with </p>");
   expect(md("**bold words*")).toBe("<p><strong>bold words</strong></p>");
+  // Only the block that ends the text can still be streaming; finished blocks keep unmatched markers.
+  expect(md("*draft note\nscore 2 **\n\n- item *open\n\nlast *word")).toBe("<p>*draft note\nscore 2 **</p><ul><li>item *open</li></ul><p>last <em>word</em></p>");
   expect(md("## **Plan** here")).toBe("<p><strong>Plan</strong><strong> here</strong></p>");
   // No images: the syntax stays text, so nothing links to or fetches the address.
   expect(md("![chart](https://example.com/c.png)")).toBe("<p>![chart](https://example.com/c.png)</p>");

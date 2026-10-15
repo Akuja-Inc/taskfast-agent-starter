@@ -294,6 +294,8 @@ async function act(method, action, body) {
 }
 ${LIVE}
 ${MARKDOWN}
+// Every link that leaves the console opens a new tab that cannot reach back into this one.
+const AWAY = { target: "_blank", rel: "noopener noreferrer" };
 // A reply's markdown, built node by node: no markup string from the model reaches the DOM.
 function mdRuns(runs) {
   return runs.map((run) => {
@@ -301,7 +303,7 @@ function mdRuns(runs) {
     if (run.em) node = el("em", {}, node);
     if (run.strong) node = el("strong", {}, node);
     // Link text can lie, so the full address rides on the title.
-    return run.href ? el("a", { href: run.href, title: run.href, target: "_blank", rel: "noopener noreferrer" }, node) : node;
+    return run.href ? el("a", { href: run.href, title: run.href, ...AWAY }, node) : node;
   });
 }
 const mdList = (list) => el(list.start === undefined ? "ul" : "ol", { start: list.start !== 1 ? list.start : null }, list.items.map((item) => el("li", {}, mdRuns(item.runs), item.list ? mdList(item.list) : null)));
@@ -375,7 +377,7 @@ function taskCard(ref) {
   const { title, summary } = taskSummary(ref.id);
   const href = taskLink(ref.id);
   const inner = [el("span", { class: "small", text: viaLabel(ref.via) + (href ? "" : " · " + ref.id) }), el("strong", { text: title }), summary ? el("span", { class: "small", text: summary }) : null, el("span", { class: "sq go" }, pict("arrow", 13))];
-  return href ? el("a", { class: "task", href, target: "_blank", rel: "noopener noreferrer" }, inner) : el("div", { class: "task" }, inner);
+  return href ? el("a", { class: "task", href, ...AWAY }, inner) : el("div", { class: "task" }, inner);
 }
 
 function header() {
@@ -502,7 +504,7 @@ function replyBlock(reply, key, live) {
 }
 
 const smooth = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-const lastSaid = (turn) => turn.replies.map((r) => markdown(r.text).map(plain).join(" ")).filter(Boolean).pop() || "";
+const lastSaid = (turn) => { const r = turn.replies.findLast((r) => r.text); return r ? markdown(r.text).map(plain).join(" ") : ""; };
 
 // The timeline mounts only its newest turns. The rail gives each mounted turn a mark and
 // compresses the rest into at most 12, each showing its most telling turn.

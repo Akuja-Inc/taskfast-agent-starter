@@ -19,6 +19,7 @@ const WARN = "#f59e0b";
 const BAD = "#ef4444";
 const OK = "#22c55e";
 const SELECTED = "#1f2937";
+const CODE = { fg: "#e9e7dc", bg: "#2a2d31" };
 const LABEL: Record<Field, string> = { temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
 export const HELP: [string, string][] = [
   ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
@@ -38,7 +39,6 @@ function Span(p: { fg?: string; bg?: string; children?: JSX.Element }) {
 
 // A reply's markdown (console-markdown.ts, parsed after clean()) as styled runs. Code wears
 // Code Ink on a dark plate; a link also shows its address, because its words can lie.
-const CODE = { fg: "#e9e7dc", bg: "#2a2d31" };
 function Runs(p: { runs: Run[] }) {
   return <>{p.runs.map((run) => {
     let node: JSX.Element = run.code ? <Span {...CODE}>{run.text}</Span> : run.text;
@@ -291,12 +291,12 @@ export function App(p: AppProps) {
                           const open = () => ui().open.includes(reply.key);
                           const mark = () => (selected() === reply.key ? "▶ " : "  ");
                           // A leading paragraph shares the name's line; the other blocks sit under it.
-                          const blocks = markdown(reply.text), lead = blocks[0]?.kind === "p" ? blocks[0] : undefined;
+                          const blocks = markdown(reply.text), lead = blocks[0]?.kind === "p" ? blocks[0] : undefined, rest = lead ? blocks.slice(1) : blocks;
                           return (
                             <box id={reply.key} flexDirection="column" backgroundColor={selected() === reply.key ? SELECTED : undefined}>
                               <text>{mark()}<Span fg={ACCENT}>{`${clean(view()?.id ?? "Agent")} — `}</Span>{lead ? <Runs runs={lead.runs} /> : blocks.length ? "" : reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)"}</text>
-                              <Show when={blocks.length > (lead ? 1 : 0)}>
-                                <box flexDirection="column" paddingLeft={4}><Blocks blocks={lead ? blocks.slice(1) : blocks} /></box>
+                              <Show when={rest.length}>
+                                <box flexDirection="column" paddingLeft={4}><Blocks blocks={rest} /></box>
                               </Show>
                               <Show when={reply.badge}>
                                 <box onMouseDown={() => setUi({ ...ui(), open: toggle(ui().open, reply.key) })}>

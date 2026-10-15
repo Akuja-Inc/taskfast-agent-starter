@@ -2,9 +2,10 @@
 // bold, italic, inline and fenced code, `-` and `1.` lists one level deep, http(s) links,
 // and headings as bold paragraphs. Everything else, raw HTML and other link schemes
 // included, stays text. Every newline inside a paragraph is a line break, as the model
-// wrote it. A reply still streaming ends mid-construct, so an open fence, code span or
-// `*` emphasis closes at the end of its block instead of showing its marker. The page
-// embeds this function's source, so it closes over nothing.
+// wrote it. A reply still streaming ends mid-construct, so an open fence or code span
+// closes at the end of its block, and the block that ends the text closes an open `*`
+// emphasis and drops a trailing `*` instead of showing the marker. The page embeds this
+// function's source, so it closes over nothing.
 export type Run = { text: string; strong?: true; em?: true; code?: true; href?: string };
 export type List = { kind: "list"; start?: number; items: { runs: Run[]; list?: List }[] };
 export type Block = { kind: "p"; runs: Run[] } | { kind: "code"; text: string } | List;
@@ -13,16 +14,21 @@ export function markdown(text: string): Block[] {
   type Style = Omit<Run, "text">;
   const word = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
   const space = (c: string | undefined) => c === undefined || /\s/.test(c);
-  function inline(src: string, base: Style): Run[] {
+  // tail marks the block that ends the text, the only one that may still be streaming.
+  function inline(src: string, tail: boolean): Run[] {
     const runs: Run[] = [];
-    const style: Style = { ...base };
+    const style: Style = {};
     let buf = "";
     const flush = () => { if (buf) runs.push({ text: buf, ...style }); buf = ""; };
-    // _ never opens or closes inside a word (snake_case_id), and opens only when it closes
-    // later. ponytail: that lookahead is quadratic in underscores; replies are short.
+    // Whether mark closes after from: its last valid closer, found once per mark. A closer
+    // follows a word, not a space or the tail of a longer marker run (" **" holds no *).
+    const last: Record<string, number> = {};
     const closes = (mark: string, from: number) => {
-      for (let j = src.indexOf(mark, from); j >= 0; j = src.indexOf(mark, j + 1)) if (!space(src[j - 1]) && !word(src[j + mark.length])) return true;
-      return false;
+      if (!(mark in last)) {
+        last[mark] = -1;
+        for (let j = src.indexOf(mark); j >= 0; j = src.indexOf(mark, j + 1)) if (!space(src[j - 1]) && src[j - 1] !== mark[0] && !word(src[j + mark.length])) last[mark] = j;
+      }
+      return last[mark] >= from;
     };
     for (let i = 0; i < src.length;) {
       const c = src[i], rest = src.slice(i);
@@ -42,7 +48,7 @@ export function markdown(text: string): Block[] {
       const link = c === "[" ? /^\[([^\]\n]+)\]\((https?:\/\/[^\s()]+)\)/i.exec(rest) : null;
       if (link) {
         flush();
-        runs.push({ ...style, text: inline(link[1], {}).map((run) => run.text).join(""), href: link[2] });
+        runs.push({ ...style, text: inline(link[1], false).map((run) => run.text).join(""), href: link[2] });
         i += link[0].length;
         continue;
       }
@@ -50,9 +56,9 @@ export function markdown(text: string): Block[] {
         const mark = rest.startsWith(c + c) ? c + c : c, key = mark.length === 2 ? "strong" : "em";
         const before = src[i - 1], after = src[i + mark.length];
         const close = style[key] && !space(before) && !(c === "_" && word(after));
-        // _ and a * inside a word (5*3) open only when they close later; a * after a space
-        // opens at once, so a streaming *word shows no marker.
-        const open = !style[key] && !space(after) && !(c === "_" && word(before)) && !((c === "_" || word(before)) && !closes(mark, i + mark.length));
+        // _ never opens or closes inside a word (snake_case_id). A mark opens only when it
+        // closes later, except a * after a space at the tail, so a streaming *word shows no marker.
+        const open = !style[key] && !space(after) && !(c === "_" && word(before)) && (closes(mark, i + mark.length) || (tail && c === "*" && !word(before)));
         if (close || open) {
           flush();
           if (close) delete style[key]; else style[key] = true;
@@ -60,7 +66,7 @@ export function markdown(text: string): Block[] {
           continue;
         }
         // A * that ends the text is the next marker still streaming: drop it.
-        if (c === "*" && i + mark.length === src.length) break;
+        if (tail && c === "*" && i + mark.length === src.length) break;
       }
       buf += c;
       i++;
@@ -72,12 +78,17 @@ export function markdown(text: string): Block[] {
   const blocks: Block[] = [];
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   let para: string[] = [];
-  // Items collect their lines as text and are parsed once their list is complete.
+  // Items collect their lines as text and are parsed once their list ends.
   type Raw = { start?: number; items: { text: string; list?: Raw }[] };
   let list: Raw | null = null;
-  const lists: [List, Raw][] = [];
-  const end = () => {
-    if (para.length) blocks.push({ kind: "p", runs: inline(para.join("\n"), {}) });
+  // Only the last item of a list that ends the text is at the tail.
+  const parse = (raw: Raw, tail: boolean): List => ({ kind: "list", ...(raw.start === undefined ? {} : { start: raw.start }), items: raw.items.map((item, n) => {
+    const last = tail && n === raw.items.length - 1;
+    return { runs: inline(item.text, last && !item.list), ...(item.list ? { list: parse(item.list, last) } : {}) };
+  }) });
+  const end = (tail = false) => {
+    if (para.length) blocks.push({ kind: "p", runs: inline(para.join("\n"), tail) });
+    if (list) blocks.push(parse(list, tail));
     para = [];
     list = null;
   };
@@ -96,7 +107,7 @@ export function markdown(text: string): Block[] {
     const heading = /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
     if (heading) {
       end();
-      blocks.push({ kind: "p", runs: inline(heading[1], {}).map((run) => ({ ...run, strong: true })) });
+      blocks.push({ kind: "p", runs: inline(heading[1], i === lines.length - 1).map((run) => ({ ...run, strong: true })) });
       continue;
     }
     const item = /^(\s*)(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/.exec(line);
@@ -112,11 +123,7 @@ export function markdown(text: string): Block[] {
       }
       if (!parent || (parent.start === undefined) !== (start === undefined)) {
         end();
-        const raw: Raw = { start, items: [] }, block: List = { kind: "list", items: [] };
-        if (start !== undefined) block.start = start;
-        blocks.push(block);
-        lists.push([block, raw]);
-        list = raw;
+        list = { start, items: [] };
       }
       list!.items.push({ text: item[3] });
       continue;
@@ -129,8 +136,7 @@ export function markdown(text: string): Block[] {
     }
     para.push(line.trim());
   }
-  end();
-  const parse = (raw: Raw): List => ({ kind: "list", ...(raw.start === undefined ? {} : { start: raw.start }), items: raw.items.map((item) => ({ runs: inline(item.text, {}), ...(item.list ? { list: parse(item.list) } : {}) })) });
-  for (const [block, raw] of lists) Object.assign(block, parse(raw));
+  // A text that ends in a blank line has finished its last block, so nothing is at the tail.
+  end(true);
   return blocks;
 }
