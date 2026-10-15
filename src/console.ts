@@ -216,6 +216,16 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     if (req.method === "GET" && !action) return send(res, 200, await view(o.env, item));
     if (req.method === "GET" && action === "stream" && arg === undefined) return watch(item, res);
     const controls = item.agent.operator;
+    if (req.method === "DELETE" && action === "messages" && arg !== undefined) {
+      if (!validRequestId(arg)) return send(res, 400, { error: REQUEST_ID_PROBLEM });
+      const result = await controls.withdraw(arg);
+      switch (result) {
+        case "withdrawn": return send(res, 204, "");
+        case "already_placed": return send(res, 409, { error: "The agent already has this message." });
+        case "not_found": return send(res, 404, { error: "Queued message not found." });
+        default: { const exhaustive: never = result; throw new Error(`unknown withdraw result: ${exhaustive}`); }
+      }
+    }
     if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
       if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
       // The page sends the text it rendered, so a stale render cannot remove the wrong order.

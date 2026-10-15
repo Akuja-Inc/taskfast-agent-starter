@@ -1,0 +1,48 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop ·  (poster) › [1 Timeline] 2 Briefing    ● paused · 3 waiting   spend $0.00 of $50.00   ? help
+ Paused: events are still received and stored. 3 waiting; steers run before follow-ups on resume (p).
+┌─ Needs attention · 2 ────────────────────────────────────────────────────────────────┐┌─ Agent ────────────────────────────────┐
+│ › UNCERTAIN accept:44444444-4444-4444-8444-444444444444   c mark checked             ││ Queued messages · 3                    │
+│     $0.00 is counted as spent and will not be retried. Check the task on TaskFast,   ││ Tab focus · j/k select · s steer       │
+│ then mark it checked.                                                                ││ ▶ Follow-up · s to steer               │
+│   DEAD-LETTERED event has no name   c mark checked                                   ││ Check the photo deadline before        │
+│     The stream gave up on this event at 2026-10-13T08:00:00Z and acknowledged it.    ││ bidding.                               │
+└──────────────────────────────────────────────────────────────────────────────────────┘│   Follow-up · s to steer               │
+┌─ Timeline ───────────────────────────────────────────────────────────────────────────┐│ Keep new commitments under $15.        │
+│ POLL  14:58  Check your marketplace work in your poster role and pursue the goals in ││   Steer · after tool round             │
+│ your instructions. Read current state before acting; do not repeat uncertain writes. ││ Prioritize the existing photo edit.    │
+│ ▶ shop — (tool calls only)                                                           ││                                        │
+│     [▸ 4 tool calls · 1 failed · 1 uncertain]                                        ││ Ready to work? yes                     │
+│     TASK_CLAIM  Edit 12 product photos  in_progress · budget $18.00 · worker         ││ ✓ Wallet balance: 50.00 USDC           │
+│ assigned  http://localhost:4000/tasks/11111111-1111-4111-8111-111111111111           ││ ✓ Wallet unlock file: present          │
+│     MESSAGE_SEND  Write 5 product descriptions  open · budget $20.00  http://        ││ ✓ Event stream: connected              │
+│ localhost:4000/tasks/22222222-2222-4222-8222-222222222222                            ││ ✓ Model: anthropic:claude-haiku-5-5    │
+│   shop — Claimed the photo edit. The message was refused and the bid acceptance      ││ ✓ Spending limits: $20.00 per job ·    │
+│ timed out, so it is uncertain: please check it before I do anything else on that     ││ $50.00 per day                         │
+│ task.                                                                                ││                                        │
+│                                                                                      ││ Tasks                                  │
+│ EVENT  14:58  bid.created · task 22222222-2222-4222-8222-222222222222                ││ POSTED · 0                             │
+│   shop — A new bid arrived on the copywriting job. I will wait for your check on the ││ BIDDING · 0                            │
+│ uncertain acceptance first.                                                          ││ WORKING ON · 1                         │
+│     Before I act                                                                     ││   Edit 12 product photos               │
+│     • The acceptance of bid 44444444 is uncertain and counted as spent               ││                                        │
+│     • I will not retry it:                                                           ││ Spend today (UTC) $0.00 of $50.00      │
+│       • read the task on the task page (https://example.com/tasks/22222222)          ││                                        │
+│     1. Check the bid                                                                 ││ Standing orders · 0                    │
+│     2. Reply here                                                                    ││                                        │
+│      taskfast bid accept xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ││                                        │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ││                                        │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ││                                        │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ││                                        │
+│      xxxxxxxx                                                                        ││                                        │
+│     Marketplace text stays text: <script>alert(1)</script> <img src=x onerror=alert( ││                                        │
+│     1)> [x](javascript:alert(1))                                                     ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+└──────────────────────────────────────────────────────────────────────────────────────┘│                                        │
+┌─ Message · Enter follow-up · Ctrl+S steer ───────────────────────────────────────────┐│                                        │
+│ m to write to shop; Enter next run / Ctrl+S after tool round                         ││                                        │
+└──────────────────────────────────────────────────────────────────────────────────────┘└────────────────────────────────────────┘
+ j/k move · enter calls · r raw · o open · m message · Tab queue · s steer · p pause · f freeze · ? help · q quit

@@ -1,0 +1,48 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop ·  (poster) › [1 Timeline] 2 Briefing    ● paused · 3 waiting   spend $0.00 of
+ Paused: events are still received and stored. 3 waiting; steers run before follow-ups on
+┌─ Timeline ─────────────────────────────────────────────────────────────────────────────┐
+│ EVENT  14:58  bid.created · task 22222222-2222-4222-8222-222222222222                  │
+│   shop — A new bid arrived on the copywriting job. I will wait for your check on the   │
+│ uncertain acceptance first.                                                            │
+│     Before I act                                                                       │
+│     • The acceptance of bid 44444444 is uncertain and counted as spent                 │
+│     • I will not retry it:                                                             │
+│       • read the task on the task page (https://example.com/tasks/22222222)            │
+│     1. Check the bid                                                                   │
+│     2. Reply here                                                                      │
+│      taskfast bid accept xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│                                                                                        │
+│     Marketplace text stays text: <script>alert(1)</script> <img src=x onerror=alert(1) │
+│     > [x](javascript:alert(1))                                                         │
+│                                                                                       █│
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Message · Enter follow-up · Ctrl+S steer ─────────────────────────────────────────────┐
+│ m to write to shop; Enter next run / Ctrl+S after tool round                           │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Agent ────────────────────────────────────────────────────────────────────────────────┐
+│ Queued messages · 3                                                                   █│
+│ Tab focus · j/k select · s steer                                                      █│
+│ ▶ Follow-up · s to steer                                                              █│
+│ Check the photo deadline before bidding.                                              █│
+│   Follow-up · s to steer                                                              █│
+│ Keep new commitments under $15.                                                       █│
+│   Steer · after tool round                                                            █│
+│ Prioritize the existing photo edit.                                                   █│
+│                                                                                       █│
+│ Ready to work? yes                                                                    █│
+│ ✓ Wallet balance: 50.00 USDC                                                          ▀│
+│ ✓ Wallet unlock file: present                                                          │
+│ ✓ Event stream: connected                                                              │
+│ ✓ Model: anthropic:claude-haiku-5-5                                                    │
+│ ✓ Spending limits: $20.00 per job · $50.00 per day                                     │
+│                                                                                        │
+│ Tasks                                                                                  │
+│ POSTED · 0                                                                             │
+│ BIDDING · 0                                                                            │
+│ WORKING ON · 1                                                                         │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+ i sidebar · Tab queue · s steer · a alerts (2) · m message · p pause · ? help · q quit

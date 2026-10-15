@@ -7,7 +7,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import type { ConsoleView } from "../console.js";
 import { follow } from "../console-live.js";
 import { markdown, type Block, type List, type Run } from "../console-markdown.js";
-import { actionError, FIELDS, fieldValue, initialUi, messageAttempt, messageBody, press, setField, type Effect, type Field, type MessageAttempt, type MessageMode, type Ui } from "./keys.js";
+import { actionError, FIELDS, fieldValue, initialUi, messageAttempt, messageBody, press, setField, withdrawnSelection, type Effect, type Field, type MessageAttempt, type MessageMode, type Ui } from "./keys.js";
 import { clean, screen, type Screen } from "./screen.js";
 
 const TONE = { development: "#1d4ed8", staging: "#b45309", production: "#b91c1c" };
@@ -24,7 +24,7 @@ const LABEL: Record<Field, string> = { temperament: "Temperament", perJobUsd: "P
 export const HELP: [string, string][] = [
   ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
   ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
-  ["r", "raw event"], ["o", "open the task"], ["m", "write a message: Enter follow-up / Ctrl+S steer after this tool round"], ["s", "steer the selected queued follow-up (Tab to focus the queue)"], ["p", "pause / resume"],
+  ["r", "raw event"], ["o", "open the task"], ["m", "write a message: Enter follow-up / Ctrl+S steer after this tool round"], ["s", "steer the selected queued follow-up (Tab to focus the queue)"], ["w", "withdraw the selected queued follow-up or steer"], ["p", "pause / resume"],
   ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "run an abandoned event again"],
   ["a", "show alerts (Briefing: add a standing order)"], ["d", "Briefing: delete the standing order"],
   ["ctrl+s", "Timeline composer: steer; Briefing: save and reopen (asks y/n)"], ["esc", "discard the draft, close a line"],
@@ -87,6 +87,7 @@ export function App(p: AppProps) {
   // Retries keep identity AND mode. Scope attempts and in-flight guards to the agent.
   const attempts = new Map<string, MessageAttempt>();
   const pending = new Set<string>();
+  const withdrawalAttempts = new Set<string>();
   let stop = () => {};
   // Retry and agent switches fire unawaited connects; each is numbered so a stale one
   // can't assign its follow later or overwrite the newer agent's view.
@@ -143,10 +144,23 @@ export function App(p: AppProps) {
     const actionKey = `${id}/${effect.method}/${effect.action}`;
     if (pending.has(actionKey)) return;
     pending.add(actionKey);
+    const withdrawal = effect.method === "DELETE" && effect.action.startsWith("messages/")
+      ? { requestId: decodeURIComponent(effect.action.slice("messages/".length)), before: view()?.queuedMessages ?? [] }
+      : undefined;
+    if (withdrawal) withdrawalAttempts.add(`${id}/${withdrawal.requestId}`);
     try {
       setNotice("");
       await api(effect.method, `${agentPath(id)}/${effect.action}`, effect.body);
       if (agentId() !== id) return;
+      if (withdrawal) {
+        // The stream may remove the row before the response, or arrive just after it.
+        // Remove it locally on ACK too, so the next selected ID is already visible.
+        const current = view();
+        const after = (current?.queuedMessages ?? []).filter((row) => row.requestId !== withdrawal.requestId);
+        setUi(withdrawnSelection(ui(), withdrawal.requestId, withdrawal.before, after));
+        if (current) setView({ ...current, queuedMessages: after });
+        setNotice("Message withdrawn.");
+      }
       if (effect.action.startsWith("steer/")) setNotice("Message set to Steer.");
       if (effect.action === "spec") {
         setUi({ ...ui(), draft: undefined });
@@ -214,6 +228,15 @@ export function App(p: AppProps) {
   });
   const agent = () => list()?.agents[ui().agent];
   const draft = () => ui().draft ?? view()?.spec;
+  // A stream can confirm removal before DELETE replies, or after its reply is
+  // lost. Leave a vanished withdrawal target on a visible, non-destructive panel.
+  createEffect(() => {
+    const selected = ui().queuedRequestId, current = view();
+    if (ui().panel === "queue" && selected && withdrawalAttempts.has(`${agentId()}/${selected}`)
+      && current && !current.queuedMessages.some((row) => row.requestId === selected)) {
+      setUi({ ...ui(), panel: "timeline", queuedRequestId: undefined });
+    }
+  });
   const queueSelected = (requestId: string) => ui().panel === "queue" && ui().queuedRequestId === requestId;
 
   return (
@@ -328,10 +351,10 @@ export function App(p: AppProps) {
                 <Show when={!narrow() || ui().sidebar}>
                   <scrollbox ref={(box: ScrollBoxRenderable) => { sidebarScroll = box; }} flexShrink={0} height={narrow() ? "50%" : undefined} width={narrow() ? "100%" : 42} border borderColor={ui().panel === "queue" ? ACCENT : MUTED} title=" Agent " paddingX={1}>
                     <text fg={ui().panel === "queue" ? ACCENT : undefined}><b>{`Queued messages · ${s().sidebar.queued.length}`}</b></text>
-                    <text fg={MUTED}>Tab focus · j/k select · s steer</text>
+                    <text fg={MUTED}>Tab focus · j/k select · w withdraw</text>
                     <For each={s().sidebar.queued} fallback={<text fg={MUTED}>None waiting.</text>}>{(row) => (
                       <box id={`queue-${row.requestId}`} flexDirection="column" backgroundColor={queueSelected(row.requestId) ? SELECTED : undefined}>
-                        <text><Span fg={ACCENT}>{`${queueSelected(row.requestId) ? "▶ " : "  "}${row.label}`}</Span><Span fg={MUTED}>{row.mode === "followUp" ? " · s to steer" : " · after tool round"}</Span></text>
+                        <text><Span fg={ACCENT}>{`${queueSelected(row.requestId) ? "▶ " : "  "}${row.label}`}</Span><Span fg={MUTED}>{row.mode === "followUp" ? " · s steer · w withdraw" : " · w withdraw"}</Span></text>
                         <text>{row.text}</text>
                       </box>
                     )}</For>
@@ -392,8 +415,8 @@ export function App(p: AppProps) {
               <text fg={notice() ? WARN : MUTED}>{notice() || (ui().tab === "briefing"
                 ? "tab orders/fields · j/k move · a add · d delete · enter edit · ctrl+s save · esc discard · 1 timeline · ? help · q quit"
                 : narrow()
-                ? `i sidebar · Tab queue · s steer · a alerts (${s().attention.length}) · m message · p pause · ? help · q quit`
-                : "j/k move · enter calls · r raw · o open · m message · Tab queue · s steer · p pause · f freeze · ? help · q quit")}</text>
+                ? `i sidebar · Tab queue · s steer · w withdraw · a alerts (${s().attention.length}) · m message · p pause · ? help · q quit`
+                : "j/k move · enter calls · r raw · o open · m message · Tab queue · s steer · w withdraw · p pause · f freeze · ? help · q quit")}</text>
             </box>
           </>
         )}
