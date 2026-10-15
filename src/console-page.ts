@@ -733,7 +733,7 @@ function updateQueuedMessages() {
   });
   section.hidden = !queue.length;
   // A hidden section cannot hold focus. The composer is the next visible control.
-  if (section.hidden && hadFocus) document.querySelector("form.composer textarea").focus();
+  if (section.hidden && hadFocus) document.querySelector("form.composer textarea").focus({ preventScroll: true });
   document.querySelector(".queue-notice").textContent = ui.notices.get(ui.agent) || "";
 }
 

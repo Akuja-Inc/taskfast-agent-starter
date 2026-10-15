@@ -11,7 +11,7 @@
 
 Google Chrome 155.0.8059.39 rendered the real console through Python Playwright, at a 1440 by 1100 viewport, light theme, en-US locale and UTC timezone, with `bypass_csp` set as `.agents/lessons/console-evidence-playwright-csp.md` says. Each capture scrolled to the page bottom, where the band sits above the composer. Neither source reported a page error.
 
-Before, the empty queue shows the "Queued messages" band and "No queued messages.". After, the empty queue shows no band. In both sources the script then paused the shop and queued one follow-up through the console API. The band and its row appeared on the next stream update with no reload, and Playwright reported `#queued-messages` visible.
+Before, the empty queue shows the "Queued messages" band above the line "No queued messages." After, the empty queue shows no band. In both sources the script then paused the shop and queued one follow-up through the console API. The band and its row appeared on the next stream update with no reload, and Playwright reported `#queued-messages` visible.
 
 Only `test/fixtures/tui-host.mjs` ran. It creates temporary folders and real stores with a faux model and fake CLI. No model provider, marketplace server, real agent folder or wallet funds were used. The pictures contain synthetic fixture data only. The host stopped on SIGTERM and removed its temporary stores.
 
