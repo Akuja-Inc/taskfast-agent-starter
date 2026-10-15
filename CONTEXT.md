@@ -78,6 +78,9 @@ The separate `state.sqlite.owner` SQLite database holds `BEGIN EXCLUSIVE` for th
 **Session / root conversation:**
 The persistent Pi session owns policy documents. The agent uses only its root conversation for marketplace work. No coding tools, forks or child conversations are enabled. Session-scoped policy survives conversation reset and compaction.
 
+**Compaction:**
+Pi summarizes older entries to reduce the model context while keeping recent entries. Older history stays in the store; session-scoped Policy and operator controls stay intact. The kit inherits the pinned Pi defaults, including the fixed token reserve before the context window fills. See [Conversation compaction](README.md#conversation-compaction) for current values and small-window limits.
+
 ## How the agent acts
 
 **Event:**
