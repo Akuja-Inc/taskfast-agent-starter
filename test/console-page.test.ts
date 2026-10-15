@@ -38,7 +38,8 @@ class FakeNode {
   }
   querySelector(selector: string): FakeNode | null { return this.querySelectorAll(selector)[0] || null; }
   closest(selector: string): FakeNode | null { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
-  focus() {}
+  focusCalls: ({ preventScroll?: boolean } | null)[] = [];
+  focus(options?: { preventScroll?: boolean }) { this.focusCalls.push(options ?? null); }
   scrollIntoView() {}
   cloneNode() {
     const copy = new FakeNode(this.tagName);
@@ -75,7 +76,7 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
     fetch, () => ({ matches: false }),
-  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string }; viaLabel: (via: string | undefined) => string };
+  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
@@ -227,6 +228,46 @@ it("does not freeze non-queue live updates when the focused composer has no draf
   expect(page.app.querySelector('.note')?.textContent).toContain('Paused.');
   page.setView({ ...demoView(), operator: { paused: false, frozen: false, messages: [], orders: [] } }); page.render();
   expect(page.app.querySelector('.note')).toBeNull();
+});
+
+// gh#30: a rebuild that only hands the composer its focus back must not scroll the
+// page, so an operator reading the timeline keeps their place on every stream push.
+it("gives the composer its focus back without scrolling on a rebuild", () => {
+  const page = bootPage();
+  page.setView(demoView());
+  page.render();
+  page.document.activeElement = page.app.querySelector('form.composer textarea');
+  page.setView(demoView());
+  page.render();
+  const next = page.app.querySelector('form.composer textarea')!;
+  expect(next).not.toBe(page.document.activeElement);
+  expect(next.focusCalls).toEqual([{ preventScroll: true }]);
+});
+
+// A deliberate ask for the composer (the sample prompts and the Fix this buttons go
+// through draftInto) still scrolls it into view.
+it("scrolls the composer into view when a sample prompt drafts a message", () => {
+  const page = bootPage();
+  page.setView(demoView());
+  page.render();
+  page.app.querySelectorAll('.sample')[0].listeners.click[0]({});
+  expect(page.ui.draft).toBe('Post a job under $15');
+  expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: false }]);
+});
+
+// gh#30: a bare "textarea" query lands on the Briefing tab's Goals field, so a pending
+// composer focus must wait for the timeline's composer instead.
+it("keeps a pending composer focus away from the Briefing tab's Goals field", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { model: 'faux:test', character: { name: 'Demo', goals: 'Win copy-editing jobs' }, dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
+  page.render();
+  page.ui.focusComposer = true;
+  page.ui.tab = 'briefing';
+  page.render();
+  expect(page.app.querySelector('textarea')!.focusCalls).toEqual([]);
+  page.ui.tab = 'timeline';
+  page.render();
+  expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: true }]);
 });
 
 it("pins queue prose below its mode even without a promotion button", () => {
@@ -390,4 +431,18 @@ it("renders the unlock brand square with the shared .sq.you classes", () => {
 
 it("has no hand-copied role-sq rule left in the page", () => {
   expect(PAGE).not.toContain("role-sq");
+});
+
+// Theme differences belong to the two token blocks only: one :root, one
+// [data-theme="dark"]. A per-element dark rule means retuning a theme takes a hunt.
+it("keeps every theme difference inside the two token blocks", () => {
+  expect(PAGE.match(/\[data-theme="dark"][^,{]*\{/g)).toEqual(['[data-theme="dark"] {']);
+});
+
+// The always-dark chrome (header, budget card, freeze toggle, copy button) names its
+// palette once in :root; every use references the token.
+it("names each dark-chrome colour exactly once", () => {
+  for (const hex of ["#4A4E55", "#F2F1EA", "#E9E7DC", "#17191c", "#1C1C19", "#56D364", "#F85149"]) {
+    expect(PAGE.split(hex).length - 1, hex).toBe(1);
+  }
 });
