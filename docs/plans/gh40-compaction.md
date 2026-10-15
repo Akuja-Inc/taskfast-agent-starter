@@ -27,4 +27,4 @@ The [revised issue contract](https://github.com/Akuja-Inc/taskfast-agent-starter
 
 Work on branch `gh40-compaction` in `.worktrees/gh40-compaction`. Leave the main checkout's unrelated work alone. Keep runtime source, setup, schemas, example agents, generated files, captured fixtures and package pins unchanged.
 
-Fill every PR template section. Use `Closes #40` and `Refs #38` outside fences. This test/docs PR has no behavior delta, so the architecture-diagram section is N/A. Include the reproducible test command and actual gate results. Open as draft until required CI checks are green, then request review. Do not merge.
+Fill every PR template section. Use `Closes #40` and `Refs #38` outside fences. This test/docs PR has no behavior delta, so the architecture-diagram section is N/A. Include the reproducible test command and actual gate results. Request review once required CI checks are green. Do not merge.

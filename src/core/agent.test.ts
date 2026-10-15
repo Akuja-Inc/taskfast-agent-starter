@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { failingStorage } from "../../test/failing-storage.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
+import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
@@ -34,10 +35,9 @@ function testModels(contextWindow = 128000) {
   models.setProvider(faux.provider);
   return { models, faux };
 }
-async function open(options: Partial<Parameters<typeof openMarketplaceAgent>[0]> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "marketplace-agent-"));
-  dirs.push(dir);
-  const selected = testModels();
+async function open({ contextWindow, dir, ...options }: Partial<Parameters<typeof openMarketplaceAgent>[0]> & { contextWindow?: number; dir?: string } = {}) {
+  if (!dir) { dir = mkdtempSync(join(tmpdir(), "marketplace-agent-")); dirs.push(dir); }
+  const selected = testModels(contextWindow);
   const calls: string[][] = [];
   const agent = await openMarketplaceAgent({
     storePath: join(dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(dir, "config.json") }, models: selected.models,
@@ -48,6 +48,15 @@ async function open(options: Partial<Parameters<typeof openMarketplaceAgent>[0]>
   return { agent, calls, ...selected, dir };
 }
 async function run(agent: MarketplaceAgent) { await agent.ping(); await agent.waitForIdle(); }
+async function addContext(agent: MarketplaceAgent, content: string, timestamp = 0) {
+  await agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content, timestamp }] } }, context);
+}
+const isSummary = (input: Parameters<FauxResponseFactory>[0]) => JSON.stringify(input.messages.filter((message) => message.role === "system")).includes("context summarization assistant");
+function hold() {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  return { held, release };
+}
 
 it("moves a stopped agent folder without losing notes, spend or completed business keys", async () => {
   const root = mkdtempSync(join(tmpdir(), "marketplace-move-"));
@@ -335,13 +344,12 @@ it("preserves marketplace policy and operator state when Pi actually compacts th
 });
 
 it.each([
-  { contextWindow: 128000, charsPerEntry: 140000 },
-  { contextWindow: 32768, charsPerEntry: 35000 },
-])("automatically compacts with Pi defaults and preserves state across restart ($contextWindow tokens)", async ({ contextWindow, charsPerEntry }) => {
-  const selected = testModels(contextWindow);
+  { contextWindow: 128000, charsPerEntry: 140000, kept: ["Newest context:"] },
+  { contextWindow: 32768, charsPerEntry: 35000, kept: ["Recent context:", "Newest context:"] },
+])("automatically compacts with Pi defaults and preserves state across restart ($contextWindow tokens)", async ({ contextWindow, charsPerEntry, kept }) => {
   const now = () => new Date("2026-06-20T12:00:00Z");
-  const kit = await open({ models: selected.models, now });
-  selected.faux.setResponses([
+  const kit = await open({ contextWindow, now });
+  kit.faux.setResponses([
     fauxAssistantMessage([fauxToolCall("remember", { note: "Keep the permanent ledger." }), fauxToolCall("post_task", post)], { stopReason: "toolUse" }),
     fauxAssistantMessage("Posted once."),
   ]);
@@ -355,33 +363,24 @@ it.each([
 
   // Passive entries cross the blocking threshold without a generation starting a
   // background summary first. Pi needs separate entries to find a safe cut.
-  for (const label of ["Old context", "Recent context", "Newest context"]) {
-    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: `${label}: ` + "x".repeat(charsPerEntry), timestamp: 0 }] } }, context);
-  }
+  for (const label of ["Old context", "Recent context", "Newest context"]) await addContext(kit.agent, `${label}: ` + "x".repeat(charsPerEntry));
   expect((await kit.agent.conversation.context(context)).head).toBeUndefined();
-  let release = () => {};
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  let summaryStarted = false;
-  let summaryBudget: number | undefined;
-  let summaryPrompt = "";
+  const summary = hold();
+  let summaryRequest: { summary: boolean; maxTokens?: number } | undefined;
   let continued = false;
-  selected.faux.setResponses([
+  kit.faux.setResponses([
     async (input, options) => {
-      summaryPrompt = JSON.stringify(input.messages.filter((message) => message.role === "system"));
-      summaryBudget = options?.maxTokens;
-      summaryStarted = true;
-      await gate;
+      summaryRequest = { summary: isSummary(input), maxTokens: options?.maxTokens };
+      await summary.held;
       return fauxAssistantMessage("Earlier work is complete. Read the permanent ledger before acting.");
     },
     () => { continued = true; return fauxAssistantMessage("Continued after compaction."); },
   ]);
-  let operator = await kit.agent.operator.state();
+  let operator: OperatorState | undefined;
   await kit.agent.ping();
   try {
-    await expect.poll(() => summaryStarted).toBe(true);
-    expect(summaryPrompt).toContain("context summarization assistant");
     // Pi 1.2.0: floor(0.8 * 16384), below this faux model's 16384 maxTokens.
-    expect(summaryBudget).toBe(13107);
+    await expect.poll(() => summaryRequest).toEqual({ summary: true, maxTokens: 13107 });
     expect(continued).toBe(false);
     await kit.agent.conversation.commit(async (tx) => {
       expect((await tx.doc(LiveDoc, kit.agent.conversation.id)).compactions).toEqual([expect.objectContaining({ reason: "threshold", blocking: true })]);
@@ -390,35 +389,29 @@ it.each([
     await kit.agent.operator.setPaused(true);
     operator = await kit.agent.operator.state();
     expect(operator).toMatchObject({ frozen: true, paused: true, orders: ["Read current state before acting."] });
-  } finally { release(); }
+  } finally { summary.release(); }
   await kit.agent.waitForIdle();
   expect(continued).toBe(true);
-  expect(selected.faux.getPendingResponseCount()).toBe(0);
   const compacted = await kit.agent.conversation.context(context);
   expect(compacted.head?.kind).toBe("pi.compaction");
-  expect(JSON.stringify(compacted.messages)).not.toContain("Old context:");
-  expect(JSON.stringify(compacted.messages)).toContain("Newest context:");
-  if (contextWindow === 32768) expect(JSON.stringify(compacted.messages)).toContain("Recent context:");
+  const messages = JSON.stringify(compacted.messages);
+  expect(messages).not.toContain("Old context:");
+  for (const label of kept) expect(messages).toContain(label);
   expect(await kit.agent.status()).toEqual(policy);
   expect(await kit.agent.operator.state()).toEqual(operator);
   await kit.agent.close();
 
-  const fresh = testModels(contextWindow);
-  const reopened = await openMarketplaceAgent({
-    storePath: join(kit.dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(kit.dir, "config.json") }, models: fresh.models, now,
-    command: async (_runtime, args) => { kit.calls.push(args); return args[0] === "me" ? me : { outcome: "ok" }; },
-  });
-  opened.push(reopened);
-  expect((await reopened.conversation.context(context)).head?.id).toBe(compacted.head?.id);
-  expect(await reopened.status()).toEqual(policy);
-  expect(await reopened.operator.state()).toEqual(operator);
+  const reopened = await open({ dir: kit.dir, contextWindow, now });
+  expect((await reopened.agent.conversation.context(context)).head?.id).toBe(compacted.head?.id);
+  expect(await reopened.agent.status()).toEqual(policy);
+  expect(await reopened.agent.operator.state()).toEqual(operator);
   // Unfreeze before testing deduplication, otherwise the freeze would mask a lost ledger.
-  await reopened.operator.setFrozen(false);
-  await reopened.operator.setPaused(false);
+  await reopened.agent.operator.setFrozen(false);
+  await reopened.agent.operator.setPaused(false);
   let normalRequests = 0;
   let summaries = 0;
   const respond: FauxResponseFactory = (input) => {
-    if (JSON.stringify(input.messages).includes("context summarization assistant")) {
+    if (isSummary(input)) {
       summaries++;
       return fauxAssistantMessage("Earlier work is complete. Read the permanent ledger.");
     }
@@ -429,38 +422,33 @@ it.each([
   };
   // Small windows can still exceed the threshold after retaining 20000 recent
   // tokens. Bound requests explicitly so a repeat-compaction loop fails this test.
-  fresh.faux.setResponses(Array.from({ length: 4 }, () => respond));
-  await run(reopened);
+  reopened.faux.setResponses(Array.from({ length: 4 }, () => respond));
+  await run(reopened.agent);
   expect(normalRequests).toBe(2);
   expect(summaries).toBeLessThanOrEqual(2);
-  expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
-  expect(JSON.stringify((await reopened.conversation.context(context)).messages)).toContain("already done");
-  expect(await reopened.status()).toEqual(policy);
-  expect(await reopened.operator.state()).toEqual({ ...operator, frozen: false, paused: false });
+  expect([...kit.calls, ...reopened.calls].filter((args) => args[0] === "post")).toHaveLength(1);
+  expect(JSON.stringify((await reopened.agent.conversation.context(context)).messages)).toContain("already done");
+  expect(await reopened.agent.status()).toEqual(policy);
+  expect(await reopened.agent.operator.state()).toEqual({ ...operator, frozen: false, paused: false });
 });
 
 it("inherits Pi's background threshold without blocking the normal request", async () => {
   const kit = await open(); // Faux model: 128000-token window.
-  for (let index = 0; index < 3; index++) {
-    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: "x".repeat(35000), timestamp: index }] } }, context);
-  }
+  for (let index = 0; index < 3; index++) await addContext(kit.agent, "x".repeat(35000), index);
   kit.faux.setResponses([fauxAssistantMessage("Below the background threshold.")]);
   await run(kit.agent);
   expect(kit.faux.state.callCount).toBe(1);
   expect((await kit.agent.conversation.context(context)).head).toBeUndefined();
   // Including faux cache-write usage, the previous request used about 53000
   // tokens. These entries add about 36000: above 78848, below 111616.
-  for (let index = 0; index < 3; index++) {
-    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: "x".repeat(42000), timestamp: index }] } }, context);
-  }
-  let release = () => {};
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  for (let index = 0; index < 3; index++) await addContext(kit.agent, "x".repeat(42000), index);
+  const summary = hold();
   let summaryStarted = false;
   let normalRequests = 0;
   const respond: FauxResponseFactory = async (input) => {
-    if (JSON.stringify(input.messages).includes("context summarization assistant")) {
+    if (isSummary(input)) {
       summaryStarted = true;
-      await gate;
+      await summary.held;
       return fauxAssistantMessage("Earlier context summarized in the background.");
     }
     normalRequests++;
@@ -471,12 +459,12 @@ it("inherits Pi's background threshold without blocking the normal request", asy
   try {
     await expect.poll(() => summaryStarted).toBe(true);
     await expect.poll(() => normalRequests).toBe(1);
-    await kit.agent.waitForIdle(); // Does not wait for background work.
+    await kit.agent.waitForIdle();
     await kit.agent.conversation.commit(async (tx) => {
       expect((await tx.doc(LiveDoc, kit.agent.conversation.id)).compactions).toEqual([expect.objectContaining({ reason: "threshold", blocking: false })]);
     }, context);
     expect((await kit.agent.conversation.context(context)).head).toBeUndefined();
-  } finally { release(); }
+  } finally { summary.release(); }
   // waitForIdle excludes background tasks; wait for their durable result instead.
   await expect.poll(async () => (await kit.agent.conversation.context(context)).head?.kind).toBe("pi.compaction");
   expect(kit.faux.state.callCount).toBe(3);
