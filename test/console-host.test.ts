@@ -8,6 +8,7 @@ import { openMarketplaceAgent } from "../src/core/agent.js";
 import type { CliResult } from "../src/core/cli.js";
 import { initialOperator } from "../src/core/operator.js";
 import { runAgents, type AgentHandle, type RunOptions } from "../src/run.js";
+import { copyExample, example } from "./example.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const dirs: string[] = [];
@@ -19,7 +20,7 @@ function folders(...ids: string[]): string {
   dirs.push(dir);
   for (const id of ids) {
     mkdirSync(join(dir, id, ".taskfast"), { recursive: true });
-    writeFileSync(join(dir, id, "agent.json"), readFileSync(join(ROOT, "examples", "brisk-poster.json")));
+    copyExample("brisk-poster", join(dir, id));
     writeFileSync(join(dir, id, ".taskfast", "config.json"), "{}");
   }
   return dir;
@@ -80,17 +81,23 @@ it("saves a valid agent file and reopens only that agent; an invalid one changes
   const file = join(dir, "me", "agent.json");
   const before = readFileSync(file, "utf8");
   await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls) => {
-    const invalid = await put(link!, "/api/agents/me/spec", { ...JSON.parse(before), extra: true });
+    const invalid = await put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), extra: true });
     expect(invalid.status).toBe(400);
     expect(readFileSync(file, "utf8")).toBe(before);
     expect(calls).toEqual(["open me", "open you"]);
 
+    expect((await put(link!, "/api/agents/me/spec", JSON.parse(before))).status).toBe(400);
+    expect(calls).toEqual(["open me", "open you"]);
+
+    const instructions = "You are Mo, who runs Mo's Prints.\n\nWhat you want right now: hire one poster designer.\n";
     const changed = { ...JSON.parse(before), limits: { perJobUsd: 20, dailyUsd: 80 } };
-    expect((await put(link!, "/api/agents/me/spec", changed)).status).toBe(204);
+    expect((await put(link!, "/api/agents/me/spec", { ...changed, instructions })).status).toBe(204);
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(changed);
+    expect(readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8")).toBe(instructions);
     expect(calls).toEqual(["open me", "open you", "close me", "open me"]);
-    const view = await (await get(link!, "/api/agents/me")).json() as { spec: { limits: unknown } };
-    expect(view.spec.limits).toEqual({ perJobUsd: 20, dailyUsd: 80 });
+    const view = await (await get(link!, "/api/agents/me")).json() as { spec: { limits: unknown; instructions: string }; prompt: string };
+    expect(view.spec).toMatchObject({ limits: { perJobUsd: 20, dailyUsd: 80 }, instructions });
+    expect(view.prompt).toMatch(/^You are Mo, who runs Mo's Prints\./);
   });
 });
 
@@ -180,7 +187,7 @@ it("streams a real store's commits, and closes its streams before the store at r
     while (view !== "ended" && !view.operator.paused) view = await live.next();
     expect(view).toMatchObject({ operator: { paused: true } });
 
-    expect((await put(link!, "/api/agents/me/spec", JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8")))).status).toBe(204);
+    expect((await put(link!, "/api/agents/me/spec", example("brisk-poster"))).status).toBe(204);
     while (await live.next() !== "ended");
     expect(order).toEqual(["open me", "unwatch me", "close me", "open me"]);
     await views(link!, "/api/agents/me/stream").then((again) => again.next());
@@ -198,9 +205,12 @@ it("keeps the host running when an agent cannot reopen", async () => {
       return handle(id, []);
     },
   }, async (link) => {
-    const spec = JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8"));
-    const failed = await put(link!, "/api/agents/me/spec", spec);
+    const before = { file: readFileSync(join(dir, "me", "agent.json"), "utf8"), instructions: readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8") };
+    const failed = await put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), instructions: "You are someone new.\n", dials: { competence: 0.1, diligence: 0.1, priceSensitivity: 0.1, temperament: "curt" } });
     expect(failed.status).toBe(500);
+    // Both files go back to what they were, so the next host start loads the old agent.
+    expect(readFileSync(join(dir, "me", "agent.json"), "utf8")).toBe(before.file);
+    expect(readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8")).toBe(before.instructions);
     expect(await failed.json()).toMatchObject({ error: expect.stringContaining("store is already owned") });
     const listed = await (await get(link!, "/api/agents")).json() as { agents: { id: string }[] };
     expect(listed.agents.map((agent) => agent.id)).toEqual(["you"]);
@@ -212,8 +222,9 @@ it("refuses a spec whose provider cannot be built, touching neither the file nor
   const file = join(dir, "me", "agent.json");
   const before = readFileSync(file, "utf8");
   await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls) => {
-    await put(link!, "/api/agents/me/spec", { ...JSON.parse(before), model: "nosuch:some-model" });
+    await put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), instructions: "You are someone new.\n", model: "nosuch:some-model" });
     expect(readFileSync(file, "utf8")).toBe(before);
+    expect(readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8")).toBe(example("brisk-poster").instructions);
     expect(calls).toEqual(["open me", "open you"]);
     const listed = await (await get(link!, "/api/agents")).json() as { agents: { id: string }[] };
     expect(listed.agents.map((agent) => agent.id)).toEqual(["me", "you"]);
@@ -254,7 +265,7 @@ it("discovers an unlock file created after start, in facts and in the reopen run
     expect((await (await get(link!, "/api/agents/me")).json() as { host: { unlockFile: boolean } }).host.unlockFile).toBe(false);
     writeFileSync(join(dir, "me", ".taskfast", "wallet-password"), "x", { mode: 0o400 });
     expect((await (await get(link!, "/api/agents/me")).json() as { host: { unlockFile: boolean } }).host.unlockFile).toBe(true);
-    await put(link!, "/api/agents/me/spec", JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8")));
+    await put(link!, "/api/agents/me/spec", example("brisk-poster"));
     expect(seen).toEqual([undefined, join(dir, "me", ".taskfast", "wallet-password")]);
   });
 });

@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { COALESCE_MS, MAX_STREAMS, PING_MS, startConsole, type ConsoleAgent } from "../src/console.js";
 import { initialOperator, type OperatorState } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
+import { example } from "./example.js";
 
 const token = "a".repeat(64);
 const closers: (() => Promise<void>)[] = [];
@@ -26,7 +27,7 @@ function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], sta
   const listeners = new Set<() => void>();
   const agent: ConsoleAgent = {
     id,
-    spec: parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8"))),
+    spec: parseAgentSpec(example("brisk-poster")),
     agent: {
       status: async () => ({ identity: { env: "local", agentId: "33333333-3333-4333-8333-333333333333" }, actions, spend: { "2026-10-13": 15 }, memory: ["Use US spelling."] }),
       transcript: async () => transcript,
@@ -232,7 +233,7 @@ it("uses the shipped coalescing, ping and stream cap when nothing overrides them
 });
 
 it("a spec save ends one agent's stream under the shared cap and leaves the others alone", async () => {
-  const spec = parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8")));
+  const spec = parseAgentSpec(example("brisk-poster"));
   const stateTwo = initialOperator();
   const one = fakeAgent({ id: "one" });
   const reopened = fakeAgent({ id: "one" });
@@ -292,7 +293,7 @@ it("shows one agent's turns, alerts and prompt", async () => {
   expect(view.prompt).toContain("Use US spelling.");
   expect(view.prompt).toContain("Keep every job under $15.");
   expect(view.spend).toEqual({ "2026-10-13": 15 });
-  expect(view.spec.character.name).toBe(agent.spec.character.name);
+  expect(view.spec.instructions).toBe(agent.spec.instructions);
   expect((await call(port, "/api/agents/nobody", { headers: auth })).status).toBe(404);
 });
 

@@ -18,7 +18,7 @@ const WARN = "#f59e0b";
 const BAD = "#ef4444";
 const OK = "#22c55e";
 const SELECTED = "#1f2937";
-const LABEL: Record<Field, string> = { goals: "Goals", temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
+const LABEL: Record<Field, string> = { temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
 export const HELP: [string, string][] = [
   ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
   ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
@@ -267,7 +267,7 @@ export function App(p: AppProps) {
                           const mark = () => (selected() === reply.key ? "▶ " : "  ");
                           return (
                             <box id={reply.key} flexDirection="column" backgroundColor={selected() === reply.key ? SELECTED : undefined}>
-                              <text>{mark()}<Span fg={ACCENT}>{`${clean(view()?.spec.character.name ?? "Agent")} — `}</Span>{reply.text || (reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)")}</text>
+                              <text>{mark()}<Span fg={ACCENT}>{`${clean(view()?.id ?? "Agent")} — `}</Span>{reply.text || (reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)")}</text>
                               <Show when={reply.badge}>
                                 <box onMouseDown={() => setUi({ ...ui(), open: toggle(ui().open, reply.key) })}>
                                   <text fg={/failed|uncertain/.test(reply.badge ?? "") ? WARN : MUTED}>{`    [${open() ? "▾" : "▸"} ${reply.badge}]`}</text>
@@ -290,7 +290,7 @@ export function App(p: AppProps) {
                     )}</For>
                   </scrollbox>
                   <box height={3} flexShrink={0} border borderColor={ui().editing === "message" ? ACCENT : MUTED} title=" Message · Enter follow-up · Ctrl+S steer " paddingX={1}>
-                    <Show when={ui().editing === "message"} fallback={<text fg={MUTED}>{`m to write to ${clean(view()?.spec.character.name ?? "the agent")}; Enter next run / Ctrl+S after tool round`}</text>}>
+                    <Show when={ui().editing === "message"} fallback={<text fg={MUTED}>{`m to write to ${clean(view()?.id ?? "the agent")}; Enter next run / Ctrl+S after tool round`}</text>}>
                       <input focused placeholder="Your message to the agent" value={ui().messageText} onInput={(text: string) => setUi({ ...ui(), messageText: text })} />
                     </Show>
                   </box>

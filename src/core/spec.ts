@@ -1,5 +1,10 @@
 import { MANNER, MARKET } from "./prompt.js";
-import type { AgentSpec, Character, Limits } from "./types.js";
+import type { AgentFile, AgentSpec, Limits } from "./types.js";
+
+// The agent folder file holding the agent's instructions, and the most it may hold.
+export const INSTRUCTIONS_PATH = "INSTRUCTIONS.md";
+export const MAX_INSTRUCTIONS = 20_000;
+const FILE_KEYS = ["role", "model", "dials", "limits"] as const;
 
 const fail = (why: string): never => {
   throw new Error(`invalid agent file: ${why}`);
@@ -52,22 +57,16 @@ export function splitModel(id: unknown): { provider: string; modelId: string } {
   return { provider: model.slice(0, at), modelId: model.slice(at + 1) };
 }
 
-// Validates an agent file (parsed JSON) and returns a copy holding only known fields.
-export function parseAgentSpec(raw: unknown): AgentSpec {
-  const o = record(raw, "agent", ["role", "model", "character", "dials", "limits"]);
+// agent.json's character from before INSTRUCTIONS.md: ignored, and the host warns about it.
+export const hasStaleCharacter = (raw: unknown): boolean => typeof raw === "object" && raw !== null && "character" in raw;
+export const STALE_CHARACTER = `agent.json still has character, which is ignored now; write the agent's name, business, goals and budget in ${INSTRUCTIONS_PATH} in your own words, then remove character`;
+
+// Validates agent.json (parsed JSON) and returns a copy holding only known fields.
+export function parseAgentFile(raw: unknown): AgentFile {
+  const o = record(raw, "agent", [...FILE_KEYS, "character"]);
   const role = oneOf(o.role, "role", MARKET);
   const model = o.model as string;
   splitModel(model);
-
-  const c = record(o.character, "character", ["name", "businessName", "businessDescription", "goals", "budgetUsd"]);
-  const character: Character = {
-    name: text(c.name, "character.name"),
-    businessName: text(c.businessName, "character.businessName"),
-    businessDescription: text(c.businessDescription, "character.businessDescription"),
-    goals: text(c.goals, "character.goals"),
-  };
-  if (c.budgetUsd !== undefined) character.budgetUsd = positive(c.budgetUsd, "character.budgetUsd");
-  else if (role !== "worker") fail(`character.budgetUsd is required for role ${role}`);
 
   const d = record(o.dials, "dials", ["competence", "diligence", "priceSensitivity", "temperament"]);
   const limits = o.limits === undefined ? undefined : parseLimits(o.limits);
@@ -75,7 +74,6 @@ export function parseAgentSpec(raw: unknown): AgentSpec {
     ...(limits ? { limits } : {}),
     role,
     model,
-    character,
     dials: {
       competence: unit(d.competence, "dials.competence"),
       diligence: unit(d.diligence, "dials.diligence"),
@@ -83,4 +81,17 @@ export function parseAgentSpec(raw: unknown): AgentSpec {
       temperament: oneOf(d.temperament, "dials.temperament", MANNER),
     },
   };
+}
+
+// Validates the whole agent: agent.json's fields plus the instructions text.
+export function parseAgentSpec(raw: unknown): AgentSpec {
+  const { instructions, ...file } = record(raw, "agent", [...FILE_KEYS, "instructions"]);
+  const at = `instructions (${INSTRUCTIONS_PATH})`;
+  if (text(instructions, at).length > MAX_INSTRUCTIONS) fail(`${at} must be at most ${MAX_INSTRUCTIONS} characters`);
+  return { ...parseAgentFile(file), instructions: instructions as string };
+}
+
+// The agent.json part of an agent, for writing the file.
+export function agentFile({ instructions: _, ...file }: AgentSpec): AgentFile {
+  return file;
 }

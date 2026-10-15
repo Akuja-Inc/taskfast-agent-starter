@@ -13,7 +13,7 @@ export interface ConsoleAgent {
   id: string;
   spec: AgentSpec;
   agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript" | "changes">;
-  // Writes an already-checked agent file and reopens this agent with it.
+  // Writes an already-checked agent.json and INSTRUCTIONS.md and reopens this agent with them.
   saveSpec?(spec: AgentSpec): Promise<void>;
   // What only the host knows, with server reads for the given task IDs.
   host?(taskIds: string[]): Promise<HostFacts>;
@@ -196,7 +196,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     if (req.method === "GET" && path === "/") return send(res, 200, PAGE, "text/html");
     if (!sameToken(req.headers.authorization, o.token)) return send(res, 401, { error: "missing or wrong console token" });
     if (req.method === "GET" && path === "/api/agents") {
-      return send(res, 200, { env: o.env, agents: o.agents().map(({ id, spec }) => ({ id, name: spec.character.name, role: spec.role })) });
+      return send(res, 200, { env: o.env, agents: o.agents().map(({ id, spec }) => ({ id, role: spec.role })) });
     }
     const match = /^\/api\/agents\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(path);
     // A malformed percent-escape names no agent: not found, not a server error.

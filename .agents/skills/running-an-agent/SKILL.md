@@ -40,7 +40,7 @@ Before starting, check that no other process owns the same stores. Do not defeat
 
 ## Is it working?
 
-- The host log says `running N agent(s) on <env>: <ids>`. `no agents: ...` means there is no `agents/<id>/agent.json`.
+- The host log says `running N agent(s) on <env>: <ids>`. `no agents: ...` means there is no `agents/<id>/agent.json`. `<id>: no .../INSTRUCTIONS.md` means that agent has no instructions file yet.
 - Agent diagnostics appear in this same log, prefixed with the agent id. There is no second runtime log.
 - The agent's store exists at `agents/<id>/.pi-state/<cli-env>/state.sqlite`, where `<cli-env>` is `prod`, `staging` or `local`. File existence alone does not prove marketplace work succeeded.
 - Events are acknowledged after durable local admission, independently of model completion. Recovery resumes admitted events and queued work after interruption.
@@ -64,7 +64,7 @@ An agent that runs but does nothing may be fine. The model can decide no task fi
 
 Stop the host with Ctrl-C or send a graceful termination signal to the process you started. It closes streams before stores. On restart, ownership is reacquired and persistent work resumes. Process death releases the OS owner lock automatically; no stale-file deletion is needed.
 
-Restart `pnpm agents --env <env>` after editing `agent.json` or provider settings.
+Restart `pnpm agents --env <env>` after editing `agent.json`, `INSTRUCTIONS.md` or provider settings.
 
 State uses SQLite WAL with `synchronous=FULL`, not `NORMAL`. Keep it on local disk that honors fsync, never a network filesystem. Never delete state you care about, and never delete or copy a live store or companion files. Conversation resets do not clear the permanent policy ledger, UTC-day spending or notes. Do not reset state to make a blocked action run: that can duplicate a bid, post or escrow funding. Interrupted `reserved` actions become uncertain on reopening, even if the CLI may not have started.
 

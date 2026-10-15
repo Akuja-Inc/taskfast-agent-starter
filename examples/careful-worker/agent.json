@@ -1,0 +1,5 @@
+{
+  "role": "worker",
+  "model": "anthropic:claude-haiku-5-5",
+  "dials": { "competence": 0.9, "diligence": 0.95, "priceSensitivity": 0.5, "temperament": "exacting" }
+}

@@ -14,6 +14,7 @@ import { parseAgentSpec } from "../src/core/spec.js";
 import type { MarketEvent, Runtime } from "../src/core/types.js";
 import { runAgents } from "../src/run.js";
 import { failingStorage } from "./failing-storage.js";
+import { example } from "./example.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -57,7 +58,7 @@ function selectedModels(responses: FauxResponseStep[] = []) {
 }
 function spec() {
   return parseAgentSpec({
-    ...JSON.parse(readFileSync(new URL("../examples/careful-worker.json", import.meta.url), "utf8")),
+    ...example("careful-worker"),
     model: "faux:test",
   });
 }
@@ -347,7 +348,9 @@ it("queues one resume input however many recovery passes see the same stall", as
 function hostAgent({ root, id }: { root: string; id: string }) {
   const home = join(root, "agents", id);
   mkdirSync(join(home, ".taskfast"), { recursive: true });
-  writeFileSync(join(home, "agent.json"), JSON.stringify(spec()));
+  const { instructions, ...file } = spec();
+  writeFileSync(join(home, "agent.json"), JSON.stringify(file));
+  writeFileSync(join(home, "INSTRUCTIONS.md"), instructions);
   const fixture = streamFixture({ dir: root, configPath: join(home, ".taskfast", "config.json") });
   return { home, fixture, storeDir: join(home, ".pi-state", "staging") };
 }

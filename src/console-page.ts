@@ -1,4 +1,5 @@
 import { follow } from "./console-live.js";
+import { MAX_INSTRUCTIONS } from "./core/spec.js";
 
 // The page runs the same stream follower as the terminal UI.
 export const LIVE = follow.toString();
@@ -375,7 +376,7 @@ function header() {
           el("span", { class: "sq you", title: roleTitle }, pict(roleGlyph, 15)),
           el("select", { "aria-label": "Agent", onchange: (e) => { ui.agent = e.target.value; ui.attempt = null; ui.messageError = ""; store.set("agent", ui.agent); ui.open.clear(); ui.raw.clear(); ui.specDraft = null; refresh(); } },
             ui.reopening ? [el("option", { value: ui.agent, selected: true, text: ui.agent + " · reopening…" })] : [],
-            (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + " · " + a.name })))),
+            (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + " · " + a.role })))),
         el("button", { class: "theme", "aria-label": dark ? "Switch to the light theme" : "Switch to the dark theme", title: dark ? "Switch to the light theme" : "Switch to the dark theme", onclick: () => {
           const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
           document.documentElement.dataset.theme = next;
@@ -747,8 +748,8 @@ function timelineTab() {
         e.preventDefault();
         submitMessage("followUp");
       } },
-        el("label", {}, el("span", { class: "sr-only", text: "Message " + (view.spec.character.name || "the agent") }),
-          el("textarea", { rows: 2, "aria-label": "Message " + (view.spec.character.name || "the agent"), placeholder: 'e.g. "Post one copy-editing job under $15."', oninput: (e) => { if (ui.draft !== e.target.value) ui.attempt = null; ui.draft = e.target.value; ui.messageError = ""; updateMessageStatus(); }, onkeydown: (e) => {
+        el("label", {}, el("span", { class: "sr-only", text: "Message " + view.id }),
+          el("textarea", { rows: 2, "aria-label": "Message " + view.id, placeholder: 'e.g. "Post one copy-editing job under $15."', oninput: (e) => { if (ui.draft !== e.target.value) ui.attempt = null; ui.draft = e.target.value; ui.messageError = ""; updateMessageStatus(); }, onkeydown: (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); submitMessage("steer"); }
             else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.currentTarget.form.requestSubmit(); }
           }, text: ui.draft })),
@@ -792,9 +793,9 @@ function briefingTab() {
           el("button", { type: "submit", class: "primary", text: "Add" })),
         el("div", { class: "small", text: "The agent's own notes: " + (view.notes.length ? view.notes.join(" · ") : "none yet.") }))),
       el("section", { class: "section" },
-        band("agent.json", "saving reopens only this agent; the others keep running"),
+        band("INSTRUCTIONS.md and agent.json", "saving reopens only this agent; the others keep running"),
         el("div", { class: "card" },
-        el("label", {}, "Goals", el("textarea", { rows: 2, onchange: (e) => set(["character", "goals"], e.target.value), text: draft.character.goals })),
+        el("label", {}, "Instructions (INSTRUCTIONS.md): who the agent is, its business, goals and budget", el("textarea", { rows: 8, maxlength: ${MAX_INSTRUCTIONS}, onchange: (e) => set(["instructions"], e.target.value), text: draft.instructions })),
         el("div", { class: "grid" },
           el("label", {}, "Temperament", el("select", { onchange: (e) => set(["dials", "temperament"], e.target.value) },
             ["patient", "brisk", "exacting", "easygoing", "curt"].map((t) => el("option", { value: t, selected: draft.dials.temperament === t, text: t })))),
@@ -808,7 +809,7 @@ function briefingTab() {
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
           el("button", { class: "primary", onclick: () => { if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits; act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; }); }, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
-        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
+        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
     el("aside", {}, el("section", { class: "section" },
       band("What the agent reads every turn"),
       el("div", { class: "card" }, el("pre", { text: view.prompt })))));

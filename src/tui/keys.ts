@@ -56,11 +56,11 @@ export function actionError(action: string, status: number | undefined, reason: 
   return action.startsWith("steer/") && (status === 404 || status === 409) ? ALREADY_PLACED : reason;
 }
 
-// The agent-file fields the briefing edits, in the order it lists them.
-export const FIELDS = ["goals", "temperament", "perJobUsd", "dailyUsd", "competence", "diligence", "priceSensitivity"] as const;
+// The agent.json fields the briefing edits, in the order it lists them. INSTRUCTIONS.md is
+// multi-line text, so only the web console edits it.
+export const FIELDS = ["temperament", "perJobUsd", "dailyUsd", "competence", "diligence", "priceSensitivity"] as const;
 export type Field = typeof FIELDS[number];
 export function fieldValue(spec: AgentSpec, field: Field): string {
-  if (field === "goals") return spec.character.goals;
   if (field === "perJobUsd" || field === "dailyUsd") return spec.limits?.[field]?.toString() ?? "";
   return String(spec.dials[field]);
 }
@@ -68,8 +68,7 @@ export function fieldValue(spec: AgentSpec, field: Field): string {
 // strict agent-file parser on save; an empty limit removes it.
 export function setField(ui: Ui, view: ConsoleView, field: Field, value: string): Ui {
   const draft: AgentSpec = structuredClone(ui.draft ?? view.spec);
-  if (field === "goals") draft.character.goals = value;
-  else if (field === "temperament") draft.dials.temperament = value as AgentSpec["dials"]["temperament"];
+  if (field === "temperament") draft.dials.temperament = value as AgentSpec["dials"]["temperament"];
   else if (field === "perJobUsd" || field === "dailyUsd") {
     const limits = { ...draft.limits };
     if (value.trim() === "") delete limits[field];

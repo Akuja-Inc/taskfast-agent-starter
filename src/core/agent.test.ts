@@ -13,6 +13,7 @@ import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
+import { example } from "../../test/example.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -26,7 +27,7 @@ const agentId = "33333333-3333-4333-8333-333333333333";
 const me: CliResult = { outcome: "ok", data: { profile: { id: agentId } } };
 const post = { title: "Edit the guide", description: "Copy edit the short guide.", budget: "10.00", pickup_deadline_hours: 24 };
 function spec(): AgentSpec {
-  const value: unknown = JSON.parse(readFileSync(new URL("../../examples/brisk-poster.json", import.meta.url), "utf8"));
+  const value: unknown = example("brisk-poster");
   return { ...parseAgentSpec(value), model: "faux:test", limits: { dailyUsd: 5, perJobUsd: 4 } };
 }
 function testModels(contextWindow = 128000) {
@@ -170,9 +171,9 @@ it("refuses version 1 policy stores without migrating or resetting their permane
   finally { await untouched.close(context); }
 });
 
-it("wakes a poster for its configured role and goals rather than worker-only discovery", async () => {
+it("wakes a poster for its configured role and instructions rather than worker-only discovery", async () => {
   const requested = spec();
-  requested.character.goals = "Hire one copy editor for the two-line setup note";
+  requested.instructions = "You are Ada, who runs Ada's Shop.\n\nWhat you want right now: Hire one copy editor for the two-line setup note.\n";
   const kit = await open({ spec: requested });
   let prompt = "";
   let wake = "";
@@ -184,9 +185,9 @@ it("wakes a poster for its configured role and goals rather than worker-only dis
   }]);
   await run(kit.agent);
   expect(prompt).toContain("You hire people");
-  expect(prompt).toContain(requested.character.goals);
+  expect(prompt).toContain(requested.instructions.trim());
   expect(wake).toContain("poster");
-  expect(wake).toContain(requested.character.goals);
+  expect(wake).toContain("goals in your instructions");
 });
 
 it("keeps the host unlock path available at the command boundary", async () => {

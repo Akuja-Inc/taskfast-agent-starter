@@ -9,6 +9,7 @@ import { EVENT_RETRY, openMarketplaceAgent, type MarketplaceAgent } from "./agen
 import type { CliResult } from "./cli.js";
 import { parseAgentSpec } from "./spec.js";
 import type { AgentSpec } from "./types.js";
+import { example } from "../../test/example.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -20,7 +21,7 @@ afterEach(async () => {
 const agentId = "33333333-3333-4333-8333-333333333333";
 const post = { title: "Edit the guide", description: "Copy edit the short guide.", budget: "10.00", pickup_deadline_hours: 24 };
 function spec(): AgentSpec {
-  const value: unknown = JSON.parse(readFileSync(new URL("../../examples/brisk-poster.json", import.meta.url), "utf8"));
+  const value: unknown = example("brisk-poster");
   return { ...parseAgentSpec(value), model: "faux:test", limits: { dailyUsd: 50, perJobUsd: 20 } };
 }
 // A real store in a fresh folder, a scripted model and a recording CLI.

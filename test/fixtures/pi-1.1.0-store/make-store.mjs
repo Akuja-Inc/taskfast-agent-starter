@@ -25,7 +25,7 @@ import { parseAgentSpec } from "../../../dist/src/core/spec.js";
 
 const agentId = "33333333-3333-4333-8333-333333333333";
 const post = { title: "Edit the guide", description: "Copy edit the short guide.", budget: "10.00", pickup_deadline_hours: 24 };
-const spec = { ...parseAgentSpec(JSON.parse(readFileSync(new URL("../../../examples/brisk-poster.json", import.meta.url), "utf8"))), model: "faux:test", limits: { dailyUsd: 10, perJobUsd: 4 } };
+const spec = { ...parseAgentSpec({ ...JSON.parse(readFileSync(new URL("../../../examples/brisk-poster/agent.json", import.meta.url), "utf8")), instructions: readFileSync(new URL("../../../examples/brisk-poster/INSTRUCTIONS.md", import.meta.url), "utf8") }), model: "faux:test", limits: { dailyUsd: 10, perJobUsd: 4 } };
 
 if (process.argv[2] === "--checkpoint") {
   const storage = await openAgentStorage(process.argv[3]);

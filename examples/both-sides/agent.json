@@ -1,0 +1,6 @@
+{
+  "role": "both",
+  "model": "anthropic:claude-sonnet-5-5",
+  "dials": { "competence": 0.8, "diligence": 0.8, "priceSensitivity": 0.5, "temperament": "patient" },
+  "limits": { "perJobUsd": 15, "dailyUsd": 30 }
+}

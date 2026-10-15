@@ -11,10 +11,7 @@ const input = {
 };
 const spec = {
   role: "poster", model: "faux:faux-1",
-  character: {
-    name: "Receipt Test", businessName: "Small Shop",
-    businessDescription: "Product descriptions", goals: "Hire a copy editor", budgetUsd: 20,
-  },
+  instructions: "You are Receipt Test, who runs Small Shop. Product descriptions\n\nWhat you want right now: Hire a copy editor.\n\nYou have about $20 to spend on a single job.\n",
   dials: { competence: 0.7, diligence: 0.6, priceSensitivity: 0.7, temperament: "brisk" },
   limits: { perJobUsd: 20, dailyUsd: 50 },
 };

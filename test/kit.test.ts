@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { providerSettings } from "../src/core/folder.js";
@@ -6,9 +6,9 @@ import { describe, expect, it } from "vitest";
 import type { AgentHandle } from "../src/run.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { runAgents } from "../src/run.js";
+import { copyExample, example } from "./example.js";
 
 const ROOT = join(import.meta.dirname, "..");
-const example = (name: string): unknown => JSON.parse(readFileSync(join(ROOT, "examples", name), "utf8"));
 
 it("uses the manifest as the single pnpm version source in CI", () => {
   const manifest: unknown = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
@@ -29,8 +29,8 @@ it("builds plain-Node fixtures before workers, not independently inside suites",
 });
 
 describe("examples", () => {
-  it.each(readdirSync(join(ROOT, "examples")))("%s is a valid agent file", (name) => {
-    expect(parseAgentSpec(example(name)).character.name).toBeTruthy();
+  it.each(readdirSync(join(ROOT, "examples")))("%s is a valid agent folder", (name) => {
+    expect(parseAgentSpec(example(name)).instructions).toMatch(/^You are /);
   });
 });
 
@@ -38,7 +38,7 @@ describe("runAgents", () => {
   function agents(withConfig: boolean): string {
     const dir = mkdtempSync(join(tmpdir(), "agents-"));
     mkdirSync(join(dir, "me", ".taskfast"), { recursive: true });
-    writeFileSync(join(dir, "me", "agent.json"), JSON.stringify(example("careful-worker.json")));
+    copyExample("careful-worker", join(dir, "me"));
     if (withConfig) writeFileSync(join(dir, "me", ".taskfast", "config.json"), "{}");
     mkdirSync(join(dir, "notes")); // no agent.json: not an agent
     return dir;
@@ -61,7 +61,7 @@ describe("runAgents", () => {
   it("keeps every agent's store and unlock path in its own folder", async () => {
     const dir = agents(true);
     mkdirSync(join(dir, "two", ".taskfast"), { recursive: true });
-    writeFileSync(join(dir, "two", "agent.json"), JSON.stringify(example("careful-worker.json")));
+    copyExample("careful-worker", join(dir, "two"));
     writeFileSync(join(dir, "two", ".taskfast", "config.json"), "{}");
     for (const id of ["me", "two"]) writeFileSync(join(dir, id, ".taskfast", "wallet-password"), "simulated user-owned file", { mode: 0o400 });
     const opened: { id: string; storePath: string; file: string | undefined }[] = [];
@@ -78,7 +78,7 @@ describe("runAgents", () => {
     const dir = join(root, "agents");
     const real = target === "root" ? join(root, "outside") : join(dir, "me");
     mkdirSync(join(real, ".taskfast"), { recursive: true });
-    writeFileSync(join(real, "agent.json"), JSON.stringify(example("careful-worker.json")));
+    copyExample("careful-worker", real);
     writeFileSync(join(real, ".taskfast", "config.json"), "{}");
     if (target === "root") { mkdirSync(dir); symlinkSync(real, join(dir, "me")); }
     else { mkdirSync(join(root, "outside")); symlinkSync(join(root, "outside"), join(real, ".pi-state")); }
@@ -94,7 +94,7 @@ describe("runAgents", () => {
     const root = mkdtempSync(join(tmpdir(), "prior-agent-store-"));
     const dir = join(root, "agents");
     mkdirSync(join(dir, "me", ".taskfast"), { recursive: true });
-    writeFileSync(join(dir, "me", "agent.json"), JSON.stringify(example("careful-worker.json")));
+    copyExample("careful-worker", join(dir, "me"));
     writeFileSync(join(dir, "me", ".taskfast", "config.json"), "{}");
     const prior = join(root, ".pi-state", "staging", "me", "state.sqlite");
     mkdirSync(join(prior, ".."), { recursive: true });
@@ -147,6 +147,25 @@ describe("runAgents", () => {
   it("refuses an agent that has not run taskfast init", async () => {
     const run = runAgents({ agentsDir: agents(false), env: "prod", signal: AbortSignal.abort(), log: () => {} });
     await expect(run).rejects.toThrow(/taskfast --env prod init/);
+  });
+
+  it("refuses an agent without INSTRUCTIONS.md before opening any store, and warns about then ignores a stale character", async () => {
+    const missing = agents(true);
+    rmSync(join(missing, "me", "INSTRUCTIONS.md"));
+    let opens = 0;
+    const openAgent = async (): Promise<AgentHandle> => { opens++; throw new Error("must not open"); };
+    await expect(runAgents({ agentsDir: missing, env: "staging", openAgent, signal: AbortSignal.abort(), log: () => {} })).rejects.toThrow(/me: no .*INSTRUCTIONS\.md; write the agent's instructions there/);
+    const stale = agents(true);
+    const file = JSON.parse(readFileSync(join(stale, "me", "agent.json"), "utf8"));
+    writeFileSync(join(stale, "me", "agent.json"), JSON.stringify({ ...file, character: { name: "Old" } }));
+    expect(opens).toBe(0);
+    const logs: string[] = [];
+    let spec: unknown;
+    const stop = new AbortController();
+    await runAgents({ agentsDir: stale, env: "staging", signal: stop.signal, log: (line) => void logs.push(line), listen: () => ({ close: async () => {} }),
+      openAgent: async (agent) => { spec = agent.spec; stop.abort(); return { closed: new Promise(() => {}), deliver: async () => {}, ping: async () => {}, close: async () => {} }; } });
+    expect(logs).toContain("me: agent.json still has character, which is ignored now; write the agent's name, business, goals and budget in INSTRUCTIONS.md in your own words, then remove character");
+    expect(spec).toEqual({ ...file, instructions: example("careful-worker").instructions });
   });
 
   it("refuses an empty agents directory", async () => {

@@ -11,7 +11,7 @@ import { UUID } from "./core/tools.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
 import { createAgentModels } from "./core/model.js";
-import { parseAgentSpec } from "./core/spec.js";
+import { agentFile, hasStaleCharacter, INSTRUCTIONS_PATH, parseAgentFile, parseAgentSpec, STALE_CHARACTER } from "./core/spec.js";
 import { parseWalletPasswordFile } from "./core/cli.js";
 import { PASSWORD_PATH, folderFile, portableFile, providerSettings } from "./core/folder.js";
 import type { AgentSpec, Env, Runtime } from "./core/types.js";
@@ -88,12 +88,17 @@ export async function runAgents(o: RunOptions): Promise<void> {
     return existsSync(local) ? local : walletPasswordFile;
   }
   const ids = existsSync(o.agentsDir) ? readdirSync(o.agentsDir).filter((id) => existsSync(join(o.agentsDir, id, "agent.json"))) : [];
-  if (!ids.length) throw new Error(`no agents: put one in ${o.agentsDir}/<id>/agent.json (copy one from examples/)`);
+  if (!ids.length) throw new Error(`no agents: put one in ${o.agentsDir}/<id>/ with agent.json and ${INSTRUCTIONS_PATH} (copy a folder from examples/)`);
   // Validate all files before opening any store or starting any marketplace work.
   const agents = ids.map((id) => {
     const agentDir = resolve(o.agentsDir, id);
     const specPath = folderFile({ agentDir, path: "agent.json", resource: "agent specification" });
-    const spec = parseAgentSpec(JSON.parse(readFileSync(specPath, "utf8")));
+    const instructionsPath = folderFile({ agentDir, path: INSTRUCTIONS_PATH, resource: "agent instructions" });
+    const raw: unknown = JSON.parse(readFileSync(specPath, "utf8"));
+    const parsed = parseAgentFile(raw);
+    if (hasStaleCharacter(raw)) o.log(`${id}: ${STALE_CHARACTER}`);
+    if (!existsSync(instructionsPath)) throw new Error(`${id}: no ${instructionsPath}; write the agent's instructions there (see examples/)`);
+    const spec = parseAgentSpec({ ...parsed, instructions: readFileSync(instructionsPath, "utf8") });
     // Never silently create blank state where the prior default ledger is left.
     // Arbitrary external old state locations cannot be discovered: operators must
     // preserve them and must not restart their credentials with fresh state.
@@ -106,7 +111,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     if ("keystore_path" in config && config.keystore_path !== null) portableFile({ agentDir, path: config.keystore_path, resource: "wallet reference" });
     providerSettings(agentDir); // Check persisted file references before any store opens.
     const file = findUnlockFile(agentDir);
-    return { id, agentDir, spec, specPath, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
+    return { id, agentDir, spec, specPath, instructionsPath, storePath: folderFile({ agentDir, path: `.pi-state/${o.env}/state.sqlite`, resource: "permanent state" }), runtime: { env: o.env, configPath, ...(file === undefined ? {} : { walletPasswordFile: file }) } };
   });
   type Item = typeof agents[number];
   const running: { id: string; spec: AgentSpec; agent: AgentHandle; listener?: ReturnType<typeof startListener> }[] = [];
@@ -209,8 +214,13 @@ export async function runAgents(o: RunOptions): Promise<void> {
     } catch (error) {
       throw new Error(`agent file rejected, nothing was saved: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const previous = { text: readFileSync(item.specPath, "utf8"), spec: item.spec, runtime: item.runtime };
-    writeFileDurable(item.specPath, `${JSON.stringify(spec, null, 2)}\n`);
+    const previous = { text: readFileSync(item.specPath, "utf8"), instructions: readFileSync(item.instructionsPath, "utf8"), spec: item.spec, runtime: item.runtime };
+    writeFileDurable(item.specPath, `${JSON.stringify(agentFile(spec), null, 2)}\n`);
+    try { writeFileDurable(item.instructionsPath, spec.instructions); }
+    catch (error) {
+      writeFileDurable(item.specPath, previous.text);
+      throw error;
+    }
     item.spec = spec;
     // The unlock file may have been created since this agent started; rediscover it.
     const file = findUnlockFile(item.agentDir);
@@ -221,6 +231,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     catch (error) {
       // A transient reopen failure must not leave a file the next start cannot load.
       writeFileDurable(item.specPath, previous.text);
+      writeFileDurable(item.instructionsPath, previous.instructions);
       item.spec = previous.spec;
       item.runtime = previous.runtime;
       o.log(`${item.id}: stopped, could not reopen: ${error instanceof Error ? error.message : String(error)}`);
