@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { startConsole, type ConsoleAgent, type HostFacts } from "./console.js";
+import { PING_MS, startConsole, type ConsoleAgent, type HostFacts } from "./console.js";
 import { runCli } from "./core/cli.js";
 import type { Command } from "./core/policy.js";
 import { UUID } from "./core/tools.js";
@@ -41,6 +41,17 @@ export interface RunOptions {
 }
 
 const READ_TTL_MS = 60_000;
+type Ledger = Parameters<NonNullable<ConsoleAgent["host"]>>[1];
+// Events that move an agent's money. A resolved dispute refunds or pays out its escrow.
+const PAYMENTS = new Set(["payment_held", "payment_released", "payment_disbursed", "dispute_resolved"]);
+// How many times money has moved in this ledger: money tools that settled ok or uncertain
+// (a known refusal moved nothing) and admitted payment events. Neither record is ever
+// evicted, so the count only grows.
+function moves({ actions, events }: Ledger): number {
+  const settled = Object.values(actions).filter((action) => action.amount > 0 && (action.status === "done" || action.status === "uncertain"));
+  const paid = Object.values(events).filter(({ event }) => typeof event === "object" && event !== null && !Array.isArray(event) && PAYMENTS.has(String(event.event)));
+  return settled.length + paid.length;
+}
 // The stream's sentinels arrive as listener log lines (pump.ts).
 function streamStatus(line: string): HostFacts["stream"] | undefined {
   if (line === "sentinel connected" || line === "sentinel resumed") return "connected";
@@ -169,15 +180,27 @@ export async function runAgents(o: RunOptions): Promise<void> {
       throw error;
     }
   }
-  // Server reads for the console, each kept for a minute so page refreshes cost nothing.
-  const reads = new Map<string, { at: number; value: unknown }>();
-  async function read(item: Item, args: string[]): Promise<unknown> {
+  // Server reads for the console, one per agent and command shared by every open stream,
+  // so page refreshes and extra tabs cost nothing. A read is stale once it is `ttlMs` old
+  // or money has moved since it started. Never two CLI children for one read: a stale
+  // read still running is waited out, then made once more.
+  type Read = { at: number; moves: number; running: boolean; value: Promise<unknown> };
+  const reads = new Map<string, Read>();
+  async function read(item: Item, args: string[], ttlMs = READ_TTL_MS, moved = 0): Promise<unknown> {
     const key = `${item.id} ${args.join(" ")}`;
-    const cached = reads.get(key);
-    if (cached && Date.now() - cached.at < READ_TTL_MS) return cached.value;
-    const result = await (o.command ?? runCli)(item.runtime, args);
-    const value = result.outcome === "ok" ? result.data ?? null : { error: result.error ?? result.outcome };
-    reads.set(key, { at: Date.now(), value });
+    const fresh = (entry: Read) => entry.moves >= moved && (entry.running || Date.now() - entry.at < ttlMs);
+    let cached = reads.get(key);
+    while (cached?.running && !fresh(cached)) {
+      await cached.value.catch(() => {});
+      cached = reads.get(key);
+    }
+    if (cached && fresh(cached)) return cached.value;
+    const value = (o.command ?? runCli)(item.runtime, args).then((result) => result.outcome === "ok" ? result.data ?? null : { error: result.error ?? result.outcome });
+    // A view with an older ledger must not lower the count a newer one already read at.
+    const entry: Read = { at: Date.now(), moves: Math.max(moved, cached?.moves ?? 0), running: true, value };
+    reads.set(key, entry);
+    // A read that threw is not kept: the next view tries again.
+    value.then(() => { entry.running = false; }, () => { if (reads.get(key) === entry) reads.delete(key); });
     return value;
   }
   // Streams re-read dead letters per window, so cache the file per path on mtime/size.
@@ -191,13 +214,14 @@ export async function runAgents(o: RunOptions): Promise<void> {
     deadLetterCache.set(path, { stat: { mtimeMs: stat.mtimeMs, size: stat.size }, lines });
     return lines;
   }
-  async function facts(item: Item, taskIds: string[]): Promise<HostFacts> {
+  async function facts(item: Item, taskIds: string[], seen: Ledger): Promise<HostFacts> {
     const deadLetters = readDeadLetters(join(dirname(item.runtime.configPath), "dead-letter.jsonl"));
     const unlock = findUnlockFile(item.agentDir);
     return {
       unlockFile: unlock !== undefined && existsSync(unlock),
       stream: streams.get(item.id) ?? "starting",
-      wallet: await read(item, ["wallet", "balance"]),
+      // The wallet lives one ping, so an outside deposit shows on an idle console.
+      wallet: await read(item, ["wallet", "balance"], PING_MS, moves(seen)),
       tasks: Object.fromEntries(await Promise.all(taskIds.filter((id) => UUID.test(id)).map(async (id) => [id, await read(item, ["task", "get", "--", id])]))),
       deadLetters,
     };
@@ -254,7 +278,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
         agents: () => running.flatMap(({ id, spec, agent }) => {
           const item = agents.find((candidate) => candidate.id === id);
           if (!item || !agent.operator || !agent.status || !agent.transcript || !agent.changes) return [];
-          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript, changes: agent.changes }, saveSpec: (next: AgentSpec) => reopen(item, next), host: (taskIds: string[]) => facts(item, taskIds) }];
+          return [{ id, spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript, changes: agent.changes }, saveSpec: (next: AgentSpec) => reopen(item, next), host: (taskIds: string[], seen: Ledger) => facts(item, taskIds, seen) }];
         }),
       });
       o.log(`console: ${consoleServer.url}`);

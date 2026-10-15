@@ -1,12 +1,16 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { setTimeout as sleep } from "node:timers/promises";
+import { afterEach, expect, it, vi } from "vitest";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { openMarketplaceAgent } from "../src/core/agent.js";
+import { PING_MS } from "../src/console.js";
+import { openMarketplaceAgent, type EventWork } from "../src/core/agent.js";
 import type { CliResult } from "../src/core/cli.js";
 import { initialOperator } from "../src/core/operator.js";
+import type { Action } from "../src/core/policy.js";
+import type { MarketEvent } from "../src/core/types.js";
 import { runAgents, type AgentHandle, type RunOptions } from "../src/run.js";
 import { copyExample, example } from "./example.js";
 
@@ -41,6 +45,30 @@ function handle(id: string, calls: string[]): AgentHandle {
     },
   };
 }
+// A handle whose policy actions and admitted events the test sets, announcing each change as a commit.
+function moving(id: string) {
+  const actions: Record<string, Action> = {};
+  const events: Record<string, EventWork> = {};
+  const listeners = new Set<() => void>();
+  const base = handle(id, []);
+  const agent: AgentHandle = {
+    ...base,
+    status: async () => ({ ...(await base.status!()), actions }),
+    operator: { ...base.operator!, events: async () => events },
+    changes: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  };
+  return { agent, actions, events, commit: () => listeners.forEach((listener) => listener()) };
+}
+const action = (status: Action["status"], amount: number): Action => ({ status, amount, at: "2026-10-15T08:00:00Z", day: "2026-10-15" });
+const admitted = (eventId: string, event: string): EventWork => ({ kind: "admitted", event: { event_id: eventId, event }, attempt: 0 });
+// A wallet read whose balance counts the reads so far, after `delayMs`.
+const balanceRead = (count: () => number, delayMs = 0) => async (_runtime: unknown, args: string[]): Promise<CliResult> => {
+  if (args[0] !== "wallet") return { outcome: "failed", error: "unexpected read" };
+  const balance = String(count());
+  await sleep(delayMs);
+  return { outcome: "ok", data: { balance: { available_balance: balance } } };
+};
+const shown = (view: unknown) => (view as { host: { wallet: { balance: { available_balance: string } } } }).host.wallet.balance.available_balance;
 // Runs the host until `body` finishes, then stops it.
 async function host(options: Partial<RunOptions> & { agentsDir: string }, body: (link: URL | undefined, calls: string[]) => Promise<void>) {
   const stop = new AbortController();
@@ -164,8 +192,12 @@ it("streams a real store's commits, and closes its streams before the store at r
   models.setProvider(faux.provider);
   faux.setResponses(Array.from({ length: 5 }, () => fauxAssistantMessage("Nothing yet.")));
   const order: string[] = [];
+  let reads = 0;
+  let deliver: ((event: MarketEvent) => Promise<void>) | undefined;
   await host({
     agentsDir: dir, console: { port: 0 },
+    command: balanceRead(() => ++reads),
+    listen: (options) => { deliver = options.deliver; return { close: async () => {} }; },
     openAgent: async ({ id, spec, runtime, storePath }) => {
       const agent = await openMarketplaceAgent({
         spec: { ...spec, model: "faux:test" }, runtime, storePath, models, recoverEveryMs: 60_000,
@@ -186,6 +218,14 @@ it("streams a real store's commits, and closes its streams before the store at r
     let view = await live.next();
     while (view !== "ended" && !view.operator.paused) view = await live.next();
     expect(view).toMatchObject({ operator: { paused: true } });
+    expect(shown(view)).toBe("1");
+
+    // A payment the stream admits into the real store refreshes the shown balance without a reload.
+    await deliver!({ event_id: "pay-1", event: "payment_released", data: {} });
+    view = await live.next();
+    while (view !== "ended" && shown(view) !== "2") view = await live.next();
+    expect(shown(view)).toBe("2");
+    expect(reads).toBe(2);
 
     expect((await put(link!, "/api/agents/me/spec", example("brisk-poster"))).status).toBe(204);
     while (await live.next() !== "ended");
@@ -267,6 +307,154 @@ it("discovers an unlock file created after start, in facts and in the reopen run
     expect((await (await get(link!, "/api/agents/me")).json() as { host: { unlockFile: boolean } }).host.unlockFile).toBe(true);
     await put(link!, "/api/agents/me/spec", example("brisk-poster"));
     expect(seen).toEqual([undefined, join(dir, "me", ".taskfast", "wallet-password")]);
+  });
+});
+
+it("re-reads the wallet once a money tool settles ok or uncertain, never after a refusal", async () => {
+  const me = moving("me");
+  let reads = 0;
+  await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => me.agent, command: balanceRead(() => ++reads) }, async (link) => {
+    const balance = async () => shown(await (await get(link!, "/api/agents/me")).json());
+    expect(await balance()).toBe("1");
+    me.actions["escrow:b1"] = action("reserved", 40);
+    expect(await balance()).toBe("1");
+    me.actions["escrow:b1"] = action("failed", 40);
+    expect(await balance()).toBe("1");
+    me.actions["accept:b1"] = action("done", 0);
+    expect(await balance()).toBe("1");
+    me.actions["escrow:b1"] = action("done", 40);
+    expect(await balance()).toBe("2");
+    expect(await balance()).toBe("2");
+    me.actions["post:p1"] = action("uncertain", 1);
+    expect(await balance()).toBe("3");
+    expect(reads).toBe(3);
+  });
+});
+
+it("shares one wallet read among open streams and folds a burst of payment events into one", async () => {
+  const me = moving("me");
+  let reads = 0;
+  let running = 0;
+  let most = 0;
+  const read = balanceRead(() => ++reads, 30);
+  const command = async (runtime: unknown, args: string[]) => {
+    most = Math.max(most, ++running);
+    try { return await read(runtime, args); } finally { running--; }
+  };
+  await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => me.agent, command }, async (link) => {
+    const streams = await Promise.all([1, 2, 3].map(() => views(link!, "/api/agents/me/stream")));
+    expect((await Promise.all(streams.map((stream) => stream.next()))).map(shown)).toEqual(["1", "1", "1"]);
+    expect(reads).toBe(1);
+
+    for (let n = 1; n <= 5; n++) {
+      me.events[`event:pay-${n}`] = admitted(`pay-${n}`, n % 2 ? "payment_released" : "payment_disbursed");
+      me.commit();
+    }
+    expect((await Promise.all(streams.map((stream) => stream.next()))).map(shown)).toEqual(["2", "2", "2"]);
+    expect(reads).toBe(2);
+
+    // Asking for a signature moves nothing.
+    me.events["event:sign-1"] = admitted("sign-1", "payment_signature_required");
+    me.commit();
+    expect(shown(await (await get(link!, "/api/agents/me")).json())).toBe("2");
+    expect(reads).toBe(2);
+    expect(most).toBe(1);
+  });
+});
+
+it("reads the wallet once more after an in-flight read when money moves during it, never two at once", async () => {
+  const me = moving("me");
+  let reads = 0;
+  let running = 0;
+  let most = 0;
+  let during: Promise<unknown> | undefined;
+  let link: URL | undefined;
+  const balance = async () => shown(await (await get(link!, "/api/agents/me")).json());
+  const read = balanceRead(() => ++reads, 30);
+  const command = async (runtime: unknown, args: string[]) => {
+    most = Math.max(most, ++running);
+    if (reads === 0) {
+      me.events["event:pay-1"] = admitted("pay-1", "payment_held");
+      during = balance();
+    }
+    try { return await read(runtime, args); } finally { running--; }
+  };
+  await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => me.agent, command }, async (given) => {
+    link = given;
+    expect(await balance()).toBe("1");
+    expect(await during).toBe("2");
+    expect(reads).toBe(2);
+    expect(most).toBe(1);
+  });
+});
+
+it("keeps the wallet for one ping interval and task reads for a minute", async () => {
+  const task = "11111111-1111-4111-8111-111111111111";
+  const reads: string[] = [];
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    await host({
+      agentsDir: folders("me"), console: { port: 0 },
+      command: async (_runtime, args): Promise<CliResult> => (reads.push(args[0]), { outcome: "ok", data: null }),
+      openAgent: async ({ id }) => ({ ...handle(id, []), transcript: async () => [
+        { role: "user", content: "Message from your operator:\nPost a job.", timestamp: 1 },
+        fauxAssistantMessage([fauxToolCall("message_send", { task_id: task, content: "Hi" }, { id: "c1" })], { stopReason: "toolUse" }),
+        { role: "toolResult", toolCallId: "c1", toolName: "message_send", content: [{ type: "text", text: "{}" }], isError: false, timestamp: 3 },
+      ] }),
+    }, async (link) => {
+      const start = Date.now();
+      await get(link!, "/api/agents/me");
+      expect(reads).toEqual(["wallet", "task"]);
+      vi.setSystemTime(start + PING_MS - 1);
+      await get(link!, "/api/agents/me");
+      expect(reads).toEqual(["wallet", "task"]);
+      vi.setSystemTime(start + PING_MS);
+      await get(link!, "/api/agents/me");
+      expect(reads).toEqual(["wallet", "task", "wallet"]);
+      vi.setSystemTime(start + 60_000);
+      await get(link!, "/api/agents/me");
+      expect(reads).toEqual(["wallet", "task", "wallet", "wallet", "task"]);
+    });
+  } finally { vi.useRealTimers(); }
+});
+
+it("does not keep a wallet read that threw", async () => {
+  let reads = 0;
+  await host({
+    agentsDir: folders("me"), console: { port: 0 },
+    command: async (): Promise<CliResult> => {
+      if (++reads === 1) throw new Error("spawn failed");
+      return { outcome: "ok", data: { balance: { available_balance: "0x5" } } };
+    },
+  }, async (link) => {
+    expect((await get(link!, "/api/agents/me")).status).toBe(500);
+    expect(shown(await (await get(link!, "/api/agents/me")).json())).toBe("0x5");
+    expect(reads).toBe(2);
+  });
+});
+
+it("waits out a wallet read before closing the agent, and sends no view after its stream ends", async () => {
+  const order: string[] = [];
+  let release = () => {};
+  await host({
+    agentsDir: folders("me"), console: { port: 0 },
+    openAgent: async ({ id }) => handle(id, order),
+    command: async (): Promise<CliResult> => {
+      order.push("read");
+      await new Promise<void>((resolve) => { release = resolve; });
+      order.push("read done");
+      return { outcome: "ok", data: null };
+    },
+  }, async (link) => {
+    const live = await views(link!, "/api/agents/me/stream");
+    await expect.poll(() => order).toEqual(["read"]);
+    const saving = put(link!, "/api/agents/me/spec", example("brisk-poster"));
+    await sleep(50);
+    expect(order).toEqual(["read"]);
+    release();
+    expect((await saving).status).toBe(204);
+    expect(order).toEqual(["read", "read done", "close me"]);
+    expect(await live.next()).toBe("ended");
   });
 });
 

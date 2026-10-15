@@ -2,7 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PAGE } from "./console-page.js";
-import type { MarketplaceAgent } from "./core/agent.js";
+import type { EventWork, MarketplaceAgent } from "./core/agent.js";
+import type { Action } from "./core/policy.js";
 import { marketplacePrompt } from "./core/prompt.js";
 import { parseAgentSpec } from "./core/spec.js";
 import { buildTimeline } from "./core/timeline.js";
@@ -15,8 +16,9 @@ export interface ConsoleAgent {
   agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript" | "changes">;
   // Writes an already-checked agent.json and INSTRUCTIONS.md and reopens this agent with them.
   saveSpec?(spec: AgentSpec): Promise<void>;
-  // What only the host knows, with server reads for the given task IDs.
-  host?(taskIds: string[]): Promise<HostFacts>;
+  // What only the host knows, with server reads for the given task IDs. `seen` is the
+  // ledger this view read, so the host can tell when money has moved.
+  host?(taskIds: string[], seen: { actions: Record<string, Action>; events: Record<string, EventWork> }): Promise<HostFacts>;
 }
 export interface HostFacts {
   unlockFile: boolean;
@@ -123,7 +125,7 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
   const [policy, operator, events, transcript, queuedMessages] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES), agent.operator.queued()]);
   const timeline = buildTimeline(transcript);
   const taskIds = [...new Set(timeline.flatMap((turn) => turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))))].slice(-TASK_READS);
-  const facts = await host?.(taskIds);
+  const facts = await host?.(taskIds, { actions: policy.actions, events });
   const deadLetters = (facts?.deadLetters ?? []).map((record) => ({ kind: "dead-letter" as const, id: `dead-letter:${eventIdOf(record.line) ?? record.at}`, ...record }));
   const attention = [
     ...Object.entries(policy.actions).filter(([key, action]) => action.status === "uncertain" && !operator.checked[key])
