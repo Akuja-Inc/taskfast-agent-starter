@@ -1,8 +1,10 @@
 import { follow } from "./console-live.js";
+import { markdown } from "./console-markdown.js";
 import { MAX_INSTRUCTIONS } from "./core/spec.js";
 
-// The page runs the same stream follower as the terminal UI.
+// The page runs the same stream follower and markdown subset as the terminal UI.
 export const LIVE = follow.toString();
+const MARKDOWN = markdown.toString();
 
 // The console's single page. Kept as a module because the TypeScript build copies no
 // HTML. Everything from the server or the marketplace is set as text, never as markup.
@@ -100,6 +102,14 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .head-msg { flex: 1 1 300px; font-size: 15px; color: var(--ink); }
 .reply { display: flex; flex-direction: column; gap: 6px; }
 .reply-text { flex: 1 1 320px; margin: 0; line-height: 1.35; display: flex; gap: 10px; align-items: flex-start; }
+/* Reply markdown: tight blocks, the model's newlines kept, code on the Sign Black plate. */
+.md { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.md p, .md ul, .md ol { margin: 0; }
+.md p, .md li { white-space: pre-line; overflow-wrap: anywhere; }
+.md ul, .md ol { padding-left: 22px; display: flex; flex-direction: column; gap: 2px; }
+.md li::marker { color: var(--muted); }
+.md li > ul, .md li > ol { margin-top: 2px; }
+.md code { font-size: 13px; padding: 1px 5px; border-radius: 2px; background: var(--code-bg); color: var(--code-ink); }
 .calls { display: flex; flex-direction: column; gap: 4px; font: 13px ui-monospace, monospace; }
 .call { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 6px 10px; border-radius: 2px; background: var(--ground); }
 .call.failed, .call.uncertain { background: var(--warn-bg); }
@@ -287,6 +297,23 @@ async function act(method, action, body) {
   catch (error) { ui.error = error.message; if (error.status === 409) await refresh(); else render(); }
 }
 ${LIVE}
+${MARKDOWN}
+// Every link that leaves the console opens a new tab that cannot reach back into this one.
+const AWAY = { target: "_blank", rel: "noopener noreferrer" };
+// A reply's markdown, built node by node: no markup string from the model reaches the DOM.
+function mdRuns(runs) {
+  return runs.map((run) => {
+    let node = run.code ? el("code", { text: run.text }) : run.text;
+    if (run.em) node = el("em", {}, node);
+    if (run.strong) node = el("strong", {}, node);
+    // Link text can lie, so the full address rides on the title.
+    return run.href ? el("a", { href: run.href, title: run.href, ...AWAY }, node) : node;
+  });
+}
+const mdList = (list) => el(list.start === undefined ? "ul" : "ol", { start: list.start !== 1 ? list.start : null }, list.items.map((item) => el("li", {}, mdRuns(item.runs), item.list ? mdList(item.list) : null)));
+const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text }) : block.kind === "list" ? mdList(block) : el("p", {}, mdRuns(block.runs));
+// The same words with the markers gone, for the rail's peek.
+const plain = (node) => node.text !== undefined ? node.text : node.runs ? node.runs.map(plain).join("") + (node.list ? " " + plain(node.list) : "") : node.items.map(plain).join(" ");
 // The stream being followed: which agent with which token, whether it is delivering,
 // and how to stop it.
 let following = { key: null, up: false, stop: () => {} };
@@ -354,7 +381,7 @@ function taskCard(ref) {
   const { title, summary } = taskSummary(ref.id);
   const href = taskLink(ref.id);
   const inner = [el("span", { class: "small", text: viaLabel(ref.via) + (href ? "" : " · " + ref.id) }), el("strong", { text: title }), summary ? el("span", { class: "small", text: summary }) : null, el("span", { class: "sq go" }, pict("arrow", 13))];
-  return href ? el("a", { class: "task", href, target: "_blank", rel: "noopener noreferrer" }, inner) : el("div", { class: "task" }, inner);
+  return href ? el("a", { class: "task", href, ...AWAY }, inner) : el("div", { class: "task" }, inner);
 }
 
 function header() {
@@ -466,7 +493,7 @@ function replyBlock(reply, key, live) {
   const dot = (cls, n, label) => el("span", { class: "dot " + cls + (live ? " live" : ""), title: n + " " + label });
   return el("div", { class: "reply" },
     el("div", { style: "display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start" },
-      reply.text ? el("p", { class: "reply-text" }, el("span", { class: "sq agent" }, pict("agent", 16)), el("span", {}, el("span", { class: "sr-only", text: "Agent: " }), reply.text)) : el("span", { style: "flex:1 1 360px", class: "small", text: reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)" }),
+      reply.text ? el("div", { class: "reply-text" }, el("span", { class: "sq agent" }, pict("agent", 16)), el("span", { class: "sr-only", text: "Agent: " }), el("div", { class: "md" }, markdown(reply.text).map(mdBlock))) : el("span", { style: "flex:1 1 360px", class: "small", text: reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)" }),
       reply.calls.length ? el("button", { class: "calls-chip", "aria-expanded": String(ui.open.has(key)), "aria-label": reply.calls.length + (reply.calls.length === 1 ? " tool call" : " tool calls") + (failed ? ", " + failed + " failed" : "") + (uncertain ? ", " + uncertain + " uncertain" : ""), onclick: () => toggle(ui.open, key) },
         pict("cli", 13),
         el("span", { class: "num", text: reply.calls.length }),
@@ -481,7 +508,7 @@ function replyBlock(reply, key, live) {
 }
 
 const smooth = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-const lastSaid = (turn) => turn.replies.map((r) => r.text).filter(Boolean).pop() || "";
+const lastSaid = (turn) => { const r = turn.replies.findLast((r) => r.text); return r ? markdown(r.text).map(plain).join(" ") : ""; };
 
 // The timeline mounts only its newest turns. The rail gives each mounted turn a mark and
 // compresses the rest into at most 12, each showing its most telling turn.

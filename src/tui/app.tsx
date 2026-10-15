@@ -6,6 +6,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@open
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { ConsoleView } from "../console.js";
 import { follow } from "../console-live.js";
+import { markdown, type Block, type List, type Run } from "../console-markdown.js";
 import { actionError, FIELDS, fieldValue, initialUi, messageAttempt, messageBody, press, setField, type Effect, type Field, type MessageAttempt, type MessageMode, type Ui } from "./keys.js";
 import { clean, screen, type Screen } from "./screen.js";
 
@@ -18,6 +19,7 @@ const WARN = "#f59e0b";
 const BAD = "#ef4444";
 const OK = "#22c55e";
 const SELECTED = "#1f2937";
+const CODE = { fg: "#e9e7dc", bg: "#2a2d31" };
 const LABEL: Record<Field, string> = { temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
 export const HELP: [string, string][] = [
   ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
@@ -29,9 +31,32 @@ export const HELP: [string, string][] = [
   ["i", "show the sidebar"], ["?", "this help"], ["q", "quit the TUI; the agents keep running"],
 ];
 
-// A coloured span. OpenTUI applies fg and bg to the text node; its span type lists neither.
+// A coloured span. @opentui/solid sets only href and style on text nodes, so fg and bg
+// must ride in style; as plain props they were silently dropped.
 function Span(p: { fg?: string; bg?: string; children?: JSX.Element }) {
-  return <span {...(p as object)} />;
+  return <span style={{ fg: p.fg, bg: p.bg }}>{p.children}</span>;
+}
+
+// A reply's markdown (console-markdown.ts, parsed after clean()) as styled runs. Code wears
+// Code Ink on a dark plate; a link also shows its address, because its words can lie.
+function Runs(p: { runs: Run[] }) {
+  return <>{p.runs.map((run) => {
+    let node: JSX.Element = run.code ? <Span {...CODE}>{run.text}</Span> : run.text;
+    if (run.em) node = <i>{node}</i>;
+    if (run.strong) node = <b>{node}</b>;
+    return run.href ? <><a href={run.href}>{node}</a><Span fg={MUTED}>{` (${run.href})`}</Span></> : node;
+  })}</>;
+}
+function Items(p: { list: List; depth: number }) {
+  return <For each={p.list.items}>{(item, n) => <>
+    <text>{"  ".repeat(p.depth)}<Span fg={MUTED}>{p.list.start === undefined ? "• " : `${p.list.start + n()}. `}</Span><Runs runs={item.runs} /></text>
+    {item.list ? <Items list={item.list} depth={p.depth + 1} /> : null}
+  </>}</For>;
+}
+function Blocks(p: { blocks: Block[] }) {
+  return <For each={p.blocks}>{(block) => block.kind === "code"
+    ? <box backgroundColor={CODE.bg} paddingX={1}><text fg={CODE.fg} wrapMode="char">{block.text}</text></box>
+    : block.kind === "list" ? <Items list={block} depth={0} /> : <text><Runs runs={block.runs} /></text>}</For>;
 }
 
 // Printable keys by what they type (so shift+r is "R"), the rest by name.
@@ -265,9 +290,14 @@ export function App(p: AppProps) {
                         <For each={turn.replies}>{(reply) => {
                           const open = () => ui().open.includes(reply.key);
                           const mark = () => (selected() === reply.key ? "▶ " : "  ");
+                          // A leading paragraph shares the name's line; the other blocks sit under it.
+                          const blocks = markdown(reply.text), lead = blocks[0]?.kind === "p" ? blocks[0] : undefined, rest = lead ? blocks.slice(1) : blocks;
                           return (
                             <box id={reply.key} flexDirection="column" backgroundColor={selected() === reply.key ? SELECTED : undefined}>
-                              <text>{mark()}<Span fg={ACCENT}>{`${clean(view()?.id ?? "Agent")} — `}</Span>{reply.text || (reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)")}</text>
+                              <text>{mark()}<Span fg={ACCENT}>{`${clean(view()?.id ?? "Agent")} — `}</Span>{lead ? <Runs runs={lead.runs} /> : blocks.length ? "" : reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)"}</text>
+                              <Show when={rest.length}>
+                                <box flexDirection="column" paddingLeft={4}><Blocks blocks={rest} /></box>
+                              </Show>
                               <Show when={reply.badge}>
                                 <box onMouseDown={() => setUi({ ...ui(), open: toggle(ui().open, reply.key) })}>
                                   <text fg={/failed|uncertain/.test(reply.badge ?? "") ? WARN : MUTED}>{`    [${open() ? "▾" : "▸"} ${reply.badge}]`}</text>

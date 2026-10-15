@@ -71,14 +71,14 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
     "addEventListener", "ResizeObserver", "fetch", "matchMedia",
-    `${script}\nreturn { header, turnCard, timelineTab, render, ui, document, app, unlock, submitMessage, promoteMessage, viaLabel, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop'; following.up = true; } };`,
+    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, render, ui, document, app, unlock, submitMessage, promoteMessage, viaLabel, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop'; following.up = true; } };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
     fetch, () => ({ matches: false }),
-  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
+  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
@@ -491,4 +491,37 @@ it("names each dark-chrome colour exactly once", () => {
   for (const hex of ["#4A4E55", "#F2F1EA", "#E9E7DC", "#17191c", "#1C1C19", "#56D364", "#F85149"]) {
     expect(PAGE.split(hex).length - 1, hex).toBe(1);
   }
+});
+
+// Elements print as tags and text is escaped, so a <script> element and the words
+// "<script>" can never look alike.
+const html = (node: unknown): string => node instanceof FakeNode
+  ? `<${node.tagName.toLowerCase()}${Object.entries(node.attributes).map(([k, v]) => ` ${k}="${v}"`).join("")}>${node.children.map(html).join("")}</${node.tagName.toLowerCase()}>`
+  : String(node).replace(/</g, "&lt;");
+
+it("renders a reply's markdown subset node by node and leaves raw HTML and unsafe links as text", () => {
+  const { replyBlock, lastSaid } = bootPage();
+  const md = (text: string) => html(replyBlock({ text, calls: [], tasks: [] }, "k", false).querySelector("div.md")).replace(/^<div class="md">|<\/div>$/g, "");
+  const link = 'href="https://example.com/a?b=1" title="https://example.com/a?b=1" target="_blank" rel="noopener noreferrer"';
+  expect(md("Hello **bold**, *it* and `id_1` in [docs](https://example.com/a?b=1).\nnext line")).toBe(`<p>Hello <strong>bold</strong>, <em>it</em> and <code>id_1</code> in <a ${link}>docs</a>.\nnext line</p>`);
+  expect(md("### Plan\n- one\n  - nested\n- two\n\n3. three\n4. four")).toBe('<p><strong>Plan</strong></p><ul><li>one<ul><li>nested</li></ul></li><li>two</li></ul><ol start="3"><li>three</li><li>four</li></ol>');
+  expect(md("```js\nconst a = 1 < 2;\n```\nafter")).toBe("<pre>const a = 1 &lt; 2;</pre><p>after</p>");
+  expect(md("<script>alert(1)</script> <img src=x onerror=alert(1)> [x](javascript:alert(1))")).toBe("<p>&lt;script>alert(1)&lt;/script> &lt;img src=x onerror=alert(1)> [x](javascript:alert(1))</p>");
+  expect(md("snake_case_id, _id alone, 2 * 3 * 4 and \\*kept\\*")).toBe("<p>snake_case_id, _id alone, 2 * 3 * 4 and *kept*</p>");
+  // A reply still streaming closes its open emphasis, code span and fence instead of showing markers.
+  expect(md("Total **so far")).toBe("<p>Total <strong>so far</strong></p>");
+  expect(md("Run `task get")).toBe("<p>Run <code>task get</code></p>");
+  expect(md("Output:\n```\nline one")).toBe("<p>Output:</p><pre>line one</pre>");
+  expect(md("Intro with **")).toBe("<p>Intro with </p>");
+  expect(md("**bold words*")).toBe("<p><strong>bold words</strong></p>");
+  // Only the block that ends the text can still be streaming; finished blocks keep unmatched markers.
+  expect(md("*draft note\nscore 2 **\n\n- item *open\n\nlast *word")).toBe("<p>*draft note\nscore 2 **</p><ul><li>item *open</li></ul><p>last <em>word</em></p>");
+  expect(md("## **Plan** here")).toBe("<p><strong>Plan</strong><strong> here</strong></p>");
+  // No images: the syntax stays text, so nothing links to or fetches the address.
+  expect(md("![chart](https://example.com/c.png)")).toBe("<p>![chart](https://example.com/c.png)</p>");
+  expect(md("0. zero\n1. one")).toBe('<ol start="0"><li>zero</li><li>one</li></ol>');
+  // Prose that only looks like markup stays prose.
+  expect(md("Sales grew in\n2024. Then 5*3 units\n***\nend")).toBe("<p>Sales grew in\n2024. Then 5*3 units</p><p>end</p>");
+  // The peek row reads the words without the markers.
+  expect(lastSaid({ replies: [{ text: "**Bid** on `t-1`:\n- [docs](https://example.com) ok" }] })).toBe("Bid on t-1: docs ok");
 });

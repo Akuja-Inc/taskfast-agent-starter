@@ -254,7 +254,7 @@ The console is an international airport sign system pointed at one agent that mo
 
 The system refuses the category default of neutral cards with one blue accent. Nothing here casts a shadow and nothing fades into a gradient: structure comes from hairline black frames and the shift between ground and panel. Dark and light are one design, not two. The bands stay #FFCC00 in the dark theme, the way road signage turns retroreflective at night, while the inks, grounds and status hues re-ink for legibility. A manual toggle stores the choice in localStorage under "tf-theme" and the default follows the OS preference.
 
-Two product truths pin the palette. The environment banner always opens the screen in its reserved hue, and money-safety green, amber and red each keep one fixed meaning in both themes. One more product truth pins the rendering: everything the server or marketplace says appears as plain text, never markup. That is a safety boundary, not a style choice.
+Two product truths pin the palette. The environment banner always opens the screen in its reserved hue, and money-safety green, amber and red each keep one fixed meaning in both themes. One more product truth pins the rendering: everything the server or marketplace says appears as plain text, never markup. That is a safety boundary, not a style choice. The one exception is an agent reply: it renders a small markdown subset (emphasis, code, lists and http(s) links), built node by node, and its raw HTML and images stay text.
 
 **Key Characteristics:**
 - Yellow sign bands, one message per band, sticky at the top of each section.
@@ -262,7 +262,7 @@ Two product truths pin the palette. The environment banner always opens the scre
 - Money figures at monumental gate scale (weight 800, tabular numerals, up to 64px), and the attention count on its band's black plate.
 - Hairline black frames and 2px corners on signs and cards; zero shadows, zero gradients.
 - Two themes, one sign system: dark re-inks the grounds and hues, the bands stay yellow.
-- Server and marketplace content always renders as plain text.
+- Server and marketplace content always renders as plain text. Agent replies render only the markdown subset, built as nodes, never from a markup string.
 
 ## Colors
 
@@ -286,7 +286,7 @@ The palette is a sign cabinet: one saturated yellow for wayfinding, black and of
 - **Soft Ink** (#3D3D38): form labels, the composer's sample chips and kbd hints, and tool-call error text.
 - **Muted Ink** (#5E5E56): metadata, timestamps and helper text, plus input and sample-chip borders.
 - **Hairline** (rgba(11,11,11,.72)): the 1px frame on cards, turn heads and task cards; the same value sets the band's qualifier text.
-- **Code Ink** (#E9E7DC): text on the black JSON panel and its copy button.
+- **Code Ink** (#E9E7DC): text on the black JSON panel and its copy button, and code inside agent replies.
 - **Header Line** (#4A4E55): the border on controls inside the black header.
 - **State hues** (#56D364 running, #F85149 frozen): the freeze toggle's knob, track and label and the frozen budget figure on the dark budget plate, the same in both themes. The header's own state mark is the brand robot's glyph, deep green (#14532D) or deep red (#7F1D1D) on the constant yellow square; the paused red is a user-pinned stop signal, an explicit exception to The Red Means Money Rule.
 
@@ -324,7 +324,7 @@ One sign system, re-inked for night: asphalt ground (#131311), night panel (#1C1
 ### Named Rules
 **The Gate Scale Rule.** A figure the operator must read at a glance renders with tabular numerals. Today's spend earns the monumental gate scale; the attention count sits on its band's black plate. Nothing else earns monumental type.
 **The System Is the Font Rule.** No font loading, no branding type. The stack prefers the humanist signage faces an OS already ships and falls through to system-ui. If the OS changes its face, the console changes with it.
-**The Identifier Is Monospace Rule.** Anything the operator might copy or cross-check against the server (ids, tool calls, JSON, timestamps) is set in mono. Anything the model writes is set in proportional type.
+**The Identifier Is Monospace Rule.** Anything the operator might copy or cross-check against the server (ids, tool calls, JSON, timestamps) is set in mono. Anything the model writes is set in proportional type, except what it marks as code (inline or fenced), which is set in mono on Sign Black.
 
 ## Layout
 
@@ -421,7 +421,7 @@ The Freeze spending brake lives in this card as a full-width outline button, red
 - **Do** keep 44px minimum targets on primary controls (buttons, inputs, tabs, the copy button) and on the ghost's invisible hit area; only the dense inline marks (sample chips, attention action squares) run smaller.
 - **Do** render today's spend at gate scale with tabular numerals, and the attention count on its band's black plate.
 - **Do** set identifiers, tool calls, timestamps and raw payloads in the mono stack, and model or marketplace prose in the proportional stack.
-- **Do** show server and marketplace content as plain text only; rendering it as markup is a security defect, not a style choice.
+- **Do** show server and marketplace content as plain text only; rendering it as markup is a security defect, not a style choice. Agent replies render only the markdown subset, node by node, with raw HTML and non-http(s) links left as text.
 
 ### Don't:
 - **Don't** introduce shadows, gradients, hover lifts or transitions; signs are flat and state changes render immediately. The single pinned exception is the state dot's pulse on the tool-calls ghost.

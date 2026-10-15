@@ -6,6 +6,8 @@ import type { Call, Turn } from "../core/timeline.js";
 // Escape and control sequences (OSC titles and hyperlinks, DCS, CSI, two-byte escapes),
 // then any other control character but tab and newline. Server and model text pass
 // through here, so a message can't move the cursor, retitle the window or add a link.
+// The one link a reply can add is a markdown http(s) link, which app.tsx draws with its
+// address printed beside it.
 const CONTROL = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[P^_X][\s\S]*?(?:\x1b\\|\x07|$)|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[ -/]*[0-~]?|[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
 export const clean = (text: string): string => text.replace(CONTROL, "");
 
