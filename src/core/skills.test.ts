@@ -76,6 +76,12 @@ it.each(malformed)("refuses $name, failing the agent closed", ({ build, error })
   expect(() => loadSkills(dir)).toThrow(error);
 });
 
+it("keeps a byte order mark, so the text is byte-identical to the file", () => {
+  const dir = agentDir();
+  writeFileSync(join(skill(dir, "bom", "---\nname: bom\ndescription: x\n---\n"), "note.md"), "﻿Hello\n");
+  expect(loadSkills(dir)[0]!.files.get("note.md")).toBe("﻿Hello\n");
+});
+
 it("refuses more skills than the limit", () => {
   const dir = agentDir();
   for (let n = 0; n <= 20; n++) skill(dir, `s${n}`, `---\nname: s${n}\ndescription: x\n---\n`);

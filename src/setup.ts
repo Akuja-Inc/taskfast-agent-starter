@@ -183,12 +183,13 @@ const SKILL = "taskfast-agent";
 type Bundle = { version: string; files: Map<string, string> };
 // The CLI's embedded skill, exported into a throwaway folder that is also its home, with
 // no config or key, so it reads no account; then checked as the agent will load it.
-function exportTaskfastSkill(io: SetupIO): Bundle {
+function exportTaskfastSkill(io: SetupIO, cliEnv: string): Bundle {
   const tmp = mkdtempSync(join(tmpdir(), "taskfast-skill-"));
   try {
     const env = { PATH: io.env.PATH ?? "", HOME: tmp };
     const version = /^taskfast (\S+)\s*$/.exec(io.capture("taskfast", ["--version"], tmp, env).stdout)?.[1];
-    if (!version || io.capture("taskfast", [`--config=${join(tmp, "absent.json")}`, "--no-trace", "skills", "--yes"], tmp, env).status !== 0) {
+    const args = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), `--config=${join(tmp, "absent.json")}`, "--no-trace", "skills", "--yes"];
+    if (!version || io.capture("taskfast", args, tmp, env).status !== 0) {
       throw new Error("taskfast skills did not finish; install the taskfast CLI, or run setup without --taskfast-skill");
     }
     const skills = loadSkills(tmp);
@@ -326,7 +327,7 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   if (o.taskfastSkill && existsSync(folderFile({ agentDir: dir, path: `${SKILLS_PATH}/${SKILL}`, resource: "agent resource" }))) {
     throw new Error(`agents/${id}/${SKILLS_PATH}/${SKILL} already exists; setup never replaces a skill`);
   }
-  const bundle = o.taskfastSkill ? exportTaskfastSkill(io) : undefined;
+  const bundle = o.taskfastSkill ? exportTaskfastSkill(io, taskfastEnv(environment)) : undefined;
   let envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   const save = (name: string, value: string) => {
     envText = upsertEnv(envText, name, credentialSetting({ agentDir: dir, name, value }));

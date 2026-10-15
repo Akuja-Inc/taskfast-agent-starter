@@ -61,7 +61,8 @@ function walk(o: { root: string; dir: string; depth: number; files: Map<string, 
     else if (TEXT.has(extname(entry.name).toLowerCase())) {
       const file = join(o.root, path);
       if (lstatSync(file).size > MAX_FILE_BYTES) bad(`${where} is larger than ${MAX_FILE_BYTES} bytes`);
-      try { o.files.set(path, new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(file))); }
+      // Keeping a BOM makes the text byte-identical to the file, so setup's hashes match the CLI's bytes.
+      try { o.files.set(path, new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(readFileSync(file))); }
       catch { bad(`${where} is not UTF-8 text`); }
     }
   }

@@ -406,7 +406,7 @@ describe("--taskfast-skill", () => {
     await k.run({ ...ALL, env: "staging", init: false, taskfastSkill: true });
     const [version, exported] = k.captured;
     expect(k.captured.map(({ cmd, args }) => [cmd, ...args.map((arg) => arg.replace(version!.cwd, "<tmp>"))])).toEqual([
-      ["taskfast", "--version"], ["taskfast", "--config=<tmp>/absent.json", "--no-trace", "skills", "--yes"],
+      ["taskfast", "--version"], ["taskfast", "--env", "staging", "--config=<tmp>/absent.json", "--no-trace", "skills", "--yes"],
     ]);
     // An empty home and no TaskFast key or config: the export reads no account.
     expect(exported!.env).toEqual({ PATH: "/usr/bin", HOME: version!.cwd });

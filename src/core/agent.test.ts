@@ -578,6 +578,21 @@ it("reads the CLI's real skill and a role reference in the durable conversation,
   expect(kit.calls).toEqual([["me"], ["me"]]);
 });
 
+it("refuses a model's path outside the skill as a tool error, and the run carries on", async () => {
+  const dir = agentFolder();
+  writeFileSync(join(dir, ".env"), "ANTHROPIC_API_KEY=agent-secret\n");
+  const kit = await open({ dir });
+  const requests: string[] = [];
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("skill_read", { skill: "taskfast-agent", file: "../../../.env" })], { stopReason: "toolUse" }),
+    seen(requests, fauxAssistantMessage("That file is not part of the skill.")),
+  ]);
+  await run(kit.agent);
+  expect(requests[0]).toContain("taskfast-agent has no file ../../../.env");
+  expect(requests[0]).not.toContain("agent-secret");
+  expect(kit.faux.state.callCount).toBe(2);
+});
+
 it("keeps an agent without skills as before: no skill tool, no skills prompt", async () => {
   const kit = await open({ dir: agentFolder(false) });
   const requests: string[] = [];
