@@ -6,6 +6,8 @@ agents/
 .taskfast/
 # pnpm setup-agent writes your model provider's API key here
 .env
+# Each agent's MCP server credentials
+.mcp.env
 # Local shell environment setup can also contain credentials
 .envrc
 # Claude Code puts its worktrees here; they are untracked checkouts

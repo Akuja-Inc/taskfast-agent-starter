@@ -18,12 +18,23 @@ export const TOOLS = [
   { name: "big", description: "Answers with `size` characters.", inputSchema: object({ size: { type: "number" } }, ["size"]) },
   { name: "exit", description: "Ends the server process.", inputSchema: object() },
   { name: "delete", description: "Deletes a document.", inputSchema: object({ id: { type: "string" } }, ["id"]), annotations: { destructiveHint: true } },
+  { name: "sample", description: "Asks the client for a model completion first.", inputSchema: object() },
 ];
 // Every call this process answered, by tool name, so a test can tell a refused call never arrived.
 export const calls = [];
 const text = (value) => ({ content: [{ type: "text", text: value }] });
+// Requests this server sends its client (stdio only), answered through `handle`.
+let send = () => { throw new Error("no channel to the client"); };
+const waiting = new Map();
+let nextId = 1000;
+const ask = (method, params) => new Promise((resolve) => { const id = nextId++; waiting.set(id, resolve); send({ jsonrpc: "2.0", id, method, params }); });
 
 export async function handle(message) {
+  if (message.method === undefined && waiting.has(message.id)) {
+    waiting.get(message.id)(message);
+    waiting.delete(message.id);
+    return undefined;
+  }
   if (message.id === undefined) return undefined;
   const reply = (result) => ({ jsonrpc: "2.0", id: message.id, result });
   const { method, params = {} } = message;
@@ -45,6 +56,10 @@ export async function handle(message) {
     if (params.name === "fail") return reply({ ...text("the index is offline"), isError: true });
     if (params.name === "big") return reply(text("x".repeat(args.size)));
     if (params.name === "exit") { setTimeout(() => process.exit(0), 5); return reply(text("bye")); }
+    if (params.name === "sample") {
+      const answer = await ask("sampling/createMessage", { messages: [{ role: "user", content: { type: "text", text: "hi" } }], maxTokens: 10 });
+      return reply(text(JSON.stringify(answer.error ?? answer.result)));
+    }
     return { jsonrpc: "2.0", id: message.id, error: { code: -32602, message: `unknown tool ${params.name}` } };
   }
   return { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: `no method ${method}` } };
@@ -55,9 +70,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
     writeFileSync(process.env.FIXTURE_PIDFILE, String(child.pid));
   }
+  send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
+  // Messages are handled concurrently, so a call can wait on the client's answer to `ask`.
   for await (const line of createInterface({ input: process.stdin })) {
     if (!line.trim()) continue;
-    const response = await handle(JSON.parse(line));
-    if (response) process.stdout.write(`${JSON.stringify(response)}\n`);
+    void handle(JSON.parse(line)).then((response) => { if (response) send(response); });
   }
 }

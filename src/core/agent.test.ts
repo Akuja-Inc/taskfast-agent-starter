@@ -731,13 +731,14 @@ it("abandons an MCP call a restart interrupted instead of running it again", asy
   expect(requests[0]).toMatch(/Tool mcp_docs_slow was not started|abandoned|interrupted/i);
 });
 
-it("keeps an agent without skills as before: no skill tool, no skills prompt", async () => {
+it("keeps an agent without skills or mcp.json as before: no skill or MCP tool, no extra prompt", async () => {
   const kit = await open({ dir: agentFolder(false) });
   const requests: string[] = [];
   kit.faux.setResponses([seen(requests, fauxAssistantMessage("Done"))]);
   await run(kit.agent);
   expect(requests[0]).not.toContain("skill_read");
   expect(requests[0]).not.toContain("Skills your operator installed");
+  expect(requests[0]).not.toContain("mcp_");
 });
 
 it("fails closed on a malformed skill before opening the store or asking the server anything", async () => {
