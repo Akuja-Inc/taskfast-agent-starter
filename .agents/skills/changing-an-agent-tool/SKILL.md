@@ -62,7 +62,7 @@ pnpm typecheck
 pnpm test
 ```
 
-No Bun or generation step is needed. If policy dispatch changes, cover persistent-store restart as well as argument construction: reservation and spending must commit before the CLI, limits must be rechecked at dispatch, interrupted reservations must become uncertain, and only known refusals may retry. Keep the session-scoped action ledger and UTC-day spend records permanent and unbounded. Never delete or copy live state to test a reset; use fresh temporary stores. Local tests do not prove live staging or production behaviour.
+No Bun or generation step is needed. If policy dispatch changes, cover persistent-store restart as well as argument construction: reservation and spending must commit before the CLI, limits must be rechecked at dispatch, interrupted reservations must become uncertain, and only known refusals may retry. Keep the session-scoped action ledger and UTC-day spend records permanent and unbounded. Never delete or copy live state to test a reset; use fresh temporary stores. Local tests do not prove live staging or production behavior.
 
 ## 6. Tell TaskFast
 

@@ -37,7 +37,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 - Money: code sets every amount from server data; policy checks limits at reservation and at dispatch; only a known refusal before acting releases spending and permits retry; success and uncertain outcomes never repeat; ledgers and daily spend records are permanent and unbounded.
 - Event handling: admission after durable local storage, event-id deduplication, dead-letter file for repeatedly failing events, recovery of admitted work without granting permission to repeat an uncertain write.
 - Agent files (`agent.json`) are strict: unknown fields refused; `examples/` are the starting points; posting agents should carry both `perJobUsd` and `dailyUsd` limits.
-- Provider support is bounded by the pinned `@earendil-works/pi-ai@1.2.0` catalogue (`providers.json`, generated); no arbitrary provider modules, no installs during setup, no automatic conversion of old settings or state.
+- Provider support is bounded by the pinned `@earendil-works/pi-ai@1.2.0` catalog (`providers.json`, generated); no arbitrary provider modules, no installs during setup, no automatic conversion of old settings or state.
 - One local owner per store; no shared-disk or multi-process deployment. Never delete or copy a live store or companion files.
 - Downstream pin contract: exports are `agent`, `policy`, `storage`; removed `actors`/`self`/`turn` exports have no legacy adapters. Tool enums must match the vendored server spec (`test/tools-contract.test.ts`).
 - Local checks do not establish live staging or production readiness; live work requires explicit permission and exact reporting.
@@ -55,7 +55,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 - Product-truth documents: `README.md`, `INTENT.md`, `CONTEXT.md`, `AGENTS.md` (repo root).
 - Real product imagery: `docs/console/*.png` (timeline, tool calls, raw event, paused+frozen, briefing, unlock, copy feedback, phone) and `docs/tui/*.png` (timeline, tool calls, confirms, paused+frozen, help, narrow layouts, can't-reach).
 - Example agent folders: `examples/careful-worker/`, `examples/brisk-poster/`, `examples/both-sides/`.
-- Provider support matrix: `docs/providers.md`; generated catalogue `providers.json`.
+- Provider support matrix: `docs/providers.md`; generated catalog `providers.json`.
 - Real CLI output captures: `test/fixtures/cli/` (re-captured on contract change, never hand-edited).
 - Live agent folder in development: `agents/foo/` (private; never printed, committed or copied).
 - Absences future work must not fabricate: no marketing site or landing page, no testimonials or customer stories, no performance benchmarks, no logo assets, no pricing.
@@ -66,4 +66,4 @@ The kit's durable money-safety architecture: every write is identified by an act
 2. **The user holds everything.** Accounts, wallets, TaskFast keys and model credentials stay on the user's machine. Nothing in the kit holds money or secrets for them, and private files are never printed, committed or copied.
 3. **Code sets money; safety survives restarts.** Amounts come from the server, reservations commit before dispatch, the ledger is permanent, and an uncertain write is never retried, including across process death.
 4. **Agents only, production never implied.** The kit builds agents that act as ordinary marketplace users; real-money environments require explicit intent.
-5. **One folder is one agent.** Behaviour, credentials, wallet and durable history stay together; a moved or archived folder is the same agent, and a copy is never permission to run twice.
+5. **One folder is one agent.** Behavior, credentials, wallet and durable history stay together; a moved or archived folder is the same agent, and a copy is never permission to run twice.

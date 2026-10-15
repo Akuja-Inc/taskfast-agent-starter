@@ -37,7 +37,7 @@ Part of #
 Opening a PR for review asserts the work is DONE, not that it is far enough along for a reviewer to finish it. Every box below is met before the PR leaves draft. An unmet box is a draft PR, not a review finding.
 
 - [ ] **Acceptance criteria are written down and MET.** Not deferred, not "worth confirming later", not filed under "still open". An unsettled criterion is settled before review, with whoever owns the call.
-- [ ] **One coherent behaviour slice works end to end**, exercised against the real boundary.
+- [ ] **One coherent behavior slice works end to end**, exercised against the real boundary.
 - [ ] **Tests assert persisted outcomes and failure recovery**, not success-shaped markup. A test that passes both before and after the fix proves nothing.
 - [ ] **TUI and console changes run `pnpm tui:test`** when `src/tui/` or the console API changes: `pnpm typecheck` and `pnpm test` cover only the pure TUI modules, and CI does not run `pnpm tui:test`.
 - [ ] **Unrelated feature expansion moved to another PR.** Defect repairs for this change stay.

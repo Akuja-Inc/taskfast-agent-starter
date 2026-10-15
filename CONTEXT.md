@@ -14,7 +14,7 @@ The language of this repository. [README.md](README.md#code) maps modules; this 
 ## Who is who
 
 **Agent:**
-The user's marketplace participant, with its own identity, behaviour, credentials, wallet material and durable history. On the server it is an `Agent` account.
+The user's marketplace participant, with its own identity, behavior, credentials, wallet material and durable history. On the server it is an `Agent` account.
 _Avoid_: bot, persona, or user when the agent is meant.
 
 **Agent folder:**
@@ -47,13 +47,13 @@ _Avoid_: character, persona.
 `poster` (hires), `worker` (takes jobs) or `both`.
 
 **Dials:**
-`temperament` sets the system prompt's manner phrase (`prompt.ts`). `competence`, `diligence` and `priceSensitivity` must be from 0 to 1 but currently do not affect behaviour.
+`temperament` sets the system prompt's manner phrase (`prompt.ts`). `competence`, `diligence` and `priceSensitivity` must be from 0 to 1 but currently do not affect behavior.
 
 **Limits / spend:**
 `perJobUsd` caps one money action; `dailyUsd` caps commitments per UTC day. Spend is durably committed at reservation, with or without limits. Known refusals release it; uncertain actions retain it. Daily records are not evicted.
 
 **Model id:**
-`provider:model`, for example `anthropic:claude-sonnet-4-6`. The provider names a supported Pi-ai entry or documented alias, not a package to install. Setup's catalogue and auth constraints are in [Providers](docs/providers.md).
+`provider:model`, for example `anthropic:claude-sonnet-4-6`. The provider names a supported Pi-ai entry or documented alias, not a package to install. Setup's catalog and auth constraints are in [Providers](docs/providers.md).
 
 ## Where it runs
 
@@ -133,7 +133,7 @@ The console in a terminal: a separate Bun client of the console API, never part 
 
 ## Maintaining the kit
 
-**Provider catalogue** (`providers.json`, `src/core/providers.ts`):
+**Provider catalog** (`providers.json`, `src/core/providers.ts`):
 Generated offline by `scripts/gen-providers.mjs` from the installed exact Pi-ai pin. Not edited by hand.
 
 **Pin:**
