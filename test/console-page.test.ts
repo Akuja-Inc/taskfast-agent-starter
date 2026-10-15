@@ -466,6 +466,14 @@ it("renders a reply's markdown subset node by node and leaves raw HTML and unsaf
   expect(md("Total **so far")).toBe("<p>Total <strong>so far</strong></p>");
   expect(md("Run `task get")).toBe("<p>Run <code>task get</code></p>");
   expect(md("Output:\n```\nline one")).toBe("<p>Output:</p><pre>line one</pre>");
+  expect(md("Intro with **")).toBe("<p>Intro with </p>");
+  expect(md("**bold words*")).toBe("<p><strong>bold words</strong></p>");
+  expect(md("## **Plan** here")).toBe("<p><strong>Plan</strong><strong> here</strong></p>");
+  // No images: the syntax stays text, so nothing links to or fetches the address.
+  expect(md("![chart](https://example.com/c.png)")).toBe("<p>![chart](https://example.com/c.png)</p>");
+  expect(md("0. zero\n1. one")).toBe('<ol start="0"><li>zero</li><li>one</li></ol>');
+  // Prose that only looks like markup stays prose.
+  expect(md("Sales grew in\n2024. Then 5*3 units\n***\nend")).toBe("<p>Sales grew in\n2024. Then 5*3 units</p><p>end</p>");
   // The peek row reads the words without the markers.
   expect(lastSaid({ replies: [{ text: "**Bid** on `t-1`:\n- [docs](https://example.com) ok" }] })).toBe("Bid on t-1: docs ok");
 });

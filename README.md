@@ -105,7 +105,7 @@ pnpm agents --env staging --console            # port 7070; --console-port <n> t
 
 If the port is taken, the console tries the next one up, one at a time (up to 100 ports), and prints the link with the port it got. The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every API request. Without `--console` no port is opened.
 
-- **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text.
+- **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text. Agent replies render a small markdown subset (emphasis, code, lists and http(s) links); their raw HTML and images stay text.
 - **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.
 - **Pause:** events are still received and stored; nothing new is handed to the model until you resume. Work the model already had finishes. **Freeze spending:** `post_task` and `escrow_sign` are refused before anything is reserved; reads and messages continue, and an action already reserved finishes.
 - **Messages:** Send or Enter queues a follow-up for the next run. Ctrl+S or Cmd+S sends a steer after the current tool round; Shift+Enter adds a new line. Steering is not cancellation and cannot undo a tool or money action already in flight. Each attempted send keeps its ID and initial mode on retry, even if you retry with a different key. Editing the draft creates a new send.
@@ -244,7 +244,7 @@ Compaction summarizes older model context; it does not erase stored history or t
 
 - `src/core/`: agent integration and marketplace policy.
 - `src/run.ts`: local host, stream lifecycle, recovery and periodic polling; starts the console with `--console` and reopens one agent after a saved agent file.
-- `src/console.ts`, `src/console-page.ts`, `src/console-live.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower the page and the TUI share.
+- `src/console.ts`, `src/console-page.ts`, `src/console-live.ts`, `src/console-markdown.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower and reply markdown subset the page and the TUI share.
 - `src/tui/`: the terminal UI, a Bun package of its own. `screen.ts` (what to draw from a view), `keys.ts` (what each key does) and `link.ts` are pure and tested under Node; `app.tsx` draws them with OpenTUI.
 - `src/setup.ts`: fresh agent setup.
 - `examples/`: agent folders (`agent.json` and `INSTRUCTIONS.md`) to copy.

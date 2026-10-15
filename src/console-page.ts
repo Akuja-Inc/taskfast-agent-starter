@@ -304,7 +304,7 @@ function mdRuns(runs) {
     return run.href ? el("a", { href: run.href, title: run.href, target: "_blank", rel: "noopener noreferrer" }, node) : node;
   });
 }
-const mdList = (list) => el(list.start === undefined ? "ul" : "ol", { start: list.start > 1 ? list.start : null }, list.items.map((item) => el("li", {}, mdRuns(item.runs), item.list ? mdList(item.list) : null)));
+const mdList = (list) => el(list.start === undefined ? "ul" : "ol", { start: list.start !== 1 ? list.start : null }, list.items.map((item) => el("li", {}, mdRuns(item.runs), item.list ? mdList(item.list) : null)));
 const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text }) : block.kind === "list" ? mdList(block) : el("p", {}, mdRuns(block.runs));
 // The same words with the markers gone, for the rail's peek.
 const plain = (node) => node.text !== undefined ? node.text : node.runs ? node.runs.map(plain).join("") + (node.list ? " " + plain(node.list) : "") : node.items.map(plain).join(" ");

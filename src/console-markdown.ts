@@ -35,6 +35,9 @@ export function markdown(text: string): Block[] {
         i = end < 0 ? src.length : end + tick.length;
         continue;
       }
+      // No images: the whole image syntax stays text, so nothing links to its address.
+      const image = c === "!" ? /^!\[[^\]\n]*\]\([^)\n]*\)/.exec(rest) : null;
+      if (image) { buf += image[0]; i += image[0].length; continue; }
       // The link's words, without their own markers, become one run.
       const link = c === "[" ? /^\[([^\]\n]+)\]\((https?:\/\/[^\s()]+)\)/i.exec(rest) : null;
       if (link) {
@@ -47,13 +50,17 @@ export function markdown(text: string): Block[] {
         const mark = rest.startsWith(c + c) ? c + c : c, key = mark.length === 2 ? "strong" : "em";
         const before = src[i - 1], after = src[i + mark.length];
         const close = style[key] && !space(before) && !(c === "_" && word(after));
-        const open = !style[key] && !space(after) && !(c === "_" && (word(before) || !closes(mark, i + mark.length)));
+        // _ and a * inside a word (5*3) open only when they close later; a * after a space
+        // opens at once, so a streaming *word shows no marker.
+        const open = !style[key] && !space(after) && !(c === "_" && word(before)) && !((c === "_" || word(before)) && !closes(mark, i + mark.length));
         if (close || open) {
           flush();
           if (close) delete style[key]; else style[key] = true;
           i += mark.length;
           continue;
         }
+        // A * that ends the text is the next marker still streaming: drop it.
+        if (c === "*" && i + mark.length === src.length) break;
       }
       buf += c;
       i++;
@@ -84,15 +91,17 @@ export function markdown(text: string): Block[] {
       blocks.push({ kind: "code", text: body.join("\n") });
       continue;
     }
-    if (!line.trim()) { end(); continue; }
+    // A blank line or a rule (*** or ---) ends the block; the subset draws no rules.
+    if (!line.trim() || /^ {0,3}([-*_])( *\1){2,} *$/.test(line)) { end(); continue; }
     const heading = /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
     if (heading) {
       end();
-      blocks.push({ kind: "p", runs: inline(heading[1], { strong: true }) });
+      blocks.push({ kind: "p", runs: inline(heading[1], {}).map((run) => ({ ...run, strong: true })) });
       continue;
     }
     const item = /^(\s*)(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/.exec(line);
-    if (item) {
+    // Only "1." starts a numbered list inside a paragraph, so "2024. was a year" stays prose.
+    if (item && !(para.length && item[2] !== undefined && item[2] !== "1")) {
       const start = item[2] === undefined ? undefined : Number(item[2]);
       const parent: Raw | null = list;
       const last = parent && parent.items[parent.items.length - 1];
