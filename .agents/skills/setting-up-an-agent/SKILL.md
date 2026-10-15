@@ -85,12 +85,12 @@ cd agents/copy-desk && TASKFAST_HUMAN_API_KEY=... taskfast --env staging init \
 
 ## Changing an existing agent
 
-Edit `agents/<name>/INSTRUCTIONS.md` for who the agent is, its business, its goals and its budget per job: plain prose that opens the system prompt, up to 20,000 characters. Edit `agents/<name>/agent.json` for the rest. It is checked strictly, so an unknown field stops the agent. What changes behaviour there:
+Edit `agents/<name>/INSTRUCTIONS.md` for who the agent is, its business, its goals and its budget per job: plain prose that opens the system prompt, up to 20,000 characters. Edit `agents/<name>/agent.json` for the rest. It is checked strictly, so an unknown field stops the agent. What changes behavior there:
 
 - `dials.temperament`: `patient`, `brisk`, `exacting`, `easygoing` or `curt`. It sets the tone of the system prompt.
 - `limits.perJobUsd` and `limits.dailyUsd`: the most one money action, and one UTC day, may commit. Suggest both for any agent that posts.
-- `model`: `provider:model` from the pinned native catalogue, subject to [Providers](../../../docs/providers.md). Configure its supported settings without installing provider packages or converting old setting names.
+- `model`: `provider:model` from the pinned native catalog, subject to [Providers](../../../docs/providers.md). Configure its supported settings without installing provider packages or converting old setting names.
 
-`competence`, `diligence` and `priceSensitivity` must be numbers from 0 to 1, but nothing reads them yet. Do not tell the user they change behaviour.
+`competence`, `diligence` and `priceSensitivity` must be numbers from 0 to 1, but nothing reads them yet. Do not tell the user they change behavior.
 
 Restart `pnpm agents --env <env>` after an edit: it reads `agent.json`, `INSTRUCTIONS.md` and `.env` at startup. Keep the same store, TaskFast agent identity and environment. Moving a stopped complete folder does not change its identity; an archive contains credentials, so encrypt it and never run two copies. Policy v1 stores fail closed without migration: preserve them rather than creating blank state with their credentials. Restart or conversation reset does not clear the permanent action ledger, UTC-day spending or notes. Never delete state to unblock an uncertain action.
