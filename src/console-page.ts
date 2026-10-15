@@ -137,7 +137,8 @@ form.inline label { flex: 1 1 280px; }
 .hint { display: flex; justify-content: flex-end; gap: 14px; font-size: 12px; color: var(--muted); }
 kbd { font: 600 11px ui-monospace, monospace; background: var(--ground); border: 1px solid var(--hairline); border-bottom-width: 2px; border-radius: 3px; padding: 1px 5px; color: var(--soft); }
 textarea::placeholder { color: var(--muted); }
-.queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: start; }
+.queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: start; position: relative; isolation: isolate; overflow: hidden; background: var(--ground); border-style: dashed; color: var(--soft); }
+.queue-row::before { content: "Queued"; position: absolute; inset: 0; z-index: -1; display: flex; align-items: center; justify-content: center; font-size: 48px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); opacity: .14; pointer-events: none; }
 .queue-mode, .queue-text { grid-column: 1; }
 .queue-mode { font-size: 13px; font-weight: 700; }
 .queue-text { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -709,12 +710,12 @@ function updateQueueRow(row, message) {
     button.setAttribute("aria-label", "Steer queued message: " + message.text);
   } else if (button) { if (document.activeElement === button) row.closest("section").focus(); button.remove(); }
 }
-// The band shows only while something waits. The section stays in the page, hidden,
-// so a stream update can fill it in place. The notice sits outside it and stays visible.
+// No band: each waiting row is muted and marked "Queued" in its background. The
+// section stays in the page, hidden while empty, so a stream update can fill it in
+// place. The notice sits outside it and stays visible.
 function queuedMessages() {
   const queue = view.queuedMessages;
   return [el("section", { class: "section", id: "queued-messages", "data-agent": ui.agent, tabindex: "-1", "aria-label": "Queued messages", hidden: !queue.length },
-    band("Queued messages"),
     el("div", { class: "section queued-rows" }, queue.map(queueRow))),
     el("div", { class: "small queue-notice", role: "status", "aria-live": "polite", text: ui.notices.get(ui.agent) || "" })];
 }

@@ -191,7 +191,7 @@ it("hides the queued-messages band while the queue is empty, keeps the notice vi
   expect(section.contains(page.app.querySelector('.queue-notice'))).toBe(false);
   page.document.activeElement = textarea; page.ui.draft = 'Typing';
   page.setView({ ...demoView(), queuedMessages: [followUp] }); page.render();
-  expect(page.app.querySelector('#queued-messages')).toBe(section); expect(section.hidden).toBe(false);
+  expect(page.app.querySelector('#queued-messages')).toBe(section); expect(section.hidden).toBe(false); expect(section.querySelector('.band')).toBeNull();
   page.document.activeElement = page.app.querySelector('.queue-promote'); const focused = textarea.focusCalls.length;
   page.setView(demoView()); page.render();
   expect(textarea.focusCalls).toHaveLength(focused + 1); expect(page.app.querySelector('#queued-messages')?.hidden).toBe(true);
@@ -288,6 +288,11 @@ it("keeps a pending composer focus away from the Briefing tab's instructions fie
 
 it("pins queue prose below its mode even without a promotion button", () => {
   expect(PAGE).toContain('.queue-mode, .queue-text { grid-column: 1; }');
+});
+
+it("marks each queued row with a muted Queued watermark behind its content", () => {
+  expect(PAGE).toMatch(/\.queue-row \{[^}]*background: var\(--ground\); border-style: dashed; color: var\(--soft\);/);
+  expect(PAGE).toMatch(/\.queue-row::before \{ content: "Queued";[^}]*z-index: -1;/);
 });
 
 it("renders the event turn head as a native button", () => {
