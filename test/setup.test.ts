@@ -29,6 +29,7 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
   }
   const asked: { question: string; hidden: boolean }[] = [];
   const ran: { cmd: string; args: string[]; cwd: string }[] = [];
+  const envs: NodeJS.ProcessEnv[] = [];
   const logs: string[] = [];
   const io: SetupIO = {
     root, env: opts.env ?? {},
@@ -38,15 +39,16 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
       if (answer === undefined) throw new Error(`no scripted answer for: ${question}`);
       return answer;
     },
-    run: (cmd, args, cwd) => (ran.push({ cmd, args, cwd }), opts.runStatus ?? 0),
+    run: (cmd, args, cwd, env) => (ran.push({ cmd, args, cwd }), envs.push(env), opts.runStatus ?? 0),
     log: (line) => void logs.push(line),
   };
   const agent = (id: string) => JSON.parse(readFileSync(join(root, "agents", id, "agent.json"), "utf8"));
   const instructions = (id: string) => readFileSync(join(root, "agents", id, "INSTRUCTIONS.md"), "utf8");
-  return { root, io, asked, ran, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
+  return { root, io, asked, ran, envs, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
 }
 const ME = ["Ada Lovelace", "Ada Analytics", "Data clean-up for small charities."];
-const worker = (init = "n") => ["1", ...ME, "", init];
+// Running init asks for a wallet password; an empty answer skips it.
+const worker = (init = "n") => ["1", ...ME, "", init, ...(/^n/i.test(init) ? [] : [""])];
 const ALL: SetupOptions = {
   provider: "anthropic", set: ["ANTHROPIC_API_KEY=sk-ant-flag"], model: "claude-sonnet-5-5", agent: "flagged", role: "poster",
   name: ME[0], business: ME[1], description: ME[2], goals: "hire well", budget: "40", init: true,
@@ -85,12 +87,82 @@ describe("setup", () => {
     expect(k.ran.at(-1)).toEqual({ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "flagged") });
   });
 
+  it("asks for a hidden, confirmed, long enough one-line wallet password, keeps its spaces and generates the wallet with it", async () => {
+    const typed = "  typed pass phrase ";
+    const k = kit(["", "two\nlines here", "short pass", typed, "typo pass phrase", typed, typed]);
+    await k.run({ ...ALL, env: "staging", init: undefined });
+    expect(k.asked.map((a) => a.hidden)).toEqual([false, true, true, true, true, true, true]);
+    expect(k.asked.filter((a) => a.question.startsWith("Confirm"))).toHaveLength(2);
+    expect(k.logs).toContain("The password must be one line.");
+    expect(k.logs).toContain("The password must be at least 12 characters.");
+    expect(k.logs).toContain("The passwords did not match. Enter it again.");
+    expect(readFileSync(join(k.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe(typed);
+    expect(k.ran.at(-1)?.args.slice(-2)).toEqual(["--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"]);
+    expect(k.logs.join("\n")).not.toContain("typed pass");
+  });
+
+  it("keeps an existing wallet password file and never asks for another", async () => {
+    const k = kit([], { env: { WALLET_PW: "replacement pass" } });
+    const dir = join(k.root, "agents", "flagged", ".taskfast");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "wallet-password"), "original");
+    await k.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" });
+    expect(k.asked).toEqual([]);
+    expect(readFileSync(join(dir, "wallet-password"), "utf8")).toBe("original");
+    expect(k.ran.at(-1)?.args.at(-1)).toBe("--wallet-password-file=.taskfast/wallet-password");
+  });
+
+  it("does not generate a wallet over an existing wallet or TaskFast config", async () => {
+    for (const existing of ["wallet.json", "config.json"]) {
+      const k = kit([]);
+      const dir = join(k.root, "agents", "flagged", ".taskfast");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "wallet-password"), "existing password");
+      writeFileSync(join(dir, existing), "{}");
+      await k.run({ ...ALL, env: "staging" });
+      expect(k.ran.at(-1)?.args).toEqual(["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json", "--wallet-password-file=.taskfast/wallet-password"]);
+    }
+  });
+
+  it("hides TASKFAST_WALLET_PASSWORD from taskfast init so the wallet uses the password file", async () => {
+    const k = kit([], { env: { TASKFAST_WALLET_PASSWORD: "shell password", WALLET_PW: "file password", PATH: "/usr/bin" } });
+    await k.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" });
+    expect(k.envs).toEqual([{ WALLET_PW: "file password", PATH: "/usr/bin" }]);
+    expect(k.ran.at(-1)?.args.slice(-2)).toEqual(["--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"]);
+    expect(readFileSync(join(k.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe("file password");
+    expect(k.logs).toContain("taskfast init runs without TASKFAST_WALLET_PASSWORD, so the wallet uses agents/flagged/.taskfast/wallet-password as the agent does.");
+    expect(k.logs.join("\n")).not.toContain("shell password");
+    // Naming the variable makes its value the agent's password.
+    const adopt = kit([], { env: { TASKFAST_WALLET_PASSWORD: "shell password" } });
+    await adopt.run({ ...ALL, env: "staging", walletPasswordEnv: "TASKFAST_WALLET_PASSWORD" });
+    expect(readFileSync(join(adopt.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe("shell password");
+    expect(adopt.envs[0]).not.toHaveProperty("TASKFAST_WALLET_PASSWORD");
+  });
+
+  it("writes the flagged password even when init is skipped, and asks nothing without the flag", async () => {
+    const k = kit([], { env: { WALLET_PW: "later password" } });
+    await k.run({ ...ALL, env: "staging", init: false, walletPasswordEnv: "WALLET_PW" });
+    expect(readFileSync(join(k.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe("later password");
+    expect(k.logs.join("\n")).toContain("--wallet-password-file=.taskfast/wallet-password");
+    await k.run({ ...ALL, agent: "plain", env: "staging" });
+    expect(k.asked).toEqual([]);
+    expect(existsSync(join(k.root, "agents", "plain", ".taskfast", "wallet-password"))).toBe(false);
+  });
+
+  it("refuses a missing --wallet-password-env variable before writing anything", async () => {
+    const k = kit([]);
+    await expect(k.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" })).rejects.toThrow(/--wallet-password-env: WALLET_PW: is not set in your environment/);
+    await expect(setup({ ...k.io, env: { WALLET_PW: "too short" } }, { ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" })).rejects.toThrow(/WALLET_PW: must be at least 12 characters/);
+    expect(existsSync(join(k.root, "agents", "flagged"))).toBe(false);
+    expect(k.ran).toEqual([]);
+  });
+
   it("asks for a hidden native key, saves privately, selects a catalog model and initializes production by default without installing", async () => {
     const k = kit(["1", "ada", "sk-ant-test123", "", ...worker("")]);
     await k.run();
     expect(k.env("ada")).toBe("ANTHROPIC_API_KEY=sk-ant-test123\n");
     expect(statSync(join(k.root, "agents", "ada", ".env")).mode & 0o777).toBe(0o600);
-    expect(k.asked.filter((a) => a.hidden).map((a) => a.question)).toEqual([expect.stringContaining("ANTHROPIC_API_KEY")]);
+    expect(k.asked.filter((a) => a.hidden).map((a) => a.question)).toEqual([expect.stringContaining("ANTHROPIC_API_KEY"), expect.stringContaining("Wallet password")]);
     expect(k.agent("ada")).toEqual({ ...JSON.parse(readFileSync(join(ROOT, "examples", "careful-worker", "agent.json"), "utf8")), model: `anthropic:${entry("anthropic").defaultModel}` });
     expect(k.instructions("ada")).toBe(`You are ${ME[0]}, who runs ${ME[1]}. ${ME[2]}\n\nWhat you want right now: do a few jobs very well and earn repeat clients.\n`);
     expect(k.ran).toEqual([{ cmd: "taskfast", args: ["init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "ada") }]);
@@ -105,21 +177,26 @@ describe("setup", () => {
   ])("uses --env %s without asking where the agent runs", async (env, args, next) => {
     const k = kit(["anthropic", "w", "sk-x", "", ...worker("")]);
     await k.run({ env });
-    expect(k.asked).toHaveLength(10);
+    expect(k.asked).toHaveLength(11);
     expect(k.ran.at(-1)?.args).toEqual(args);
     expect(k.logs.join("\n")).toContain(next);
   });
 
   it("answers every question with flags, including --set NAME from the environment", async () => {
-    const k = kit([], { env: { ANTHROPIC_API_KEY: "key-from-environment" } });
-    await k.run({ ...ALL, set: ["ANTHROPIC_API_KEY"], env: "staging" });
+    const k = kit([], { env: { ANTHROPIC_API_KEY: "key-from-environment", WALLET_PW: "pass from env" } });
+    await k.run({ ...ALL, set: ["ANTHROPIC_API_KEY"], env: "staging", walletPasswordEnv: "WALLET_PW" });
     expect(k.asked).toEqual([]);
     expect(k.env()).toBe("ANTHROPIC_API_KEY=key-from-environment\n");
     expect(k.agent("flagged")).toMatchObject({ role: "poster", model: "anthropic:claude-sonnet-5-5" });
     expect(k.agent("flagged")).not.toHaveProperty("character");
     expect(k.instructions("flagged")).toBe(`You are ${ME[0]}, who runs ${ME[1]}. ${ME[2]}\n\nWhat you want right now: hire well.\n\nYou have about $40 to spend on a single job.\n`);
-    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "flagged") }]);
+    const password = join(k.root, "agents", "flagged", ".taskfast", "wallet-password");
+    expect(readFileSync(password, "utf8")).toBe("pass from env");
+    expect(statSync(password).mode & 0o777).toBe(0o400);
+    expect(statSync(join(k.root, "agents", "flagged", ".taskfast")).mode & 0o777).toBe(0o700);
+    expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json", "--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"], cwd: join(k.root, "agents", "flagged") }]);
     expect(k.logs.join("\n")).not.toContain("key-from-environment");
+    expect(k.logs.join("\n")).not.toContain("pass from env");
   });
 
   it("asks only what flags leave out, with no provider install command", async () => {
@@ -181,7 +258,7 @@ describe("setup", () => {
   });
 
   it("selects a model by number and asks a poster budget, with only TaskFast as a child command", async () => {
-    const k = kit(["moonshotai", "shop", "mk-test", "2", "2", ...ME, "", "35", ""]);
+    const k = kit(["moonshotai", "shop", "mk-test", "2", "2", ...ME, "", "35", "", ""]);
     await k.run({ env: "staging" });
     expect(k.agent("shop")).toMatchObject({ role: "poster", model: `moonshotai:${entry("moonshotai").models[1]}` });
     expect(k.instructions("shop")).toContain("You have about $35 to spend on a single job.");
@@ -291,7 +368,7 @@ describe("setup", () => {
   });
 
   it("reprompts wrong choices, stale models, taken folders and bad keys; describes failed init", async () => {
-    const k = kit(["0", "nosuch", "anthropic", "taken", "notes", "fresh", "has space", "sk-ok", "not-in-the-pin", "", "1", ...ME, "", ""], { runStatus: 1 });
+    const k = kit(["0", "nosuch", "anthropic", "taken", "notes", "fresh", "has space", "sk-ok", "not-in-the-pin", "", "1", ...ME, "", "", ""], { runStatus: 1 });
     mkdirSync(join(k.root, "agents", "taken"), { recursive: true });
     writeFileSync(join(k.root, "agents", "taken", "agent.json"), "{}");
     mkdirSync(join(k.root, "agents", "notes"), { recursive: true });
@@ -310,8 +387,8 @@ describe("setup", () => {
 
 describe("command line", () => {
   it("reads every flag, repeated --set and --no-init", () => {
-    expect(parseSetupArgs(["--env", "staging", "--provider", "openai", "--set", "A=1", "--set", "B", "--model", "m", "--agent", "x", "--role", "both", "--name", "n", "--business", "b", "--description", "d", "--goals", "g", "--budget", "5", "--no-init"])).toEqual({
-      env: "staging", provider: "openai", set: ["A=1", "B"], model: "m", agent: "x", role: "both", name: "n", business: "b", description: "d", goals: "g", budget: "5", init: false,
+    expect(parseSetupArgs(["--env", "staging", "--provider", "openai", "--set", "A=1", "--set", "B", "--model", "m", "--agent", "x", "--role", "both", "--name", "n", "--business", "b", "--description", "d", "--goals", "g", "--budget", "5", "--wallet-password-env", "PW", "--no-init"])).toEqual({
+      env: "staging", provider: "openai", set: ["A=1", "B"], model: "m", agent: "x", role: "both", name: "n", business: "b", description: "d", goals: "g", budget: "5", walletPasswordEnv: "PW", init: false,
     });
     expect(parseSetupArgs(["--init"]).init).toBe(true);
     expect(() => parseSetupArgs(["--envv", "staging"])).toThrow(/Unknown option '--envv'/);

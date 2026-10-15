@@ -15,6 +15,8 @@ child.write_text(
     "state = termios.tcgetattr(0)\n"
     "print('CHILD_CANONICAL=' + str(bool(state[3] & termios.ICANON)), flush=True)\n"
     "print('CHILD_ECHO=' + str(bool(state[3] & termios.ECHO)), flush=True)\n"
+    "import os\n"
+    "print('CHILD_SHELL_PASSWORD=' + str('TASKFAST_WALLET_PASSWORD' in os.environ), flush=True)\n"
     "print('Child input: ', end='', flush=True)\n"
     "assert sys.stdin.readline().strip() == 'hello'\n"
 )
@@ -26,15 +28,15 @@ args = [node, setup, "--env", "staging", "--provider", "anthropic", "--model", "
         "--description", "Demo", "--goals", "Demo"]
 if scenario != "secret":
     args += ["--set", "ANTHROPIC_API_KEY=dummy"]
-env = {"HOME": os.environ["HOME"], "PATH": root + os.pathsep + os.environ["PATH"], "TERM": "xterm-256color"}
+env = {"HOME": os.environ["HOME"], "PATH": root + os.pathsep + os.environ["PATH"], "TERM": "xterm-256color", "TASKFAST_WALLET_PASSWORD": "shell-only"}
 proc = subprocess.Popen(args, cwd=root, stdin=slave, stdout=slave, stderr=slave, env=env)
 transcript = b""
 
 
-def until(marker):
+def until(marker, since=0):
     global transcript
     deadline = time.monotonic() + 5
-    while marker not in transcript:
+    while marker not in transcript[since:]:
         assert time.monotonic() < deadline, "terminal stopped responding"
         if select.select([master], [], [], 0.05)[0]:
             try:
@@ -59,9 +61,27 @@ try:
         assert proc.wait(timeout=5) == 130, "Ctrl-C must cancel setup"
     else:
         os.write(master, b"\r")
+        until(b"Wallet password")
+        if scenario == "secret":
+            # Anchor at the prompt: the API key entry above already left asterisks on screen.
+            prompt = transcript.rindex(b"Wallet password")
+            os.write(master, b"s3cret-unlock")
+            until(b"***********", prompt)
+            assert b"s3cret-unlock" not in transcript, "wallet password appeared on screen"
+            os.write(master, b"\r")
+            until(b"Confirm the wallet password")
+            confirm = transcript.index(b"Confirm the wallet password")
+            os.write(master, b"s3cret-unlock")
+            until(b"***********", confirm)
+            assert b"s3cret-unlock" not in transcript, "wallet password appeared on screen"
+        os.write(master, b"\r")
         until(b"Child input:")
+        if scenario == "secret":
+            assert (pathlib.Path(root) / "agents" / "check" / ".taskfast" / "wallet-password").read_text() == "s3cret-unlock"
         assert b"CHILD_CANONICAL=True" in transcript, "child inherited raw mode"
         assert b"CHILD_ECHO=True" in transcript, "child inherited disabled echo"
+        assert b"CHILD_SHELL_PASSWORD=False" in transcript, "taskfast init saw TASKFAST_WALLET_PASSWORD"
+        assert b"shell-only" not in transcript, "shell password appeared on screen"
         os.write(master, b"hello\n")
         assert proc.wait(timeout=5) == 0, "child input did not complete"
     final = termios.tcgetattr(slave)

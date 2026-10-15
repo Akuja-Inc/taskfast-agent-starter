@@ -69,6 +69,8 @@ export interface SetupOptions {
   description?: string;
   goals?: string;
   budget?: string;
+  // The name of an environment variable holding the new wallet's password.
+  walletPasswordEnv?: string;
   init?: boolean;
 }
 
@@ -93,6 +95,10 @@ Sets up a model provider and one agent. Anything you leave out is asked.
   --description <text>    What the business does, in one sentence
   --goals <text>          What the agent should aim for
   --budget <usd>          Budget per job, for a poster or both-sides agent
+  --wallet-password-env NAME
+                          Write the wallet password from environment variable NAME to
+                          .taskfast/wallet-password (at least 12 characters). Asked only
+                          when setup asks about init.
   --init / --no-init      Run taskfast init for the agent now, or skip it
   -h, --help              Show this help`;
 
@@ -120,9 +126,10 @@ const SHOWN = 15;
 export interface SetupIO {
   root: string;
   env: NodeJS.ProcessEnv;
+  // Trims answers, except hidden ones, which are returned as typed.
   ask(question: string, hidden?: boolean): Promise<string>;
-  // Runs a command with the terminal attached; returns its exit status.
-  run(cmd: string, args: string[], cwd: string): number;
+  // Runs a command with the terminal attached and the given environment; returns its exit status.
+  run(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): number;
   log(line: string): void;
 }
 
@@ -152,6 +159,10 @@ export function installedVersion(root: string, pkg: string): string | null {
 
 // A setting whose value is a credential is masked while typing.
 const secret = (name: string) => /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL/.test(name);
+
+// The CLI itself accepts any one-line password; the minimum is this kit's own.
+const MIN_PASSWORD = 12;
+const passwordProblem = (v: string) => (!v ? "is not set in your environment" : /[\r\n]/.test(v) ? "must be one line" : [...v].length < MIN_PASSWORD ? `must be at least ${MIN_PASSWORD} characters` : null);
 
 const agentProblem = (root: string, v: string) => {
   if (!FOLDER.test(v)) return "use lowercase letters, digits and dashes";
@@ -190,6 +201,10 @@ function checkOptions({ options: o, io, catalogue }: { options: SetupOptions; io
     if (!(Number(o.budget) > 0) || !Number.isFinite(Number(o.budget))) bad("budget", "enter a positive number of USD");
     else if (o.role === "worker") bad("budget", "a worker has no budget; it applies to poster and both");
   }
+  if (o.walletPasswordEnv !== undefined) {
+    const p = passwordProblem(io.env[o.walletPasswordEnv] ?? "");
+    if (p) bad("wallet-password-env", `${o.walletPasswordEnv}: ${p}`);
+  }
   const selected = catalogue.find((p) => p.id === o.provider);
   if (selected) for (const name of set.keys()) {
     if (!selected.settings.some((s) => s.name === name)) bad("set", `${name} is not a setting for ${selected.id}; see docs/providers.md`);
@@ -214,7 +229,7 @@ async function choose<T>(io: SetupIO, question: string, options: readonly T[], l
 
 async function text(io: SetupIO, question: string, fallback = "", check: (v: string) => string | null = () => null, hidden = false): Promise<string> {
   for (;;) {
-    const v = (await io.ask(fallback ? `${question} [${fallback}]: ` : `${question}: `, hidden)) || fallback;
+    const v = (await io.ask(fallback ? `${question} [${fallback}]: ` : `${question}: `, hidden)).trim() || fallback;
     const problem = v ? check(v) : "an answer is needed";
     if (!problem) return v;
     io.log(problem);
@@ -262,7 +277,8 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   const dir = join(io.root, "agents", id);
   // Each agent keeps its own provider settings; never read the repository's .env.
   const envPath = folderFile({ agentDir: dir, path: ".env", resource: "provider settings" });
-  for (const path of ["agent.json", INSTRUCTIONS_PATH, ".taskfast/config.json", WALLET_PATH, PASSWORD_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
+  for (const path of ["agent.json", INSTRUCTIONS_PATH, ".taskfast/config.json", WALLET_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
+  const passwordPath = folderFile({ agentDir: dir, path: PASSWORD_PATH, resource: "agent resource" });
   let envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   const save = (name: string, value: string) => {
     envText = upsertEnv(envText, name, credentialSetting({ agentDir: dir, name, value }));
@@ -338,11 +354,41 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
 
   // 4. The agent's TaskFast account, in the environment given by --env.
   const cliEnv = taskfastEnv(environment);
-  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init", `--keystore-path=${WALLET_PATH}`, ...(existsSync(join(dir, PASSWORD_PATH)) ? [`--wallet-password-file=${PASSWORD_PATH}`] : [])];
+  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init", `--keystore-path=${WALLET_PATH}`];
   const initCmd = `taskfast ${initArgs.join(" ")}`;
   const ran = o.init ?? !/^n/i.test(await io.ask(`\nRun \`${initCmd}\` in agents/${id} now? It signs the agent up on ${environment} and sets up its wallet. [Y/n]: `));
-  const status = ran ? io.run("taskfast", initArgs, dir) : -1;
-  if (status !== 0) io.log(`\n${ran ? "taskfast init did not finish. " : ""}Run it yourself when ready:\n  cd agents/${id} && ${initCmd}`);
+  // An existing file may already encrypt a wallet, so it is never replaced.
+  if (existsSync(passwordPath)) io.log(`Using the wallet password already in agents/${id}/${PASSWORD_PATH}`);
+  else {
+    // Only an interactive init asks, so a run answered entirely by flags never prompts.
+    let value = o.walletPasswordEnv === undefined ? (ran && o.init === undefined ? undefined : "") : io.env[o.walletPasswordEnv];
+    while (value === undefined) {
+      // Untrimmed: the CLI keeps spaces, so the file holds exactly what was typed.
+      const v = await io.ask(`Wallet password for signing posts, escrow and settlement, at least ${MIN_PASSWORD} characters (input is masked; press Enter to skip): `, true);
+      const p = v ? passwordProblem(v) : null;
+      if (p) io.log(`The password ${p}.`);
+      else if (!v || (await io.ask("Confirm the wallet password: ", true)) === v) value = v;
+      else io.log("The passwords did not match. Enter it again.");
+    }
+    if (value) {
+      mkdirSync(join(dir, ".taskfast"), { recursive: true, mode: 0o700 });
+      writeFileSync(passwordPath, value, { mode: 0o400, flag: "wx" });
+      chmodSync(passwordPath, 0o400);
+      io.log(`Wrote agents/${id}/${PASSWORD_PATH}`);
+    }
+  }
+  if (existsSync(passwordPath)) {
+    // Generating here keeps init from asking for its own password, which would win over the file.
+    if (!existsSync(join(dir, WALLET_PATH)) && !existsSync(join(dir, ".taskfast/config.json"))) initArgs.push("--generate-wallet");
+    initArgs.push(`--wallet-password-file=${PASSWORD_PATH}`);
+  }
+  // The CLI prefers TASKFAST_WALLET_PASSWORD to the password file, but the host never
+  // passes it, so init must not see it either: a wallet encrypted with it could not be
+  // unlocked when the agent signs. Pass --wallet-password-env TASKFAST_WALLET_PASSWORD to use its value.
+  const { TASKFAST_WALLET_PASSWORD: shellPassword, ...initEnv } = io.env;
+  if (ran && shellPassword) io.log(`taskfast init runs without TASKFAST_WALLET_PASSWORD, so the wallet uses agents/${id}/${PASSWORD_PATH} as the agent does.`);
+  const status = ran ? io.run("taskfast", initArgs, dir, initEnv) : -1;
+  if (status !== 0) io.log(`\n${ran ? "taskfast init did not finish. " : ""}Run it yourself when ready:\n  cd agents/${id} && taskfast ${initArgs.join(" ")}`);
 
   io.log(`\nNext:\n  pnpm agents --env ${environment}`);
 }
@@ -350,17 +396,17 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
 // Reads setup's command-line flags; throws on an unknown flag.
 export function parseSetupArgs(argv: string[]): SetupOptions & { help?: boolean } {
   const s = { type: "string" } as const;
-  const { values } = parseArgs({
+  const { values: { "wallet-password-env": walletPasswordEnv, ...values } } = parseArgs({
     args: argv,
     strict: true,
     allowNegative: true,
     options: {
       env: s, provider: s, set: { type: "string", multiple: true }, model: s, agent: s, role: s,
-      name: s, business: s, description: s, goals: s, budget: s,
+      name: s, business: s, description: s, goals: s, budget: s, "wallet-password-env": s,
       init: { type: "boolean" }, help: { type: "boolean", short: "h" },
     },
   });
-  return values;
+  return { ...values, ...(walletPasswordEnv === undefined ? {} : { walletPasswordEnv }) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -388,18 +434,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     ask: async (question, hidden = false) => {
       if (!lines) {
         const message = question.trim();
-        return (await (hidden ? password({ message, mask: "*", toggleMask: false }) : input({ message }))).trim();
+        return hidden ? password({ message, mask: "*", toggleMask: false }) : (await input({ message })).trim();
       }
       process.stdout.write(question);
       const next = await lines.next();
       if (next.done) throw new Error("input ended before setup finished; pass the remaining answers as flags (see --help)");
-      return next.value.trim();
+      return hidden ? next.value : next.value.trim();
     },
-    run: (cmd, args, cwd) => {
+    run: (cmd, args, cwd, env) => {
       rl?.pause();
       process.stdin.pause();
       try {
-        const r = spawnSync(cmd, args, { cwd, stdio: "inherit" });
+        const r = spawnSync(cmd, args, { cwd, env, stdio: "inherit" });
         if (r.error) console.error(`${cmd}: ${r.error.message}`);
         return r.status ?? 1;
       } finally {
