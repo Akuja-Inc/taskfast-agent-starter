@@ -1,7 +1,7 @@
  DEVELOPMENT · local TaskFast server · no real money
  ‹ shop ·  (poster) › [1 Timeline] 2 Briefing    ● running   spend $0.00 of $50.00   ?
 ┌─ Timeline ─────────────────────────────────────────────────────────────────────────────┐
-│ POLL  06:21  Check your marketplace work in your poster role and pursue the goals in   │
+│ POLL  06:28  Check your marketplace work in your poster role and pursue the goals in   │
 │ your instructions. Read current state before acting; do not repeat uncertain writes.   │
 │ ▶ shop — (tool calls only)                                                             │
 │     [▸ 4 tool calls · 1 failed · 1 uncertain]                                          │
@@ -12,7 +12,7 @@
 │   shop — Claimed the photo edit. The message was refused and the bid acceptance timed  │
 │ out, so it is uncertain: please check it before I do anything else on that task.       │
 │                                                                                        │
-│ EVENT  06:21  bid.created · task 22222222-2222-4222-8222-222222222222                  │
+│ EVENT  06:28  bid.created · task 22222222-2222-4222-8222-222222222222                  │
 │   shop — A new bid arrived on the copywriting job. I will wait for your check on the   │
 │ uncertain acceptance first.                                                            │
 │     Before I act                                                                       │

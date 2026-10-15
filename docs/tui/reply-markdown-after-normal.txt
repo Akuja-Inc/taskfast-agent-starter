@@ -8,7 +8,7 @@
 │     The stream gave up on this event at 2026-10-13T08:00:00Z and acknowledged it.    ││ Ready to work? yes                     │
 └──────────────────────────────────────────────────────────────────────────────────────┘│ ✓ Wallet balance: 50.00 USDC           │
 ┌─ Timeline ───────────────────────────────────────────────────────────────────────────┐│ ✓ Wallet unlock file: present          │
-│ POLL  06:21  Check your marketplace work in your poster role and pursue the goals in ││ ✓ Event stream: connected              │
+│ POLL  06:28  Check your marketplace work in your poster role and pursue the goals in ││ ✓ Event stream: connected              │
 │ your instructions. Read current state before acting; do not repeat uncertain writes. ││ ✓ Model: anthropic:claude-haiku-5-5    │
 │ ▶ shop — (tool calls only)                                                           ││ ✓ Spending limits: $20.00 per job ·    │
 │     [▸ 4 tool calls · 1 failed · 1 uncertain]                                        ││ $50.00 per day                         │
@@ -20,7 +20,7 @@
 │ timed out, so it is uncertain: please check it before I do anything else on that     ││   Edit 12 product photos               │
 │ task.                                                                                ││                                        │
 │                                                                                      ││ Spend today (UTC) $0.00 of $50.00      │
-│ EVENT  06:21  bid.created · task 22222222-2222-4222-8222-222222222222                ││                                        │
+│ EVENT  06:28  bid.created · task 22222222-2222-4222-8222-222222222222                ││                                        │
 │   shop — A new bid arrived on the copywriting job. I will wait for your check on the ││ Standing orders · 0                    │
 │ uncertain acceptance first.                                                          ││                                        │
 │     Before I act                                                                     ││                                        │

@@ -15,7 +15,7 @@ Both captures used `test/fixtures/tui-host.mjs`: temporary agent folders, real S
 
 ## Terminal UI
 
-[The capture script](../tui/reply-markdown-capture.py) follows the `docs/tui/steer-capture.py` method. It starts the same fixture host, runs the real Bun/OpenTUI client in tmux inside Zutty on X11, and saves the window's pixels with ImageMagick `import -window` and the pane's text with `tmux capture-pane`. The after client is `src/tui` at the after source. The before client is a copy of that `src/` with `src/tui/app.tsx` restored from the before source, which is the only TUI file that draws replies.
+[The capture script](../tui/reply-markdown-capture.py) follows the `docs/tui/steer-capture.py` method. It starts the same fixture host, runs the real Bun/OpenTUI client in tmux inside Zutty on X11, and saves the window's pixels with ImageMagick `import -window` and the pane's text with `tmux capture-pane`. The after client is `src/tui` at `f1c2a0fae023b7725c0b199a574f2af92c74a7fd`, the after source plus the TUI `Span` fix. Before that fix, `@opentui/solid` dropped every span's `fg` and `bg`, so inline code had no plate and no TUI span showed its colour; `tmux capture-pane -e` showed no colour codes on them. After it, the agent name, muted text, alert colours and the inline-code plate all reach the terminal, so the after shots differ from the before shots in colour outside the reply too. The before client is a copy of that `src/` with `src/tui/app.tsx` restored from the before source, which is the only TUI file that draws replies.
 
 | Terminal | Before | After |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ Contrast: Code Ink (#E9E7DC) on Sign Black (#0B0B0B) is about 15.8:1, in both th
 | --- | --- |
 | `pnpm check` | 346 tests in 25 files; TypeScript, skills, prose and lessons checks passed |
 | `pnpm exec vitest run test/console-page.test.ts` | 27 tests passed, including the markdown subset, raw HTML, `javascript:` and image syntax, streaming and peek cases |
-| `pnpm tui:test` | TUI typecheck passed; 6 tests passed, 553 `expect()` calls |
+| `pnpm tui:test` | TUI typecheck passed; 6 tests passed, 552 `expect()` calls |
 
 ## Reproduce locally
 
