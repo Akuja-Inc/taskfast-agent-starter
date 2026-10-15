@@ -20,6 +20,8 @@ class FakeNode {
   setAttribute(key: string, value: string) { this.attributes[key] = value; }
   getAttribute(key: string) { return key in this.attributes ? this.attributes[key] : null; }
   hasAttribute(key: string) { return key in this.attributes; }
+  get hidden() { return this.hasAttribute('hidden'); }
+  set hidden(value: boolean) { if (value) this.attributes.hidden = ''; else delete this.attributes.hidden; }
   addEventListener(type: string, fn: (event: unknown) => void) { (this.listeners[type] ??= []).push(fn); }
   append(...kids: unknown[]) { for (const kid of kids) { if (kid instanceof FakeNode) { kid.remove(); kid.parentElement = this; } this.children.push(kid); } }
   replaceChildren(...kids: unknown[]) { for (const kid of [...this.children]) if (kid instanceof FakeNode) kid.remove(); this.children = []; this.append(...kids); }
@@ -178,7 +180,21 @@ it("updates queues while typing without replacing the textarea or stable queue c
   expect(page.app.querySelector('textarea')).toBe(textarea); expect(page.document.activeElement).toBe(textarea);
   expect([textarea.value, textarea.selectionStart, textarea.selectionEnd]).toEqual(['Typing a new draft', 4, 9]);
   page.setView(demoView()); page.render(); expect(page.app.querySelectorAll('.queue-row')).toHaveLength(0);
-  expect(page.app.querySelector('.queue-empty')?.textContent).toBe('No queued messages.');
+  expect(page.app.querySelector('#queued-messages')?.hidden).toBe(true); expect(page.app.querySelector('textarea')).toBe(textarea);
+});
+
+it("hides the queued-messages band while the queue is empty, keeps the notice visible and moves focus to the composer", () => {
+  const page = bootPage(), followUp = { requestId: 'first', text: 'Oldest', mode: 'followUp' };
+  page.setView(demoView()); page.render();
+  const section = page.app.querySelector('#queued-messages')!, textarea = page.app.querySelector('textarea')!;
+  expect(section.hidden).toBe(true); expect(section.textContent).not.toContain('No queued messages.');
+  expect(section.contains(page.app.querySelector('.queue-notice'))).toBe(false);
+  page.document.activeElement = textarea; page.ui.draft = 'Typing';
+  page.setView({ ...demoView(), queuedMessages: [followUp] }); page.render();
+  expect(page.app.querySelector('#queued-messages')).toBe(section); expect(section.hidden).toBe(false);
+  page.document.activeElement = page.app.querySelector('.queue-promote'); const focused = textarea.focusCalls.length;
+  page.setView(demoView()); page.render();
+  expect(textarea.focusCalls).toHaveLength(focused + 1); expect(page.app.querySelector('#queued-messages')?.hidden).toBe(true);
 });
 
 it("serializes paused promotion and reports placement and stale-row races as notices", async () => {

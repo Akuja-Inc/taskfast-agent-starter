@@ -74,6 +74,7 @@ nav a[aria-current="page"] { background: var(--yellow); color: #0B0B0B; font-wei
 main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .section { display: flex; flex-direction: column; gap: 12px; }
+[hidden] { display: none !important; }
 .card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 2px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .card.attn { border-color: var(--warn); }
 .attn-head { display: flex; gap: 10px; align-items: center; }
@@ -708,29 +709,32 @@ function updateQueueRow(row, message) {
     button.setAttribute("aria-label", "Steer queued message: " + message.text);
   } else if (button) { if (document.activeElement === button) row.closest("section").focus(); button.remove(); }
 }
+// The band shows only while something waits. The section stays in the page, hidden,
+// so a stream update can fill it in place. The notice sits outside it and stays visible.
 function queuedMessages() {
   const queue = view.queuedMessages;
-  return el("section", { class: "section", id: "queued-messages", "data-agent": ui.agent, tabindex: "-1", "aria-label": "Queued messages" },
+  return [el("section", { class: "section", id: "queued-messages", "data-agent": ui.agent, tabindex: "-1", "aria-label": "Queued messages", hidden: !queue.length },
     band("Queued messages"),
-    el("div", { class: "section queued-rows" }, queue.length ? queue.map(queueRow) : el("div", { class: "small queue-empty", text: "No queued messages." })),
-    el("div", { class: "small queue-notice", role: "status", "aria-live": "polite", text: ui.notices.get(ui.agent) || "" }));
+    el("div", { class: "section queued-rows" }, queue.map(queueRow))),
+    el("div", { class: "small queue-notice", role: "status", "aria-live": "polite", text: ui.notices.get(ui.agent) || "" })];
 }
 function updateQueuedMessages() {
   const section = document.querySelector("#queued-messages");
   if (!section || !view || ui.tab !== "timeline" || section.getAttribute("data-agent") !== ui.agent) return;
   const rows = section.querySelector(".queued-rows"), queue = view.queuedMessages;
-  const existing = new Map([...rows.children].filter((row) => row.hasAttribute("data-request-id")).map((row) => [row.getAttribute("data-request-id"), row]));
+  const hadFocus = section.contains(document.activeElement);
+  const existing = new Map([...rows.children].map((row) => [row.getAttribute("data-request-id"), row]));
   const ids = new Set(queue.map((message) => message.requestId));
   for (const [id, row] of existing) if (!ids.has(id)) { if (row.contains(document.activeElement)) section.focus(); row.remove(); }
-  const empty = rows.querySelector(".queue-empty");
-  if (queue.length && empty) empty.remove();
   queue.forEach((message, index) => {
     const row = existing.get(message.requestId) || queueRow(message);
     updateQueueRow(row, message);
     if (rows.children[index] !== row) rows.insertBefore(row, rows.children[index] || null);
   });
-  if (!queue.length && !empty) rows.append(el("div", { class: "small queue-empty", text: "No queued messages." }));
-  section.querySelector(".queue-notice").textContent = ui.notices.get(ui.agent) || "";
+  section.hidden = !queue.length;
+  // A hidden section cannot hold focus. The composer is the next visible control.
+  if (section.hidden && hadFocus) document.querySelector("form.composer textarea").focus();
+  document.querySelector(".queue-notice").textContent = ui.notices.get(ui.agent) || "";
 }
 
 function timelineTab() {
