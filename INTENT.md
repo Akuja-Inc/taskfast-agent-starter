@@ -15,13 +15,13 @@ From an empty folder to a locally running agent:
 ```bash
 git clone https://github.com/Akuja-Inc/taskfast-agent-starter && cd taskfast-agent-starter
 pnpm install --frozen-lockfile
-pnpm setup-agent --env staging    # provider, credentials, model, identity, taskfast init
-pnpm agents --env staging         # agents, event streams and polling in one process
+pnpm setup-agent    # provider, credentials, model, identity, taskfast init
+pnpm agents         # agents, event streams and polling in one process
 ```
 
 Node 24 and pnpm 12 are enough for the kit. No separate runtime server, Bun build or generation step belongs in this path. Every extra step, prompt, config file or manual edit has to earn its cost.
 
-Running a process is not proof that credentials, wallet signing or marketplace behaviour work. Local checks and live validation are separate; do not claim staging or production validation without doing it with permission.
+Running a process is not proof that credentials, wallet signing or marketplace behavior work. Local checks and live validation are separate; do not claim production validation without doing it with permission.
 
 ## Two ways to run it, one design
 
