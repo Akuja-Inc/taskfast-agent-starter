@@ -2,7 +2,7 @@
 
 ## Sources and screenshots
 
-Before source: `41da0f423f9c225cfe27a9059d59d8df0b981599` (main plus the fixture's markdown reply, page unchanged). After source: `841682f00dc3550f82399a2d4bd9564b27a1436c`.
+Before source: `41da0f423f9c225cfe27a9059d59d8df0b981599` (main plus the fixture's markdown reply, page unchanged). After source: `8a6043c176ba6a47205f2477e37bb3fb8cfcf6e0`.
 
 Both captures used `test/fixtures/tui-host.mjs`: temporary agent folders, real SQLite stores, a scripted faux model and a fake CLI. No real agents, credentials, wallets, model providers or marketplace servers were used. Chromium ran through Python Playwright with `bypass_csp=True`. Desktop viewport: 1440 x 1050. Phone viewport: 390 x 844. Device scale: 1. Each shot is the turn card that holds the shop agent's markdown reply to the `bid.created` event.
 
@@ -12,6 +12,15 @@ Both captures used `test/fixtures/tui-host.mjs`: temporary agent folders, real S
 | Desktop dark | [Before](reply-markdown-before-desktop-dark.png) | [After](reply-markdown-after-desktop-dark.png) |
 | Phone light | [Before](reply-markdown-before-phone-light.png) | [After](reply-markdown-after-phone-light.png) |
 | Phone dark | [Before](reply-markdown-before-phone-dark.png) | [After](reply-markdown-after-phone-dark.png) |
+
+## Terminal UI
+
+[The capture script](../tui/reply-markdown-capture.py) follows the `docs/tui/steer-capture.py` method. It starts the same fixture host, runs the real Bun/OpenTUI client in tmux inside Zutty on X11, and saves the window's pixels with ImageMagick `import -window` and the pane's text with `tmux capture-pane`. The after client is `src/tui` at the after source. The before client is a copy of that `src/` with `src/tui/app.tsx` restored from the before source, which is the only TUI file that draws replies.
+
+| Terminal | Before | After |
+| --- | --- | --- |
+| 130 x 52 | [Before](../tui/reply-markdown-before-normal.png) ([text](../tui/reply-markdown-before-normal.txt)) | [After](../tui/reply-markdown-after-normal.png) ([text](../tui/reply-markdown-after-normal.txt)) |
+| 90 x 52 | [Before](../tui/reply-markdown-before-narrow.png) ([text](../tui/reply-markdown-before-narrow.txt)) | [After](../tui/reply-markdown-after-narrow.png) ([text](../tui/reply-markdown-after-narrow.txt)) |
 
 ## What the captures measured
 
@@ -32,8 +41,9 @@ Contrast: Code Ink (#E9E7DC) on Sign Black (#0B0B0B) is about 15.8:1, in both th
 
 | Command | Result |
 | --- | --- |
-| `pnpm exec vitest run test/console-page.test.ts` | 27 tests passed, including the markdown subset, raw HTML, `javascript:` link, streaming and peek cases |
-| `pnpm tui:test` | TUI typecheck passed; 6 tests passed, 549 `expect()` calls |
+| `pnpm check` | 346 tests in 25 files; TypeScript, skills, prose and lessons checks passed |
+| `pnpm exec vitest run test/console-page.test.ts` | 27 tests passed, including the markdown subset, raw HTML, `javascript:` and image syntax, streaming and peek cases |
+| `pnpm tui:test` | TUI typecheck passed; 6 tests passed, 553 `expect()` calls |
 
 ## Reproduce locally
 

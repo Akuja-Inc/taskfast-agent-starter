@@ -1,0 +1,52 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop ·  (poster) › [1 Timeline] 2 Briefing    ● running   spend $0.00 of $50.00   ?
+┌─ Timeline ─────────────────────────────────────────────────────────────────────────────┐
+│ POLL  06:21  Check your marketplace work in your poster role and pursue the goals in   │
+│ your instructions. Read current state before acting; do not repeat uncertain writes.   │
+│ ▶ shop — (tool calls only)                                                             │
+│     [▸ 4 tool calls · 1 failed · 1 uncertain]                                          │
+│     TASK_CLAIM  Edit 12 product photos  in_progress · budget $18.00 · worker assigned  │
+│ http://localhost:4000/tasks/11111111-1111-4111-8111-111111111111                       │
+│     MESSAGE_SEND  Write 5 product descriptions  open · budget $20.00  http://          │
+│ localhost:4000/tasks/22222222-2222-4222-8222-222222222222                              │
+│   shop — Claimed the photo edit. The message was refused and the bid acceptance timed  │
+│ out, so it is uncertain: please check it before I do anything else on that task.       │
+│                                                                                        │
+│ EVENT  06:21  bid.created · task 22222222-2222-4222-8222-222222222222                  │
+│   shop — A new bid arrived on the copywriting job. I will wait for your check on the   │
+│ uncertain acceptance first.                                                            │
+│     Before I act                                                                       │
+│     • The acceptance of bid 44444444 is uncertain and counted as spent                 │
+│     • I will not retry it:                                                             │
+│       • read the task on the task page (https://example.com/tasks/22222222)            │
+│     1. Check the bid                                                                   │
+│     2. Reply here                                                                      │
+│      taskfast bid accept xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
+│     Marketplace text stays text: <script>alert(1)</script> <img src=x onerror=alert(1) │
+│     > [x](javascript:alert(1))                                                         │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Message · Enter follow-up · Ctrl+S steer ─────────────────────────────────────────────┐
+│ m to write to shop; Enter next run / Ctrl+S after tool round                           │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+ i sidebar · Tab queue · s steer · a alerts (2) · m message · p pause · ? help · q quit
