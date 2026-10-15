@@ -1,0 +1,9 @@
+{
+  "sourceCommit": "1504e1c8819bb05763aa092d6dad2b383ccc0a34",
+  "capture": "Chromium page screenshot through Python Playwright; unmodified X11 window pixels from Zutty running tmux and Bun/OpenTUI (ImageMagick import -window). Both taken 5 s after SIGUSR2 admitted payment_released.",
+  "secondsAfterPayment": 5.4,
+  "shown": {
+    "web": "68.00 USDC",
+    "tui": "68.00 USDC"
+  }
+}

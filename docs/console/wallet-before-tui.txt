@@ -1,0 +1,40 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop ·  (poster) › [1 Timeline] 2 Briefing    ● running   spend $0.00 of $50.00   ? help
+┌─ Timeline ───────────────────────────────────────────────────────────────────────────┐┌─ Agent ────────────────────────────────┐
+│ POLL  06:09  Check your marketplace work in your poster role and pursue the goals in ││ Queued messages · 0                    │
+│ your instructions. Read current state before acting; do not repeat uncertain writes. ││ Tab focus · j/k select · s steer       │
+│ ▶ shop — Noted. Nothing else needs me yet.                                           ││ None waiting.                          │
+│                                                                                      ││                                        │
+│ EVENT  06:09  payment_released · task 11111111-1111-4111-8111-111111111111           ││ Ready to work? yes                     │
+│   shop — Noted. Nothing else needs me yet.                                           ││ ✓ Wallet balance: 50.00 USDC           │
+│                                                                                      ││ ✓ Wallet unlock file: present          │
+│                                                                                      ││ ✓ Event stream: connected              │
+│                                                                                      ││ ✓ Model: anthropic:claude-haiku-5-5    │
+│                                                                                      ││ ✓ Spending limits: $20.00 per job ·    │
+│                                                                                      ││ $50.00 per day                         │
+│                                                                                      ││                                        │
+│                                                                                      ││ Tasks                                  │
+│                                                                                      ││ POSTED · 0                             │
+│                                                                                      ││ BIDDING · 0                            │
+│                                                                                      ││ WORKING ON · 0                         │
+│                                                                                      ││                                        │
+│                                                                                      ││ Spend today (UTC) $0.00 of $50.00      │
+│                                                                                      ││                                        │
+│                                                                                      ││ Standing orders · 0                    │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+│                                                                                      ││                                        │
+└──────────────────────────────────────────────────────────────────────────────────────┘│                                        │
+┌─ Message · Enter follow-up · Ctrl+S steer ───────────────────────────────────────────┐│                                        │
+│ m to write to shop; Enter next run / Ctrl+S after tool round                         ││                                        │
+└──────────────────────────────────────────────────────────────────────────────────────┘└────────────────────────────────────────┘
+ j/k move · enter calls · r raw · o open · m message · Tab queue · s steer · p pause · f freeze · ? help · q quit
