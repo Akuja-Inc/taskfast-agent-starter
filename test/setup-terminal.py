@@ -63,8 +63,10 @@ try:
         os.write(master, b"\r")
         until(b"Wallet password")
         if scenario == "secret":
+            # Anchor at the prompt: the API key entry above already left asterisks on screen.
+            prompt = transcript.rindex(b"Wallet password")
             os.write(master, b"s3cret-unlock")
-            until(b"***********")
+            until(b"***********", prompt)
             assert b"s3cret-unlock" not in transcript, "wallet password appeared on screen"
             os.write(master, b"\r")
             until(b"Confirm the wallet password")
