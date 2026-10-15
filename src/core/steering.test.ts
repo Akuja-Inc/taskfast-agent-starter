@@ -9,6 +9,7 @@ import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
 import { MESSAGE_PREFIX, Operator } from "./operator.js";
 import { parseAgentSpec } from "./spec.js";
+import { example } from "../../test/example.js";
 
 const context = BACKGROUND_CONTEXT;
 const dirs: string[] = [];
@@ -32,7 +33,7 @@ async function open(options: {
   const faux = options.faux ?? fauxProvider({ models: [{ id: "test" }] });
   const models = createModels();
   models.setProvider(faux.provider);
-  const value: unknown = JSON.parse(readFileSync(new URL("../../examples/brisk-poster.json", import.meta.url), "utf8"));
+  const value: unknown = example("brisk-poster");
   const agent = await openMarketplaceAgent({
     storePath: join(dir, "state.sqlite"),
     spec: { ...parseAgentSpec(value), model: "faux:test" },

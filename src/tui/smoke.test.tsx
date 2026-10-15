@@ -156,7 +156,6 @@ test("the focused composer sends steers, queue focus promotes by ID, and Briefin
     keys.pressKey("2");
     keys.pressTab();
     keys.pressKey("j");
-    keys.pressKey("j");
     keys.pressEnter();
     await until(() => setup.renderer.currentFocusedEditor !== null);
     keys.pressKey("a", { ctrl: true }); // Start of the input, not select-all.

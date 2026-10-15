@@ -5,13 +5,7 @@ import type { AgentSpec, Role, Temperament } from "./types.js";
 const spec = (role: Role, temperament: Temperament): AgentSpec => ({
   role,
   model: "anthropic:claude-haiku-5-5",
-  character: {
-    name: "Owen Hollis",
-    businessName: "Hollis Cycle Repair",
-    businessDescription: "Hollis Cycle Repair does bike servicing and a small online parts shop.",
-    goals: "keep costs predictable and pay fairly for good work",
-    budgetUsd: 37,
-  },
+  instructions: "  You are Owen Hollis, who runs Hollis Cycle Repair. Bike servicing and a small online parts shop.\n\nWhat you want right now: keep costs predictable and pay fairly for good work.\n\n",
   dials: { competence: 0.123456, diligence: 0.654321, priceSensitivity: 0.987654, temperament },
 });
 
@@ -28,10 +22,12 @@ describe("buildSystemPrompt", () => {
     }
   });
 
-  it("states a budget only to an agent that posts", () => {
-    expect(buildSystemPrompt(spec("poster", "brisk"))).toContain("$37");
-    expect(buildSystemPrompt(spec("both", "brisk"))).toContain("$37");
-    expect(buildSystemPrompt(spec("worker", "brisk"))).not.toContain("$37");
+  it("opens with the instructions, trimmed, then the manner and the marketplace side", () => {
+    expect(buildSystemPrompt(spec("poster", "brisk"))).toBe(`You are Owen Hollis, who runs Hollis Cycle Repair. Bike servicing and a small online parts shop.
+
+What you want right now: keep costs predictable and pay fairly for good work.
+You are ${MANNER.brisk}.
+You hire people for jobs through a freelance marketplace, writing the way you normally would.`);
   });
 
   it("describes the marketplace side for each role", () => {

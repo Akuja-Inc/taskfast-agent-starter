@@ -10,6 +10,7 @@ import type { CliResult } from "../src/core/cli.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { openAgentStorage } from "../src/core/storage.js";
 import type { AgentSpec } from "../src/core/types.js";
+import { example } from "./example.js";
 
 // The fixture beside this suite is a real 1.1.0 store killed mid-write; see its
 // README. Reopening it under the pinned version is the upgrade's real contract.
@@ -24,7 +25,7 @@ const agentId = "33333333-3333-4333-8333-333333333333";
 const first = { title: "Edit the guide", description: "Copy edit the short guide.", budget: "10.00", pickup_deadline_hours: 24 };
 const second = { ...first, title: "Edit another guide" };
 function spec(): AgentSpec {
-  const value: unknown = JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8"));
+  const value: unknown = example("brisk-poster");
   return { ...parseAgentSpec(value), model: "faux:test", limits: { dailyUsd: 10, perJobUsd: 4 } };
 }
 

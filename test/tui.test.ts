@@ -9,6 +9,7 @@ import { buildTimeline } from "../src/core/timeline.js";
 import { actionError, initialUi, messageAttempt, messageBody, press, setField, type Effect, type Ui } from "../src/tui/keys.js";
 import { parseLink } from "../src/tui/link.js";
 import { clean, screen } from "../src/tui/screen.js";
+import { example } from "./example.js";
 
 const token = "c".repeat(64);
 const TASK = "11111111-1111-4111-8111-111111111111";
@@ -34,7 +35,7 @@ function fixtureView(env: ConsoleView["env"] = "local"): ConsoleView {
   ];
   return {
     id: "me", env, queuedMessages: [],
-    spec: parseAgentSpec(JSON.parse(readFileSync(new URL("../examples/brisk-poster.json", import.meta.url), "utf8"))),
+    spec: parseAgentSpec(example("brisk-poster")),
     operator: { ...initialOperator(), paused: true, orders: ["Keep every job under $15."] },
     attention: [
       { kind: "uncertain", id: `bid_accept:${TASK}`, at: "2026-10-13T10:00:01Z", amount: 15 },
@@ -246,8 +247,8 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
   expect(k.run("d")).toEqual([{ kind: "call", method: "DELETE", action: "orders/0" }]);
 
   let ui = setField(k.ui, view, "perJobUsd", "30");
-  ui = setField(ui, view, "goals", "get photo edits done");
-  expect(ui.draft).toMatchObject({ character: { goals: "get photo edits done" }, limits: { perJobUsd: 30, dailyUsd: 50 } });
+  ui = setField(ui, view, "temperament", "curt");
+  expect(ui.draft).toMatchObject({ dials: { temperament: "curt" }, limits: { perJobUsd: 30, dailyUsd: 50 }, instructions: view.spec.instructions });
   const saving = keys(view, ui);
   expect(saving.run("ctrl+s")).toEqual([]);
   expect(saving.ui.confirm).toEqual({ kind: "save", lines: ["Per job limit $20.00 → $30.00"] });
@@ -260,9 +261,9 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
   expect(typo.ui.confirm).toEqual({ kind: "save", lines: ["Per job limit $20.00 → invalid"] });
 
   // Escape on the timeline closes lines; only the briefing's escape discards its draft.
-  const away = keys(view, { ...setField(k.ui, view, "goals", "x"), tab: "timeline" });
+  const away = keys(view, { ...setField(k.ui, view, "temperament", "curt"), tab: "timeline" });
   away.run("escape");
-  expect(away.ui.draft?.character.goals).toBe("x");
+  expect(away.ui.draft?.dials.temperament).toBe("curt");
 
   const discarding = keys(view, setField(k.ui, view, "dailyUsd", ""));
   expect(discarding.ui.draft?.limits).toEqual({ perJobUsd: 20 });

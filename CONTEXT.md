@@ -33,17 +33,18 @@ The process that calls `openMarketplaceAgent`, owns the agent's store and stream
 **Honest:**
 Acting as an ordinary marketplace user would: real bids, work and settlement. The only kind of agent this repository builds.
 
-## The agent file
+## The agent files
 
-**Agent file** (`agent.json`, `AgentSpec`):
-Identity and behaviour: `role`, `model`, `character`, `dials` and optional `limits`. Strictly checked by `spec.ts`; unknown fields are refused.
+**Agent file** (`agent.json`, `AgentFile`):
+What code reads or enforces: `role`, `model`, `dials` and optional `limits`. Strictly checked by `spec.ts`; unknown fields are refused, except a stale `character`, which is ignored with a warning.
 _Avoid_: config (that means the TaskFast config), profile.
+
+**Instructions** (`agents/<id>/INSTRUCTIONS.md`):
+The user's own words that open the agent's system prompt: who it is, its business, its goals and, for posting, its budget per job. Setup writes it; the console's Briefing edits it. `AgentSpec` is the agent file plus these instructions.
+_Avoid_: character, persona.
 
 **Role:**
 `poster` (hires), `worker` (takes jobs) or `both`.
-
-**Character:**
-The person the model writes as: name, business, description, goals and, for posting, `budgetUsd` per job.
 
 **Dials:**
 `temperament` sets the system prompt's manner phrase (`prompt.ts`). `competence`, `diligence` and `priceSensitivity` must be from 0 to 1 but currently do not affect behaviour.

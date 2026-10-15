@@ -9,8 +9,8 @@ import input from "@inquirer/input";
 import password from "@inquirer/password";
 import { createAgentModels, providerSource } from "./core/model.js";
 import { credentialSetting, folderFile, PASSWORD_PATH, WALLET_PATH } from "./core/folder.js";
-import { parseAgentSpec } from "./core/spec.js";
-import type { AgentSpec, Role } from "./core/types.js";
+import { agentFile, INSTRUCTIONS_PATH, parseAgentFile, parseAgentSpec } from "./core/spec.js";
+import type { Role } from "./core/types.js";
 import { ENVIRONMENTS, taskfastEnv, type Environment } from "./run.js";
 
 // One entry of the catalogue generated from the installed pi-ai pin.
@@ -96,8 +96,22 @@ Sets up a model provider and one agent. Anything you leave out is asked.
   --init / --no-init      Run taskfast init for the agent now, or skip it
   -h, --help              Show this help`;
 
-// The example each role starts from; the user's answers replace its character.
-const EXAMPLE: Record<Role, string> = { worker: "careful-worker.json", poster: "brisk-poster.json", both: "both-sides.json" };
+// The example folder each role starts from, and its suggested goals. Setup copies the
+// example's agent.json and writes INSTRUCTIONS.md from the user's answers.
+const EXAMPLE: Record<Role, { folder: string; goals: string }> = {
+  worker: { folder: "careful-worker", goals: "do a few jobs very well and earn repeat clients" },
+  poster: { folder: "brisk-poster", goals: "get small jobs done fast at a fair price" },
+  both: { folder: "both-sides", goals: "take writing work, and hire help with research when busy" },
+};
+
+// The INSTRUCTIONS.md setup writes: the user's answers as plain sentences they can edit later.
+export function instructionsText(c: { name: string; business: string; description: string; goals: string; budgetUsd?: number }): string {
+  return [
+    `You are ${c.name}, who runs ${c.business}. ${c.description}`,
+    `What you want right now: ${c.goals}.`,
+    ...(c.budgetUsd === undefined ? [] : [`You have about $${c.budgetUsd} to spend on a single job.`]),
+  ].join("\n\n") + "\n";
+}
 const ROLES: Record<Role, string> = { worker: "Take jobs (worker)", poster: "Post jobs (poster)", both: "Both" };
 
 // How many models the menu lists; any other id can be typed.
@@ -139,8 +153,11 @@ export function installedVersion(root: string, pkg: string): string | null {
 // A setting whose value is a credential is masked while typing.
 const secret = (name: string) => /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL/.test(name);
 
-const agentProblem = (root: string, v: string) =>
-  !FOLDER.test(v) ? "use lowercase letters, digits and dashes" : existsSync(join(root, "agents", v, "agent.json")) ? `agents/${v} already has an agent.json; pick another name` : null;
+const agentProblem = (root: string, v: string) => {
+  if (!FOLDER.test(v)) return "use lowercase letters, digits and dashes";
+  const taken = ["agent.json", INSTRUCTIONS_PATH].find((file) => existsSync(join(root, "agents", v, file)));
+  return taken ? `agents/${v} already has an ${taken}; pick another name` : null;
+};
 
 // Checks every flag before setup changes anything, so a typo cannot leave a half-done
 // setup. Returns the --set values by name.
@@ -222,7 +239,7 @@ async function pickModel(io: SetupIO, p: Provider): Promise<string> {
 }
 
 // Sets up an installed provider's settings and one agent: writes .env and
-// agents/<id>/agent.json, then runs taskfast init. No package installation. Values
+// agents/<id>/agent.json and INSTRUCTIONS.md, then runs taskfast init. No package installation. Values
 // passed in `o` are used as given; the rest are asked.
 export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   const catalogue = readCatalogue(io.root);
@@ -245,7 +262,7 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   const dir = join(io.root, "agents", id);
   // Each agent keeps its own provider settings; never read the repository's .env.
   const envPath = folderFile({ agentDir: dir, path: ".env", resource: "provider settings" });
-  for (const path of ["agent.json", ".taskfast/config.json", WALLET_PATH, PASSWORD_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
+  for (const path of ["agent.json", INSTRUCTIONS_PATH, ".taskfast/config.json", WALLET_PATH, PASSWORD_PATH]) folderFile({ agentDir: dir, path, resource: "agent resource" });
   let envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   const save = (name: string, value: string) => {
     envText = upsertEnv(envText, name, credentialSetting({ agentDir: dir, name, value }));
@@ -297,17 +314,15 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   // 3. The agent.
   const role = (o.role as Role | undefined) ?? (await choose(io, "\nWhat will it do on TaskFast?", Object.keys(ROLES) as Role[], (r) => ROLES[r]));
   if (o.budget !== undefined && role === "worker") throw new Error("--budget: a worker has no budget; it applies to poster and both");
-  const example = JSON.parse(readFileSync(join(io.root, "examples", EXAMPLE[role]), "utf8")) as AgentSpec;
-  const character: AgentSpec["character"] = {
+  const example = parseAgentFile(JSON.parse(readFileSync(join(io.root, "examples", EXAMPLE[role].folder, "agent.json"), "utf8")));
+  const answers = {
     name: o.name ?? (await text(io, "Your name, as the agent signs it")),
-    businessName: o.business ?? (await text(io, "Business name")),
-    businessDescription: o.description ?? (await text(io, "What the business does, in one sentence")),
-    goals: o.goals ?? (await text(io, "What the agent should aim for", example.character.goals)),
+    business: o.business ?? (await text(io, "Business name")),
+    description: o.description ?? (await text(io, "What the business does, in one sentence")),
+    goals: o.goals ?? (await text(io, "What the agent should aim for", EXAMPLE[role].goals)),
+    ...(role === "worker" ? {} : { budgetUsd: Number(o.budget ?? (await text(io, "Budget per job in USD", String(example.limits?.perJobUsd ?? 20), (v) => (Number(v) > 0 && Number.isFinite(Number(v)) ? null : "enter a positive number")))) }),
   };
-  if (role !== "worker") {
-    character.budgetUsd = Number(o.budget ?? (await text(io, "Budget per job in USD", String(example.character.budgetUsd ?? 20), (v) => (Number(v) > 0 && Number.isFinite(Number(v)) ? null : "enter a positive number"))));
-  }
-  const spec = parseAgentSpec({ ...example, role, model, character });
+  const spec = parseAgentSpec({ ...example, role, model, instructions: instructionsText(answers) });
   const settings: Record<string, string> = {};
   for (const [name, value] of Object.entries(parseEnv(envText))) if (typeof value === "string") settings[name] = value;
   await createAgentModels(model, { agentDir: dir, settings });
@@ -316,8 +331,10 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
     writeFileSync(envPath, envText, { mode: 0o600 });
     chmodSync(envPath, 0o600);
   }
-  writeFileSync(join(dir, "agent.json"), `${JSON.stringify(spec, null, 2)}\n`);
-  io.log(`\nWrote agents/${id}/agent.json (dials, temperament and limits come from examples/${EXAMPLE[role]}; edit them there any time).`);
+  writeFileSync(join(dir, "agent.json"), `${JSON.stringify(agentFile(spec), null, 2)}\n`);
+  writeFileSync(join(dir, INSTRUCTIONS_PATH), spec.instructions);
+  io.log(`\nWrote agents/${id}/${INSTRUCTIONS_PATH} from your answers; edit it any time to change who the agent is and what it wants.`);
+  io.log(`Wrote agents/${id}/agent.json (dials, temperament and limits come from examples/${EXAMPLE[role].folder}; edit them there any time).`);
 
   // 4. The agent's TaskFast account, in the environment given by --env.
   const cliEnv = taskfastEnv(environment);

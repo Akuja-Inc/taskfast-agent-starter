@@ -1,13 +1,4 @@
-// What an agent is and how it behaves: the agent-file format (gh#1538).
-export interface Character {
-  name: string;
-  businessName: string;
-  businessDescription: string;
-  goals: string;
-  // Per-job budget when posting. A worker-only agent has none.
-  budgetUsd?: number;
-}
-
+// What an agent is and how it behaves: agent.json (gh#1538) plus the agent folder's INSTRUCTIONS.md.
 export type Role = "poster" | "worker" | "both";
 
 // Every temperament is honest. The prompt uses its manner phrase (prompt.ts MANNER).
@@ -22,15 +13,21 @@ export interface Dials {
   temperament: Temperament;
 }
 
-export interface AgentSpec {
+// agent.json: what code reads or enforces.
+export interface AgentFile {
   role: Role;
   // Pi provider and model, "provider:model" (spec.ts splitModel, model.ts). The model decides the agent's
   // actions through tool calls; code enforces the once-only rule and, if set, limits.
   model: string;
-  character: Character;
   dials: Dials;
   // The agent's own spending limits, both optional. Without them nothing is checked.
   limits?: Limits;
+}
+
+// The whole agent: agent.json plus the user's own words from INSTRUCTIONS.md, which open
+// the system prompt (prompt.ts): who the agent is, its business, goals and budget.
+export interface AgentSpec extends AgentFile {
+  instructions: string;
 }
 
 export interface Limits {

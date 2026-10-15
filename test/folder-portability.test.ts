@@ -68,7 +68,8 @@ it("restores a stopped complete agent archive with private resources, event hist
   }
   try {
     mkdirSync(join(source, ".taskfast"), { recursive: true, mode: 0o700 });
-    writeFileSync(join(source, "agent.json"), JSON.stringify({ role: "poster", model: "ollama:portable-model", character: { name: "Editor", businessName: "Editing", businessDescription: "Careful copy editing", goals: "Post the guide once", budgetUsd: 5 }, dials: { competence: 0.9, diligence: 0.9, priceSensitivity: 0.5, temperament: "patient" }, limits: { perJobUsd: 4, dailyUsd: 4 } }));
+    writeFileSync(join(source, "agent.json"), JSON.stringify({ role: "poster", model: "ollama:portable-model", dials: { competence: 0.9, diligence: 0.9, priceSensitivity: 0.5, temperament: "patient" }, limits: { perJobUsd: 4, dailyUsd: 4 } }));
+    writeFileSync(join(source, "INSTRUCTIONS.md"), "You are Editor, who runs Editing. Careful copy editing.\n\nWhat you want right now: Post the guide once.\n");
     writeFileSync(join(source, ".env"), `OLLAMA_API_KEY=synthetic-model-key\nOLLAMA_BASE_URL=http://127.0.0.1:${address.port}/v1\n`, { mode: 0o600 });
     writeFileSync(join(source, ".taskfast", "config.json"), JSON.stringify({ api_key: "synthetic-marketplace-key", agent_id: agentId, keystore_path: ".taskfast/wallet.json" }), { mode: 0o600 });
     writeFileSync(join(source, ".taskfast", "wallet.json"), JSON.stringify({ encrypted: "synthetic ciphertext" }), { mode: 0o600 });
@@ -93,7 +94,7 @@ it("restores a stopped complete agent archive with private resources, event hist
     await running;
     owned = undefined;
     const inventory = bundleFiles(source);
-    expect(inventory).toEqual(expect.arrayContaining(["agent.json", ".env", ".taskfast/config.json", ".taskfast/wallet.json", ".taskfast/wallet-password", ".pi-state/local/state.sqlite", ".pi-state/local/state.sqlite.owner"]));
+    expect(inventory).toEqual(expect.arrayContaining(["agent.json", "INSTRUCTIONS.md", ".env", ".taskfast/config.json", ".taskfast/wallet.json", ".taskfast/wallet-password", ".pi-state/local/state.sqlite", ".pi-state/local/state.sqlite.owner"]));
     const archive = join(root, "synthetic-agent.zip");
     execFileSync("zip", ["-qr", archive, "1"], { cwd: join(source, "..") });
     // Quarantine the stopped original; never run both copies.

@@ -25,7 +25,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 
 - Runs entirely on the user's local machine. Node 24 and pnpm 12.12.1 pinned in `package.json`; no separate runtime server, Bun build or generation step in the setup path. The `taskfast` CLI (0.19.0+) is the only way the agent reaches the server; each command is a child process with a restricted environment.
 - Environments: `production` (default, real money), `staging` (testnet, free test funds), `development` (local server at `127.0.0.1:4000`).
-- Each agent lives in a self-contained folder: `agents/<id>/agent.json`, private `.env`, `.taskfast/` credentials and wallet, `.pi-state/<cli-env>/state.sqlite` with WAL + `synchronous=FULL` and a single-owner lock. Local disk that honors fsync; no network filesystems.
+- Each agent lives in a self-contained folder: `agents/<id>/agent.json`, `agents/<id>/INSTRUCTIONS.md` (the agent's instructions), private `.env`, `.taskfast/` credentials and wallet, `.pi-state/<cli-env>/state.sqlite` with WAL + `synchronous=FULL` and a single-owner lock. Local disk that honors fsync; no network filesystems.
 - Wallet signing uses a user-created `agents/<id>/.taskfast/wallet-password` file (mode 0400); the host never reads or forwards the password.
 - The host (`pnpm agents`) owns stores, event streams and 15-minute polling in one process. The console is opt-in (`--console`, port 7070, per-start token, `127.0.0.1` only, reads through the running host, never the store). The TUI is a Bun client of the console API for SSH/tmux.
 - The user watches and steers agents through the console or TUI: timeline, attention alerts, pause, freeze spending, messages, standing orders, briefing editor.
@@ -54,7 +54,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 
 - Product-truth documents: `README.md`, `INTENT.md`, `CONTEXT.md`, `AGENTS.md` (repo root).
 - Real product imagery: `docs/console/*.png` (timeline, tool calls, raw event, paused+frozen, briefing, unlock, copy feedback, phone) and `docs/tui/*.png` (timeline, tool calls, confirms, paused+frozen, help, narrow layouts, can't-reach).
-- Example agent files: `examples/careful-worker.json`, `examples/brisk-poster.json`, `examples/both-sides.json`.
+- Example agent folders: `examples/careful-worker/`, `examples/brisk-poster/`, `examples/both-sides/`.
 - Provider support matrix: `docs/providers.md`; generated catalogue `providers.json`.
 - Real CLI output captures: `test/fixtures/cli/` (re-captured on contract change, never hand-edited).
 - Live agent folder in development: `agents/foo/` (private; never printed, committed or copied).

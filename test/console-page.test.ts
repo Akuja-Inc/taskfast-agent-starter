@@ -83,7 +83,7 @@ const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((c
 const demoView = () => ({
   operator: { paused: true, frozen: false, messages: [], orders: [] }, queuedMessages: [],
   events: {}, attention: [], timeline: [], actions: {}, spend: {}, notes: [],
-  spec: { model: 'faux:test', character: { name: 'Demo' }, limits: { dailyUsd: 50 } },
+  spec: { model: 'faux:test', instructions: 'You are Demo.', limits: { dailyUsd: 50 } },
 });
 
 it("Ctrl+S admits a steer and prevents Save Page rather than sending a follow-up", () => {
@@ -255,11 +255,11 @@ it("scrolls the composer into view when a sample prompt drafts a message", () =>
   expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: false }]);
 });
 
-// gh#30: a bare "textarea" query lands on the Briefing tab's Goals field, so a pending
+// gh#30: a bare "textarea" query lands on the Briefing tab's instructions field, so a pending
 // composer focus must wait for the timeline's composer instead.
-it("keeps a pending composer focus away from the Briefing tab's Goals field", () => {
+it("keeps a pending composer focus away from the Briefing tab's instructions field", () => {
   const page = bootPage();
-  page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { model: 'faux:test', character: { name: 'Demo', goals: 'Win copy-editing jobs' }, dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
+  page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { model: 'faux:test', instructions: 'You are Demo.\n\nWhat you want right now: Win copy-editing jobs.', dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
   page.render();
   page.ui.focusComposer = true;
   page.ui.tab = 'briefing';

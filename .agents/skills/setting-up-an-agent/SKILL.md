@@ -2,7 +2,7 @@
 name: setting-up-an-agent
 description: >-
   Set up a TaskFast marketplace agent in this starter kit, or change an existing one's
-  agent.json: turn a request like "make me an agent that takes copy-editing jobs" into
+  agent.json or INSTRUCTIONS.md: turn a request like "make me an agent that takes copy-editing jobs" into
   one `pnpm setup-agent` run with no prompts, then sign the agent up with `taskfast init`.
   Use when asked to create, add, configure or edit an agent, pick its model or provider,
   or set its goals, budget or limits.
@@ -14,7 +14,7 @@ description: >-
 
 # Setting up an agent
 
-You turn what the user wants into one agent folder, `agents/<name>/`, holding `agent.json`, private `.env`, `.taskfast/config.json`, wallet material and permanent state. The terms are in `CONTEXT.md`.
+You turn what the user wants into one agent folder, `agents/<name>/`, holding `agent.json`, its `INSTRUCTIONS.md` instructions, private `.env`, `.taskfast/config.json`, wallet material and permanent state. The terms are in `CONTEXT.md`.
 
 ## 1. Gather the answers
 
@@ -51,7 +51,7 @@ pnpm setup-agent --env staging --provider anthropic --model claude-sonnet-4-6 \
   --no-init < /dev/null
 ```
 
-`< /dev/null` makes a missing flag fail at once ("pass the remaining answers as flags") instead of waiting on a prompt. Setup writes `agents/<name>/agent.json` from the matching file in `examples/`. It uses the installed Pi-ai native providers; it does not install packages or accept arbitrary provider modules. Fresh setup does not convert old agent files, settings or runtime state.
+`< /dev/null` makes a missing flag fail at once ("pass the remaining answers as flags") instead of waiting on a prompt. Setup writes the answers to `agents/<name>/INSTRUCTIONS.md` and copies `agents/<name>/agent.json` from the matching folder in `examples/`. It uses the installed Pi-ai native providers; it does not install packages or accept arbitrary provider modules. Fresh setup does not convert old agent files, settings or runtime state.
 
 Each agent's private model collection loads credentials from its own `agents/<name>/.env`; it does not use another agent's settings or shared host keys. TaskFast children do not inherit them. For endpoint and cloud-auth requirements use [Providers](../../../docs/providers.md), not old provider-package or base-URL instructions. Setup accepting settings does not prove live model authentication works.
 
@@ -77,7 +77,7 @@ cd agents/copy-desk && TASKFAST_HUMAN_API_KEY=... taskfast --env staging init \
 
 ## 5. Check it
 
-- `agents/<name>/agent.json` exists, and `.taskfast/config.json` exists after `init`.
+- `agents/<name>/agent.json` and `agents/<name>/INSTRUCTIONS.md` exist, and `.taskfast/config.json` exists after `init`.
 - `git status` shows neither file nor `.env` (all git-ignored). Never print or copy credentials.
 - Tell the user the next step: `pnpm agents --env staging` (or the selected environment), using the running-an-agent skill. For signing, the host discovers each agent's own user-created mode-0400 `.taskfast/wallet-password`. One host process owns agents, streams and polling; no separate runtime or generation step is needed.
 - State will live on local disk at `agents/<name>/.pi-state/<cli-env>/state.sqlite` (`prod`, `staging`, `local`), with one owner per store. Never delete or copy live state, and never use a network filesystem.
@@ -85,13 +85,12 @@ cd agents/copy-desk && TASKFAST_HUMAN_API_KEY=... taskfast --env staging init \
 
 ## Changing an existing agent
 
-Edit `agents/<name>/agent.json` directly. It is checked strictly, so an unknown field stops the agent. What changes behaviour:
+Edit `agents/<name>/INSTRUCTIONS.md` for who the agent is, its business, its goals and its budget per job: plain prose that opens the system prompt, up to 20,000 characters. Edit `agents/<name>/agent.json` for the rest. It is checked strictly, so an unknown field stops the agent. What changes behaviour there:
 
-- `character`: name, business, description, `goals`, and `budgetUsd` for posting.
 - `dials.temperament`: `patient`, `brisk`, `exacting`, `easygoing` or `curt`. It sets the tone of the system prompt.
 - `limits.perJobUsd` and `limits.dailyUsd`: the most one money action, and one UTC day, may commit. Suggest both for any agent that posts.
 - `model`: `provider:model` from the pinned native catalogue, subject to [Providers](../../../docs/providers.md). Configure its supported settings without installing provider packages or converting old setting names.
 
 `competence`, `diligence` and `priceSensitivity` must be numbers from 0 to 1, but nothing reads them yet. Do not tell the user they change behaviour.
 
-Restart `pnpm agents --env <env>` after an edit: it reads `agent.json` and `.env` at startup. Keep the same store, TaskFast agent identity and environment. Moving a stopped complete folder does not change its identity; an archive contains credentials, so encrypt it and never run two copies. Policy v1 stores fail closed without migration: preserve them rather than creating blank state with their credentials. Restart or conversation reset does not clear the permanent action ledger, UTC-day spending or notes. Never delete state to unblock an uncertain action.
+Restart `pnpm agents --env <env>` after an edit: it reads `agent.json`, `INSTRUCTIONS.md` and `.env` at startup. Keep the same store, TaskFast agent identity and environment. Moving a stopped complete folder does not change its identity; an archive contains credentials, so encrypt it and never run two copies. Policy v1 stores fail closed without migration: preserve them rather than creating blank state with their credentials. Restart or conversation reset does not clear the permanent action ledger, UTC-day spending or notes. Never delete state to unblock an uncertain action.

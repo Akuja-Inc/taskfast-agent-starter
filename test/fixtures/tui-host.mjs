@@ -2,7 +2,7 @@
 // agent folders with real stores, a scripted model and a fake CLI. Nothing reaches a
 // TaskFast server. Runs under Node from dist/ (pnpm build); prints the console link
 // and runs until SIGTERM. Every credential and ID is synthetic.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels } from "@earendil-works/pi-ai/models";
@@ -15,9 +15,9 @@ const OTHER = "22222222-2222-4222-8222-222222222222";
 const BID = "44444444-4444-4444-8444-444444444444";
 const dir = mkdtempSync(join(tmpdir(), "tui-host-"));
 const examples = new URL("../../examples/", import.meta.url);
-for (const [id, file] of [["shop", "brisk-poster.json"], ["worker", "careful-worker.json"]]) {
+for (const [id, name] of [["shop", "brisk-poster"], ["worker", "careful-worker"]]) {
+  cpSync(new URL(name, examples), join(dir, id), { recursive: true });
   mkdirSync(join(dir, id, ".taskfast"), { recursive: true });
-  writeFileSync(join(dir, id, "agent.json"), readFileSync(new URL(file, examples)));
   writeFileSync(join(dir, id, ".taskfast", "config.json"), "{}");
   writeFileSync(join(dir, id, ".taskfast", "wallet-password"), "synthetic", { mode: 0o400 });
 }

@@ -42,7 +42,8 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
     log: (line) => void logs.push(line),
   };
   const agent = (id: string) => JSON.parse(readFileSync(join(root, "agents", id, "agent.json"), "utf8"));
-  return { root, io, asked, ran, logs, agent, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
+  const instructions = (id: string) => readFileSync(join(root, "agents", id, "INSTRUCTIONS.md"), "utf8");
+  return { root, io, asked, ran, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
 }
 const ME = ["Ada Lovelace", "Ada Analytics", "Data clean-up for small charities."];
 const worker = (init = "n") => ["1", ...ME, "", init];
@@ -90,7 +91,8 @@ describe("setup", () => {
     expect(k.env("ada")).toBe("ANTHROPIC_API_KEY=sk-ant-test123\n");
     expect(statSync(join(k.root, "agents", "ada", ".env")).mode & 0o777).toBe(0o600);
     expect(k.asked.filter((a) => a.hidden).map((a) => a.question)).toEqual([expect.stringContaining("ANTHROPIC_API_KEY")]);
-    expect(k.agent("ada")).toMatchObject({ model: `anthropic:${entry("anthropic").defaultModel}`, role: "worker", character: { name: ME[0], businessName: ME[1], businessDescription: ME[2] } });
+    expect(k.agent("ada")).toEqual({ ...JSON.parse(readFileSync(join(ROOT, "examples", "careful-worker", "agent.json"), "utf8")), model: `anthropic:${entry("anthropic").defaultModel}` });
+    expect(k.instructions("ada")).toBe(`You are ${ME[0]}, who runs ${ME[1]}. ${ME[2]}\n\nWhat you want right now: do a few jobs very well and earn repeat clients.\n`);
     expect(k.ran).toEqual([{ cmd: "taskfast", args: ["init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "ada") }]);
     expect(k.logs).toContain("Environment: production (pass --env staging or --env development to change it)\n");
     expect(k.logs.join("\n")).not.toContain("sk-ant-test123");
@@ -113,7 +115,9 @@ describe("setup", () => {
     await k.run({ ...ALL, set: ["ANTHROPIC_API_KEY"], env: "staging" });
     expect(k.asked).toEqual([]);
     expect(k.env()).toBe("ANTHROPIC_API_KEY=key-from-environment\n");
-    expect(k.agent("flagged")).toMatchObject({ role: "poster", model: "anthropic:claude-sonnet-5-5", character: { budgetUsd: 40 } });
+    expect(k.agent("flagged")).toMatchObject({ role: "poster", model: "anthropic:claude-sonnet-5-5" });
+    expect(k.agent("flagged")).not.toHaveProperty("character");
+    expect(k.instructions("flagged")).toBe(`You are ${ME[0]}, who runs ${ME[1]}. ${ME[2]}\n\nWhat you want right now: hire well.\n\nYou have about $40 to spend on a single job.\n`);
     expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "flagged") }]);
     expect(k.logs.join("\n")).not.toContain("key-from-environment");
   });
@@ -179,7 +183,8 @@ describe("setup", () => {
   it("selects a model by number and asks a poster budget, with only TaskFast as a child command", async () => {
     const k = kit(["moonshotai", "shop", "mk-test", "2", "2", ...ME, "", "35", ""]);
     await k.run({ env: "staging" });
-    expect(k.agent("shop")).toMatchObject({ role: "poster", model: `moonshotai:${entry("moonshotai").models[1]}`, character: { budgetUsd: 35 } });
+    expect(k.agent("shop")).toMatchObject({ role: "poster", model: `moonshotai:${entry("moonshotai").models[1]}` });
+    expect(k.instructions("shop")).toContain("You have about $35 to spend on a single job.");
     expect(k.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"], cwd: join(k.root, "agents", "shop") }]);
   });
 
@@ -286,13 +291,17 @@ describe("setup", () => {
   });
 
   it("reprompts wrong choices, stale models, taken folders and bad keys; describes failed init", async () => {
-    const k = kit(["0", "nosuch", "anthropic", "taken", "fresh", "has space", "sk-ok", "not-in-the-pin", "", "1", ...ME, "", ""], { runStatus: 1 });
+    const k = kit(["0", "nosuch", "anthropic", "taken", "notes", "fresh", "has space", "sk-ok", "not-in-the-pin", "", "1", ...ME, "", ""], { runStatus: 1 });
     mkdirSync(join(k.root, "agents", "taken"), { recursive: true });
     writeFileSync(join(k.root, "agents", "taken", "agent.json"), "{}");
+    mkdirSync(join(k.root, "agents", "notes"), { recursive: true });
+    writeFileSync(join(k.root, "agents", "notes", "INSTRUCTIONS.md"), "someone's instructions");
     await k.run();
     expect(k.logs.filter((l) => l === `Enter a number from 1 to ${CATALOGUE.length}.`)).toHaveLength(2);
     expect(k.logs).toContain("that value has spaces, quotes, backslashes or #");
     expect(k.logs).toContain("agents/taken already has an agent.json; pick another name");
+    expect(k.logs).toContain("agents/notes already has an INSTRUCTIONS.md; pick another name");
+    expect(readFileSync(join(k.root, "agents", "notes", "INSTRUCTIONS.md"), "utf8")).toBe("someone's instructions");
     expect(existsSync(join(k.root, "agents", "fresh", "agent.json"))).toBe(true);
     expect(k.logs.join("\n")).toContain("taskfast init did not finish.");
     expect(k.ran.map((r) => r.cmd)).toEqual(["taskfast"]);

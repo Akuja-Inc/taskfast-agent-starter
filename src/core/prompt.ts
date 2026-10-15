@@ -14,7 +14,7 @@ export const MARKET: Record<Role, string> = {
   both: "You hire people for some jobs and take on work yourself through a freelance marketplace",
 };
 
-// The whole system prompt: the character, the agent's own notes, then the user's
+// The whole system prompt: the instructions, the agent's own notes, then the user's
 // standing orders, which the agent cannot change.
 export function marketplacePrompt(spec: AgentSpec, notes: readonly string[], orders: readonly string[]): string {
   return buildSystemPrompt(spec)
@@ -22,13 +22,11 @@ export function marketplacePrompt(spec: AgentSpec, notes: readonly string[], ord
     + (orders.length ? `\nYour operator's standing orders:\n${orders.map((order) => `- ${order}`).join("\n")}` : "");
 }
 
-// In-character only. Reads the character, the role and the temperament's manner
-// phrase; the numeric dials are never interpolated.
-export function buildSystemPrompt({ role, character: c, dials }: AgentSpec): string {
+// In-character only. Reads the user's instructions, the role and the temperament's
+// manner phrase; the numeric dials are never interpolated.
+export function buildSystemPrompt({ role, instructions, dials }: AgentSpec): string {
   return [
-    `You are ${c.name}, who runs ${c.businessName}. ${c.businessDescription}`,
-    `What you want right now: ${c.goals}.`,
-    ...(role !== "worker" && c.budgetUsd !== undefined ? [`You have about $${c.budgetUsd} to spend on a single job.`] : []),
+    instructions.trim(),
     `You are ${MANNER[dials.temperament]}.`,
     `${MARKET[role]}, writing the way you normally would.`,
   ].join("\n");
