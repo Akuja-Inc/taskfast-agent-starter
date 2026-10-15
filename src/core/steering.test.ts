@@ -5,7 +5,8 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, expect, it } from "vitest";
-import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
+import { openMarketplaceAgent, type AgentOptions, type MarketplaceAgent } from "./agent.js";
+import { openAgentStorage } from "./storage.js";
 import type { CliResult } from "./cli.js";
 import { MESSAGE_PREFIX, Operator } from "./operator.js";
 import { parseAgentSpec } from "./spec.js";
@@ -27,6 +28,7 @@ async function open(options: {
   dir?: string;
   faux?: ReturnType<typeof fauxProvider>;
   command?: (args: string[]) => Promise<CliResult>;
+  openStorage?: AgentOptions["openStorage"];
 } = {}) {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), "steering-"));
   if (!dirs.includes(dir)) dirs.push(dir);
@@ -38,7 +40,7 @@ async function open(options: {
     storePath: join(dir, "state.sqlite"),
     spec: { ...parseAgentSpec(value), model: "faux:test" },
     runtime: { env: "staging", configPath: join(dir, "config.json") },
-    models, recoverEveryMs: 60_000,
+    models, recoverEveryMs: 60_000, openStorage: options.openStorage,
     command: async (_runtime, args): Promise<CliResult> => {
       if (args[0] === "me") return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
       return options.command ? options.command(args) : { outcome: "ok", data: {} };
@@ -327,4 +329,170 @@ it("makes queued operator work progress after the busy model run fails", async (
   expect(prompts.some((prompt) => prompt.includes("Do not strand this follow-up."))).toBe(true);
   expect(await operatorInputs(kit.agent)).toEqual([MESSAGE_PREFIX + "Do not strand this follow-up."]);
   expect(await kit.agent.operator.queued()).toEqual([]);
+});
+
+
+it("withdraws buffered follow-ups and steers durably, without resurrecting a retried send", async () => {
+  const kit = await open();
+  await kit.agent.operator.setPaused(true);
+  await kit.agent.operator.message({ requestId: "remove-followup", text: "Do not deliver this follow-up." });
+  await kit.agent.operator.message({ requestId: "remove-steer", text: "Do not deliver this steer.", steer: true });
+  await kit.agent.operator.message({ requestId: "keep", text: "Keep this message." });
+  expect(await kit.agent.operator.withdraw("unknown")).toBe("not_found");
+  expect(await Promise.all([kit.agent.operator.withdraw("remove-followup"), kit.agent.operator.withdraw("remove-followup")])).toEqual(["withdrawn", "withdrawn"]);
+  expect(await kit.agent.operator.withdraw("remove-steer")).toBe("withdrawn");
+  await kit.agent.close();
+  const reopened = await open({ dir: kit.dir });
+  await expect(openAgentStorage(join(kit.dir, "state.sqlite"))).rejects.toThrow(/already owned/);
+  expect(await reopened.agent.operator.withdraw("remove-followup")).toBe("withdrawn");
+  await reopened.agent.operator.message({ requestId: "remove-followup", text: "Retried original send." });
+  await reopened.agent.operator.message({ requestId: "remove-steer", text: "Retried steer.", steer: true });
+  expect(await reopened.agent.operator.steer("remove-followup")).toBe("not_found");
+  expect(await reopened.agent.operator.queued()).toEqual([{ requestId: "keep", text: "Keep this message.", mode: "followUp" }]);
+  expect((await reopened.agent.operator.state()).queuedOrder).toEqual(["keep"]);
+  reopened.faux.setResponses([fauxAssistantMessage("Only kept work runs.")]);
+  await reopened.agent.operator.setPaused(false);
+  await reopened.agent.waitForIdle();
+  expect(await operatorInputs(reopened.agent)).toEqual([MESSAGE_PREFIX + "Keep this message."]);
+  expect(await reopened.agent.operator.withdraw("keep")).toBe("already_placed");
+});
+
+it("never acknowledges a failed withdrawal commit and retains the message after reopening", async () => {
+  let armed = false;
+  const kit = await open({ openStorage: async (file) => {
+    const storage = await openAgentStorage(file);
+    return new Proxy(storage, {
+      get(target, key) {
+        if (key === "commit") return (async (...args: Parameters<typeof storage.commit>) => {
+          if (armed) throw new Error("injected withdrawal commit failure");
+          return storage.commit(...args);
+        });
+        const value: unknown = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  } });
+  await kit.agent.operator.setPaused(true);
+  await kit.agent.operator.message({ requestId: "retry", text: "Retain me until withdrawal commits." });
+  armed = true;
+  await expect(kit.agent.operator.withdraw("retry")).rejects.toThrow();
+  await kit.agent.closed;
+  const reopened = await open({ dir: kit.dir });
+  expect(await reopened.agent.operator.queued()).toEqual([{ requestId: "retry", text: "Retain me until withdrawal commits.", mode: "followUp" }]);
+  expect((await reopened.agent.operator.state()).withdrawn ?? {}).not.toHaveProperty("retry");
+  expect(await reopened.agent.operator.withdraw("retry")).toBe("withdrawn");
+  await reopened.agent.close();
+  const last = await open({ dir: kit.dir });
+  expect(await last.agent.operator.queued()).toEqual([]);
+  expect(await last.agent.operator.withdraw("retry")).toBe("withdrawn");
+});
+
+it("atomically withdraws busy Pi inbox follow-ups, direct steers and promoted steers", async () => {
+  const entered = marker(), release = marker();
+  const kit = await open({ command: async () => { entered.resolve(); await release.promise; return { outcome: "ok", data: {} }; } });
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("wallet_balance", {})], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Finish only the current work."),
+  ]);
+  await kit.agent.ping(); await entered.promise;
+  try {
+    for (const requestId of ["followup", "direct", "promoted"]) {
+      await kit.agent.operator.message({ requestId, text: "Withdraw " + requestId, ...(requestId === "direct" ? { steer: true } : {}) });
+    }
+    expect(await kit.agent.operator.steer("promoted")).toBe("steered");
+    for (const requestId of ["followup", "direct", "promoted"]) expect(await kit.agent.operator.withdraw(requestId)).toBe("withdrawn");
+    expect(await kit.agent.operator.queued()).toEqual([]);
+  } finally { release.resolve(); }
+  await kit.agent.waitForIdle();
+  expect(await operatorInputs(kit.agent)).toEqual([]);
+  await kit.agent.close();
+  const reopened = await open({ dir: kit.dir });
+  reopened.faux.setResponses([fauxAssistantMessage("A new check-in.")]);
+  await reopened.agent.ping(); await reopened.agent.waitForIdle();
+  expect(await operatorInputs(reopened.agent)).toEqual([]);
+  expect(await reopened.agent.operator.queued()).toEqual([]);
+});
+
+for (const stage of ["intent", "aborted", "replacement"] as const) {
+  it(`withdraws an interrupted promotion at ${stage} without leaving a recoverable half-promotion`, async () => {
+    const entered = marker(), release = marker();
+    const kit = await open({ command: async () => { entered.resolve(); await release.promise; return { outcome: "ok", data: {} }; } });
+    kit.faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("wallet_balance", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage("Current work finishes."),
+    ]);
+    await kit.agent.ping(); await entered.promise;
+    try {
+      const original = await kit.agent.conversation.submit({ type: "input", requestId: "operator:partial", content: MESSAGE_PREFIX + "Never deliver this correction.", whenBusy: "followUp" }, context);
+      await kit.agent.operator.setPaused(true);
+      await kit.agent.conversation.commit(async (tx) => {
+        const state = await tx.doc(Operator);
+        state.pendingSteers = { partial: { submission: original.id, text: "Never deliver this correction." } };
+        // A crash between submit and buffer cleanup can leave this duplicate.
+        state.messages = [{ requestId: "partial", text: "Never deliver this correction." }];
+        state.queuedOrder = ["partial"];
+      }, context);
+      if (stage !== "intent") expect(await original.abort(context)).toBe("aborted");
+      if (stage === "replacement") await kit.agent.conversation.submit({ type: "input", requestId: "operator-steer:partial", content: MESSAGE_PREFIX + "Never deliver this correction.", whenBusy: "steer" }, context);
+      expect(await kit.agent.operator.withdraw("partial")).toBe("withdrawn");
+      expect((await original.status(context))).toMatchObject({ status: "unanswered", reason: "aborted" });
+      expect(await original.wait(context)).toMatchObject({ status: "unanswered", reason: "aborted" });
+      expect((await kit.agent.operator.state()).pendingSteers).toEqual({});
+      expect(await kit.agent.operator.queued()).toEqual([]);
+    } finally { release.resolve(); }
+    await kit.agent.waitForIdle(); await kit.agent.close();
+    const reopened = await open({ dir: kit.dir });
+    reopened.faux.setResponses([fauxAssistantMessage("Only a fresh check-in.")]);
+    await reopened.agent.operator.setPaused(false);
+    await reopened.agent.ping(); await reopened.agent.waitForIdle();
+    expect(await operatorInputs(reopened.agent)).toEqual([]);
+    expect(await reopened.agent.operator.withdraw("partial")).toBe("withdrawn");
+  });
+}
+
+it("refuses withdrawal when a promoted replacement was already received despite a lingering intent", async () => {
+  const entered = marker(), release = marker();
+  const kit = await open({ command: async () => { entered.resolve(); await release.promise; return { outcome: "ok", data: {} }; } });
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("wallet_balance", {})], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Received the promoted correction."),
+  ]);
+  await kit.agent.ping(); await entered.promise;
+  try {
+    const original = await kit.agent.conversation.submit({ type: "input", requestId: "operator:received-steer", content: MESSAGE_PREFIX + "Already promoted.", whenBusy: "followUp" }, context);
+    await kit.agent.conversation.commit(async (tx) => {
+      (await tx.doc(Operator)).pendingSteers = { "received-steer": { submission: original.id, text: "Already promoted." } };
+    }, context);
+    await original.abort(context);
+    await kit.agent.conversation.submit({ type: "input", requestId: "operator-steer:received-steer", content: MESSAGE_PREFIX + "Already promoted.", whenBusy: "steer" }, context);
+  } finally { release.resolve(); }
+  await kit.agent.waitForIdle();
+  expect(await kit.agent.operator.withdraw("received-steer")).toBe("already_placed");
+  expect((await kit.agent.operator.state()).withdrawn ?? {}).not.toHaveProperty("received-steer");
+  expect(await operatorInputs(kit.agent)).toEqual([MESSAGE_PREFIX + "Already promoted."]);
+  await kit.agent.recover();
+  expect((await kit.agent.operator.state()).pendingSteers).toEqual({});
+});
+
+it("reports the actual winner when withdrawal races Pi placement, never a false withdrawal", async () => {
+  const entered = marker(), release = marker();
+  const kit = await open({ command: async () => { entered.resolve(); await release.promise; return { outcome: "ok", data: {} }; } });
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("wallet_balance", {})], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Finished the tool round."),
+    fauxAssistantMessage("Processed the follow-up if placement won."),
+  ]);
+  await kit.agent.ping(); await entered.promise;
+  await kit.agent.operator.message({ requestId: "race", text: "Race the boundary." });
+  release.resolve();
+  const result = await kit.agent.operator.withdraw("race");
+  expect(["withdrawn", "already_placed"]).toContain(result);
+  await kit.agent.waitForIdle();
+  expect(await operatorInputs(kit.agent)).toEqual(result === "withdrawn" ? [] : [MESSAGE_PREFIX + "Race the boundary."]);
+  // A definitely placed input is never reported as withdrawn, even after completion.
+  kit.faux.setResponses([fauxAssistantMessage("Received it.")]);
+  await kit.agent.operator.message({ requestId: "placed", text: "Already received." });
+  await kit.agent.waitForIdle();
+  expect(await kit.agent.operator.withdraw("placed")).toBe("already_placed");
+  expect((await kit.agent.operator.state()).withdrawn ?? {}).not.toHaveProperty("placed");
 });

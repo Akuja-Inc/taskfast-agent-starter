@@ -154,10 +154,12 @@ textarea::placeholder { color: var(--muted); }
 .queue-when { font-weight: 400; color: var(--muted); }
 .queue-text { grid-row: 2; }
 .queue-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.queue-promote { grid-column: 2; grid-row: 1 / 3; }
+.queue-actions { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; gap: 8px; }
+.queue-actions button { justify-content: center; }
+@media (max-width: 640px) { .queue-row { grid-template-columns: minmax(0, 1fr); } .queue-actions { grid-column: 1; grid-row: 3; flex-direction: row; flex-wrap: wrap; } }
 .queue-error { grid-column: 1 / -1; }
 .queue-error:empty, .queue-notice:empty { display: none; }
-button:disabled, .queue-promote[aria-disabled="true"] { cursor: wait; opacity: .6; }
+button:disabled, .queue-actions button[aria-disabled="true"] { cursor: wait; opacity: .6; }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
 /* The rail: marks beside the turns, sized from --composer-space to end above the pinned composer. --under-band clears the sticky band. */
@@ -204,7 +206,7 @@ const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { 
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
 let list = null, view = null;
 
 function el(tag, attrs, ...children) {
@@ -699,7 +701,9 @@ const promotionKey = (agent, requestId) => agent + "/" + requestId;
 async function promoteMessage(requestId, agent) {
   const key = promotionKey(agent, requestId);
   const previous = ui.promotions.get(key);
-  if (previous && (previous.pending || previous.done)) return;
+  const withdrawal = ui.withdrawals.get(key);
+  if ((previous && (previous.pending || previous.done)) || (withdrawal && (withdrawal.pending || withdrawal.done))) return;
+  if (withdrawal) withdrawal.error = "";
   const state = { pending: true, done: false, error: "" };
   ui.promotions.set(key, state);
   ui.notices.delete(agent);
@@ -719,11 +723,34 @@ async function promoteMessage(requestId, agent) {
     } else state.error = "Could not steer this message. Try again. " + error.message;
   } finally { state.pending = false; render(); }
 }
+async function withdrawMessage(requestId, agent) {
+  const key = promotionKey(agent, requestId);
+  const previous = ui.withdrawals.get(key), promotion = ui.promotions.get(key);
+  if ((previous && (previous.pending || previous.done)) || (promotion && promotion.pending)) return;
+  if (promotion) promotion.error = "";
+  const state = { pending: true, done: false, error: "" };
+  ui.withdrawals.set(key, state);
+  ui.notices.delete(agent);
+  render();
+  try {
+    await api("DELETE", "/api/agents/" + encodeURIComponent(agent) + "/messages/" + encodeURIComponent(requestId));
+    state.done = true;
+    ui.notices.set(agent, "Message withdrawn.");
+    await refresh();
+  } catch (error) {
+    // Placement may win before this visible row's withdrawal reaches the host.
+    if (error.status === 409 || error.status === 404) {
+      state.done = true;
+      ui.notices.set(agent, "The agent already has this message.");
+      await refresh();
+    } else state.error = "Could not withdraw this message. Try again. " + error.message;
+  } finally { state.pending = false; render(); }
+}
 let queueTextIds = 0;
 function queueRow(message) {
   const row = el("div", { class: "card queue-row", role: "listitem", "data-request-id": message.requestId },
     el("div", { class: "queue-mode" }), el("div", { class: "queue-text", id: "queue-text-" + ++queueTextIds }),
-    el("div", { class: "error queue-error", role: "status" }));
+    el("div", { class: "queue-actions" }), el("div", { class: "error queue-error", role: "status" }));
   updateQueueRow(row, message);
   return row;
 }
@@ -734,16 +761,25 @@ function updateQueueRow(row, message) {
   row.querySelector(".queue-mode").replaceChildren(el("span", { class: "sr-only", text: "Queued " }), modeLabel(message.mode), el("span", { class: "queue-when", text: " · " + when }));
   const text = row.querySelector(".queue-text");
   if (text.textContent !== message.text) text.textContent = message.text;
-  const state = ui.promotions.get(promotionKey(ui.agent, message.requestId));
-  row.querySelector(".queue-error").textContent = state ? state.error : "";
+  const key = promotionKey(ui.agent, message.requestId), agent = ui.agent;
+  const state = ui.promotions.get(key), withdrawal = ui.withdrawals.get(key);
+  row.querySelector(".queue-error").textContent = (withdrawal && withdrawal.error) || (state && state.error) || "";
+  const actions = row.querySelector(".queue-actions");
+  let withdraw = row.querySelector(".queue-withdraw");
+  if (!withdraw) {
+    withdraw = el("button", { type: "button", class: "queue-withdraw", "aria-describedby": text.getAttribute("id"), onclick: () => withdrawMessage(message.requestId, agent) });
+    actions.append(withdraw);
+  }
+  withdraw.textContent = withdrawal && withdrawal.pending ? "Withdrawing…" : withdrawal && withdrawal.done ? "Withdrawn" : "Withdraw";
+  withdraw.setAttribute("aria-disabled", String(!!((withdrawal && (withdrawal.pending || withdrawal.done)) || (state && state.pending))));
   let button = row.querySelector(".queue-promote");
   if (message.mode === "followUp") {
-    if (!button) { const agent = ui.agent; button = el("button", { type: "button", class: "queue-promote", "aria-describedby": text.getAttribute("id"), onclick: () => promoteMessage(message.requestId, agent) }); row.append(button); }
+    if (!button) { button = el("button", { type: "button", class: "queue-promote", "aria-describedby": text.getAttribute("id"), onclick: () => promoteMessage(message.requestId, agent) }); actions.insertBefore(button, withdraw); }
     button.textContent = state && state.pending ? "Steering…" : state && state.done ? "Sent" : "Steer";
-    // aria-disabled, not disabled: disabling the focused button would drop keyboard
-    // focus to the page. promoteMessage already ignores a pending or finished click.
-    button.setAttribute("aria-disabled", String(!!(state && (state.pending || state.done))));
-  } else if (button) { if (document.activeElement === button) row.closest("section").focus(); button.remove(); }
+    // aria-disabled keeps focused controls in the keyboard order. Both handlers
+    // ignore duplicate clicks and serialize this row's two actions.
+    button.setAttribute("aria-disabled", String(!!((state && (state.pending || state.done)) || (withdrawal && (withdrawal.pending || withdrawal.done)))));
+  } else if (button) { if (document.activeElement === button) withdraw.focus({ preventScroll: true }); button.remove(); }
 }
 // No band: each waiting row is muted and marked "Queued" at its top right. The
 // section stays in the page, hidden while empty, so a stream update can fill it in
@@ -758,18 +794,24 @@ function updateQueuedMessages() {
   const section = document.querySelector("#queued-messages");
   if (!section || !view || ui.tab !== "timeline" || section.getAttribute("data-agent") !== ui.agent) return;
   const rows = section.querySelector(".queued-rows"), queue = view.queuedMessages;
-  const hadFocus = section.contains(document.activeElement);
-  const existing = new Map([...rows.children].map((row) => [row.getAttribute("data-request-id"), row]));
+  const oldRows = [...rows.children], focusedIndex = oldRows.findIndex((row) => row.contains(document.activeElement));
+  const existing = new Map(oldRows.map((row) => [row.getAttribute("data-request-id"), row]));
   const ids = new Set(queue.map((message) => message.requestId));
-  for (const [id, row] of existing) if (!ids.has(id)) { if (row.contains(document.activeElement)) section.focus(); row.remove(); }
+  const focusRemoved = focusedIndex >= 0 && !ids.has(oldRows[focusedIndex].getAttribute("data-request-id"));
+  for (const [id, row] of existing) if (!ids.has(id)) row.remove();
   queue.forEach((message, index) => {
     const row = existing.get(message.requestId) || queueRow(message);
     updateQueueRow(row, message);
     if (rows.children[index] !== row) rows.insertBefore(row, rows.children[index] || null);
   });
   section.hidden = !queue.length;
-  // A hidden section cannot hold focus. The composer is the next visible control.
-  if (section.hidden && hadFocus) document.querySelector("form.composer textarea").focus({ preventScroll: true });
+  // Recover focus only when its row left the queue. Prefer the next row, then
+  // the previous one, and never strand focus on a section or a hidden control.
+  if (focusRemoved) {
+    const neighbor = rows.children[Math.min(focusedIndex, rows.children.length - 1)];
+    const control = neighbor ? neighbor.querySelector(".queue-withdraw") : document.querySelector("form.composer textarea");
+    if (control) control.focus({ preventScroll: true });
+  }
   document.querySelector(".queue-notice").textContent = ui.notices.get(ui.agent) || "";
 }
 

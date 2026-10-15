@@ -6,7 +6,7 @@ import type { ConsoleView } from "../src/console.js";
 import { initialOperator, MESSAGE_PREFIX } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { buildTimeline } from "../src/core/timeline.js";
-import { actionError, initialUi, messageAttempt, messageBody, press, setField, type Effect, type Ui } from "../src/tui/keys.js";
+import { actionError, initialUi, messageAttempt, messageBody, press, setField, withdrawnSelection, type Effect, type Ui } from "../src/tui/keys.js";
 import { parseLink } from "../src/tui/link.js";
 import { clean, screen } from "../src/tui/screen.js";
 import { example } from "./example.js";
@@ -165,8 +165,53 @@ it("keeps the attempted message ID and mode on retry, never sends steer:false", 
   expect(messageAttempt(first, "Changed text", "followUp", "new")).toEqual({ requestId: "new", text: "Changed text", mode: "followUp" });
 });
 
-it("turns only promotion 404 and 409 races into the exact late-message notice", () => {
-  for (const status of [404, 409]) expect(actionError("steer/selected-id", status, "Queued message not found.")).toBe("The agent already has this message.");
+it("withdraws either queued mode by selected ID, never a replacement row", () => {
+  const view = fixtureView();
+  view.queuedMessages = [
+    { requestId: "earlier", text: "Earlier", mode: "followUp" },
+    { requestId: "chosen / id", text: "Chosen", mode: "followUp" },
+    { requestId: "steer", text: "Steer", mode: "steer" },
+  ];
+  const k = keys(view);
+  expect(k.run("w")).toEqual([]);
+  k.run("tab", "tab", "j");
+  view.queuedMessages.shift();
+  expect(k.run("w")).toEqual([{ kind: "call", method: "DELETE", action: "messages/chosen%20%2F%20id" }]);
+  view.queuedMessages.shift();
+  expect(k.run("w")).toEqual([{ kind: "notice", text: "The agent already has this message." }]);
+  expect(k.ui.queuedRequestId).toBe("chosen / id");
+  k.run("j");
+  expect(k.run("w")).toEqual([{ kind: "call", method: "DELETE", action: "messages/steer" }]);
+  expect(press({ ...k.ui, tab: "briefing" }, "w", view, 1).effect).toBeUndefined();
+  expect(press({ ...k.ui, editing: "message", messageText: "draft" }, "w", view, 1).effect).toBeUndefined();
+});
+
+it("moves successful withdrawal focus to a visible neighbor or the timeline, without overriding navigation", () => {
+  const before: ConsoleView["queuedMessages"] = [
+    { requestId: "first", text: "First", mode: "followUp" },
+    { requestId: "middle", text: "Middle", mode: "steer" },
+    { requestId: "last", text: "Last", mode: "followUp" },
+  ];
+  const ui: Ui = { ...initialUi(), panel: "queue", sidebar: true, queuedRequestId: "middle" };
+  const after = before.filter((row) => row.requestId !== "middle");
+  expect(withdrawnSelection(ui, "middle", before, after)).toMatchObject({ panel: "queue", queuedRequestId: "last" });
+  // Live updates may have removed both the selected row and its next neighbor before the ACK.
+  expect(withdrawnSelection(ui, "middle", before, after.slice(0, 1))).toMatchObject({ panel: "queue", queuedRequestId: "first" });
+  expect(withdrawnSelection({ ...ui, queuedRequestId: "last" }, "last", before, after.slice(0, 1))).toMatchObject({ queuedRequestId: "first" });
+  expect(withdrawnSelection(ui, "middle", before, [])).toMatchObject({ panel: "timeline", queuedRequestId: undefined });
+  const moved = { ...ui, queuedRequestId: "first" };
+  expect(withdrawnSelection(moved, "middle", before, after)).toEqual(moved);
+  const timeline: Ui = { ...ui, panel: "timeline" };
+  expect(withdrawnSelection(timeline, "middle", before, after)).toEqual(timeline);
+});
+
+it("turns only promotion and withdrawal 404 and 409 races into the exact late-message notice", () => {
+  for (const status of [404, 409]) {
+    expect(actionError("steer/selected-id", status, "Queued message not found.")).toBe("The agent already has this message.");
+    expect(actionError("messages/selected-id", status, "Cannot withdraw.")).toBe("The agent already has this message.");
+  }
+  expect(actionError("messages/selected-id", undefined, "Connection lost")).toBe("Connection lost");
+  expect(actionError("messages/selected-id", 500, "Try again")).toBe("Try again");
   expect(actionError("orders/1", 404, "Order missing")).toBe("Order missing");
   expect(actionError("steer/selected-id", 500, "Try again")).toBe("Try again");
 });

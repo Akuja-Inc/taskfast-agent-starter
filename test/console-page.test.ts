@@ -41,7 +41,8 @@ class FakeNode {
   querySelector(selector: string): FakeNode | null { return this.querySelectorAll(selector)[0] || null; }
   closest(selector: string): FakeNode | null { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; }
   focusCalls: ({ preventScroll?: boolean } | null)[] = [];
-  focus(options?: { preventScroll?: boolean }) { this.focusCalls.push(options ?? null); }
+  onFocus?: () => void;
+  focus(options?: { preventScroll?: boolean }) { this.focusCalls.push(options ?? null); this.onFocus?.(); }
   scrollIntoView() {}
   cloneNode() {
     const copy = new FakeNode(this.tagName);
@@ -60,7 +61,7 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   const storage = { getItem: () => null, setItem() {}, removeItem() {} };
   const fakeDocument = {
     getElementById: () => app,
-    createElement: (tag: string) => new FakeNode(tag),
+    createElement: (tag: string) => { const node = new FakeNode(tag); node.onFocus = () => { fakeDocument.activeElement = node; }; return node; },
     createElementNS: () => new FakeNode("svg"),
     activeElement: null as FakeNode | null,
     body: new FakeNode("body"),
@@ -71,14 +72,14 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
     "addEventListener", "ResizeObserver", "fetch", "matchMedia",
-    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, render, ui, document, app, unlock, submitMessage, promoteMessage, viaLabel, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop'; following.up = true; } };`,
+    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, render, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop'; following.up = true; } };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
     fetch, () => ({ matches: false }),
-  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
+  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
@@ -131,7 +132,16 @@ it("shows the oldest-first mixed queue outside the sticky composer, with Steer o
   const all = nodes(tab);
   const queue = all.find((node) => node.getAttribute('id') === 'queued-messages');
   expect(queue).toBeDefined();
-  expect(nodes(queue!).filter((node) => node.tagName === 'BUTTON')).toHaveLength(1);
+  expect(nodes(queue!).filter((node) => node.tagName === 'BUTTON')).toHaveLength(3);
+  expect(queue!.querySelectorAll('.queue-promote')).toHaveLength(1);
+  expect(queue!.querySelectorAll('.queue-withdraw')).toHaveLength(2);
+  for (const row of queue!.querySelectorAll('.queue-row')) {
+    const withdraw = row.querySelector('.queue-withdraw')!;
+    expect(withdraw.textContent).toBe('Withdraw');
+    expect(withdraw.getAttribute('type')).toBe('button');
+    expect(withdraw.getAttribute('aria-describedby')).toBe(row.querySelector('.queue-text')!.getAttribute('id'));
+    expect(withdraw.getAttribute('aria-disabled')).toBe('false');
+  }
   expect(nodes(queue!).filter((node) => node.getAttribute('class') === 'queue-text').map((node) => node.children)).toEqual([
     ['<img src=x onerror=alert(1)>'], ['Go next'],
   ]);
@@ -222,6 +232,166 @@ it("keeps failed promotions retryable without marking the draft send failed", as
   await page.promoteMessage('first', 'shop'); expect(posts).toBe(2);
 });
 
+it("withdraws either queue mode with one body-free DELETE and preserves an edited composer", async () => {
+  for (const mode of ['followUp', 'steer']) {
+    const requests: { path: string; init: RequestInit }[] = []; let finish!: (response: Response) => void;
+    const page = bootPage((path, init) => {
+      const request = init as RequestInit;
+      if (request.method === 'DELETE') { requests.push({ path: String(path), init: request }); return new Promise<Response>((resolve) => { finish = resolve; }); }
+      return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] })));
+    });
+    const message = { requestId: 'stable/id', text: 'Withdraw this', mode };
+    page.setView({ ...demoView(), queuedMessages: [message] }); page.render();
+    const textarea = page.app.querySelector('form.composer textarea')!, button = page.app.querySelector('.queue-withdraw')!;
+    page.document.activeElement = textarea; textarea.value = page.ui.draft = 'Unrelated draft'; textarea.selectionStart = 2; textarea.selectionEnd = 6;
+    const first = page.withdrawMessage('stable/id', 'shop'), second = page.withdrawMessage('stable/id', 'shop');
+    button.listeners.click[0]({});
+    expect(requests).toHaveLength(1);
+    expect(requests[0].path).toBe('/api/agents/shop/messages/stable%2Fid');
+    expect(requests[0].init.body).toBeUndefined(); expect(requests[0].init.headers).not.toHaveProperty('content-type');
+    expect(button.getAttribute('aria-disabled')).toBe('true'); expect(button.disabled).toBe(false); expect(button.textContent).toBe('Withdrawing…');
+    textarea.listeners.input[0]({ target: { value: 'Newer draft' } }); textarea.value = 'Newer draft';
+    finish(new Response(null, { status: 204 })); await Promise.all([first, second]);
+    expect(page.app.querySelector('.queue-notice')?.textContent).toBe('Message withdrawn.');
+    expect(page.app.querySelector('.message-status')?.textContent).toBe('');
+    expect(page.ui.draft).toBe('Newer draft'); expect(page.app.querySelector('textarea')).toBe(textarea);
+    expect([textarea.value, textarea.selectionStart, textarea.selectionEnd]).toEqual(['Newer draft', 2, 6]);
+    await page.withdrawMessage('stable/id', 'shop'); expect(requests).toHaveLength(1);
+    page.setView(demoView()); page.render(); expect(page.app.querySelectorAll('.queue-row')).toHaveLength(0);
+  }
+});
+
+it("keeps offline withdrawal retryable with the same ID, including a lost success acknowledgement", async () => {
+  const paths: string[] = [];
+  const page = bootPage((path, init) => {
+    if ((init as RequestInit).method === 'DELETE') {
+      paths.push(String(path));
+      return paths.length === 1 ? Promise.reject(new Error('offline')) : Promise.resolve(new Response(null, { status: 204 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] })));
+  });
+  page.setView({ ...demoView(), queuedMessages: [{ requestId: 'first', text: 'Visible', mode: 'steer' }] }); page.render();
+  const button = page.app.querySelector('.queue-withdraw')!; page.document.activeElement = button;
+  await page.withdrawMessage('first', 'shop');
+  expect(page.app.querySelector('.queue-error')?.textContent).toContain('Could not withdraw this message. Try again. offline');
+  expect(page.app.querySelector('.queue-withdraw')).toBe(button); expect(button.getAttribute('aria-disabled')).toBe('false');
+  expect(page.app.querySelector('.message-status')?.textContent).toBe('');
+  await page.withdrawMessage('first', 'shop');
+  expect(paths).toEqual(['/api/agents/shop/messages/first', '/api/agents/shop/messages/first']);
+  expect(page.app.querySelector('.queue-error')?.textContent).toBe('');
+  expect(page.app.querySelector('.queue-notice')?.textContent).toBe('Message withdrawn.');
+});
+
+it("leaves a failed composer's draft, retry identity and feedback untouched by withdrawal", async () => {
+  const sends: unknown[] = [];
+  const page = bootPage((_path, init) => {
+    const request = init as RequestInit;
+    if (request.method === 'POST') { sends.push(JSON.parse(String(request.body))); return Promise.reject(new Error('send offline')); }
+    if (request.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
+    return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] })));
+  });
+  page.setView({ ...demoView(), queuedMessages: [{ requestId: 'queued', text: 'Old message', mode: 'followUp' }] }); page.render();
+  const textarea = page.app.querySelector('form.composer textarea')!; page.document.activeElement = textarea;
+  textarea.value = page.ui.draft = 'Retry this draft';
+  await page.submitMessage('steer');
+  const feedback = page.app.querySelector('.message-status')!.textContent;
+  await page.withdrawMessage('queued', 'shop');
+  expect(page.ui.draft).toBe('Retry this draft'); expect(textarea.value).toBe('Retry this draft');
+  expect(page.app.querySelector('.message-status')?.textContent).toBe(feedback);
+  await page.submitMessage('followUp'); expect(sends).toHaveLength(2); expect(sends[1]).toEqual(sends[0]);
+});
+
+it("keeps focus on the composer when a withdrawal view arrives before its acknowledgement", async () => {
+  let finish!: (response: Response) => void;
+  const page = bootPage((_path, init) => (init as RequestInit).method === 'DELETE'
+    ? new Promise<Response>((resolve) => { finish = resolve; })
+    : Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] }))));
+  page.setView({ ...demoView(), queuedMessages: [{ requestId: 'only', text: 'Only', mode: 'steer' }] }); page.render();
+  page.document.activeElement = page.app.querySelector('.queue-withdraw');
+  const pending = page.withdrawMessage('only', 'shop');
+  page.setView(demoView()); page.render();
+  expect(page.document.activeElement).toBe(page.app.querySelector('form.composer textarea'));
+  finish(new Response(null, { status: 204 })); await pending;
+  expect(page.app.querySelectorAll('.queue-row')).toHaveLength(0);
+  expect(page.app.querySelector('.queue-notice')?.textContent).toBe('Message withdrawn.');
+  expect(page.document.activeElement).toBe(page.app.querySelector('form.composer textarea'));
+});
+
+it("reports withdrawal placement and stale-row races as the same notice as steering", async () => {
+  for (const status of [404, 409]) {
+    let deletes = 0;
+    const page = bootPage((_path, init) => {
+      if ((init as RequestInit).method === 'DELETE') { deletes++; return Promise.resolve(new Response(JSON.stringify({ error: 'Unknown or placed message' }), { status })); }
+      return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] })));
+    });
+    page.setView({ ...demoView(), queuedMessages: [{ requestId: 'first', text: 'Visible', mode: 'steer' }] }); page.render();
+    page.ui.draft = 'Do not change this';
+    await page.withdrawMessage('first', 'shop'); await page.withdrawMessage('first', 'shop');
+    expect(deletes).toBe(1); expect(page.app.querySelector('.queue-notice')?.textContent).toBe('The agent already has this message.');
+    expect(page.app.querySelector('.queue-error')?.textContent).toBe(''); expect(page.app.querySelector('.message-status')?.textContent).toBe('');
+    expect(page.ui.draft).toBe('Do not change this');
+  }
+});
+
+it("serializes steering and withdrawal of the same row in either order", async () => {
+  for (const firstAction of ['steer', 'withdraw']) {
+    const methods: string[] = []; let finish!: (response: Response) => void;
+    const page = bootPage((_path, init) => {
+      const method = (init as RequestInit).method!;
+      if (method !== 'GET') { methods.push(method); return new Promise<Response>((resolve) => { finish = resolve; }); }
+      return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop' }] })));
+    });
+    page.setView({ ...demoView(), queuedMessages: [{ requestId: 'first', text: 'Visible', mode: 'followUp' }] }); page.render();
+    page.document.activeElement = page.app.querySelector(firstAction === 'steer' ? '.queue-promote' : '.queue-withdraw');
+    const pending = firstAction === 'steer' ? page.promoteMessage('first', 'shop') : page.withdrawMessage('first', 'shop');
+    await (firstAction === 'steer' ? page.withdrawMessage('first', 'shop') : page.promoteMessage('first', 'shop'));
+    expect(methods).toEqual([firstAction === 'steer' ? 'POST' : 'DELETE']);
+    expect(page.app.querySelector('.queue-promote')?.getAttribute('aria-disabled')).toBe('true');
+    expect(page.app.querySelector('.queue-withdraw')?.getAttribute('aria-disabled')).toBe('true');
+    finish(new Response(null, { status: 204 })); await pending;
+    if (firstAction === 'steer') expect(page.app.querySelector('.queue-withdraw')?.getAttribute('aria-disabled')).toBe('false');
+  }
+});
+
+it("moves focus to the nearest surviving Withdraw control when a queued row disappears", () => {
+  for (const index of [0, 1, 2]) {
+    const page = bootPage(), messages = ['first', 'second', 'third'].map((requestId) => ({ requestId, text: requestId, mode: 'steer' }));
+    page.setView({ ...demoView(), queuedMessages: messages }); page.render();
+    const rows = page.app.querySelectorAll('.queue-row'), remaining = messages.filter((_, i) => i !== index);
+    const next = rows[index + 1] || rows[index - 1], control = next.querySelector('.queue-withdraw')!;
+    page.document.activeElement = rows[index].querySelector('.queue-withdraw');
+    page.setView({ ...demoView(), queuedMessages: remaining }); page.render();
+    expect(page.app.querySelectorAll('.queue-row')).toHaveLength(2);
+    expect(page.document.activeElement).toBe(control); expect(page.app.contains(control)).toBe(true);
+    expect(control.focusCalls).toEqual([{ preventScroll: true }]);
+    expect(page.app.querySelector('#queued-messages')!.focusCalls).toEqual([]);
+  }
+});
+
+it("moves focus from the last withdrawn row to the visible composer, not a section", () => {
+  const page = bootPage(); page.setView({ ...demoView(), queuedMessages: [{ requestId: 'only', text: 'Only', mode: 'steer' }] }); page.render();
+  const section = page.app.querySelector('#queued-messages')!;
+  page.document.activeElement = page.app.querySelector('.queue-withdraw');
+  page.setView(demoView()); page.render();
+  expect(page.app.querySelector('#queued-messages')?.hidden).toBe(true);
+  expect(page.document.activeElement).toBe(page.app.querySelector('form.composer textarea'));
+  expect(page.document.activeElement?.tagName).toBe('TEXTAREA'); expect(section.focusCalls).toEqual([]);
+});
+
+it("moves focus from a promoted Steer control to that row's Withdraw control", () => {
+  const page = bootPage(), message = { requestId: 'only', text: 'Only', mode: 'followUp' };
+  page.setView({ ...demoView(), queuedMessages: [message] }); page.render();
+  const withdraw = page.app.querySelector('.queue-withdraw')!;
+  page.document.activeElement = page.app.querySelector('.queue-promote');
+  page.setView({ ...demoView(), queuedMessages: [{ ...message, mode: 'steer' }] }); page.render();
+  expect(page.app.querySelector('.queue-promote')).toBeNull(); expect(page.document.activeElement).toBe(withdraw);
+});
+
+it("stacks queue actions beside prose and moves the group below it on phones", () => {
+  expect(PAGE).toMatch(/\.queue-actions \{[^}]*grid-column: 2;[^}]*flex-direction: column;/);
+  expect(PAGE).toMatch(/@media \(max-width: 640px\) \{[^}]*\.queue-row \{ grid-template-columns: minmax\(0, 1fr\); \}[^}]*\.queue-actions \{ grid-column: 1; grid-row: 3;[^}]*flex-direction: row;/);
+});
+
 it("clears only the admitted draft after 204 and keeps a newer edit intact", async () => {
   let finish!: (response: Response) => void;
   const page = bootPage((_path, init) => (init as { method: string }).method === 'POST'
@@ -256,7 +426,7 @@ it("gives the composer its focus back without scrolling on a rebuild", () => {
   page.setView(demoView());
   page.render();
   const next = page.app.querySelector('form.composer textarea')!;
-  expect(next).not.toBe(page.document.activeElement);
+  expect(next).toBe(page.document.activeElement);
   expect(next.focusCalls).toEqual([{ preventScroll: true }]);
 });
 
@@ -266,7 +436,9 @@ it("scrolls the composer into view when a sample prompt drafts a message", () =>
   const page = bootPage();
   page.setView(demoView());
   page.render();
-  page.app.querySelectorAll('.sample')[0].listeners.click[0]({});
+  const sample = page.app.querySelectorAll('.sample')[0];
+  page.document.activeElement = sample;
+  sample.listeners.click[0]({});
   expect(page.ui.draft).toBe('Post a job under $15');
   expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: false }]);
 });
@@ -278,6 +450,7 @@ it("keeps a pending composer focus away from the Briefing tab's instructions fie
   page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { model: 'faux:test', instructions: 'You are Demo.\n\nWhat you want right now: Win copy-editing jobs.', dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
   page.render();
   page.ui.focusComposer = true;
+  page.document.activeElement = page.app.querySelector('nav a');
   page.ui.tab = 'briefing';
   page.render();
   expect(page.app.querySelector('textarea')!.focusCalls).toEqual([]);

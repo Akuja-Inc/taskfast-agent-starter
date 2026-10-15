@@ -53,7 +53,18 @@ export function messageBody(attempt: MessageAttempt) {
 }
 const ALREADY_PLACED = "The agent already has this message.";
 export function actionError(action: string, status: number | undefined, reason: string): string {
-  return action.startsWith("steer/") && (status === 404 || status === 409) ? ALREADY_PLACED : reason;
+  return (action.startsWith("steer/") || action.startsWith("messages/")) && (status === 404 || status === 409) ? ALREADY_PLACED : reason;
+}
+
+// Only an acknowledged withdrawal deliberately picks a new row. An unexpected live
+// disappearance keeps the stale ID guard until the user navigates to another row.
+export function withdrawnSelection(ui: Ui, requestId: string, before: ConsoleView["queuedMessages"], after: ConsoleView["queuedMessages"]): Ui {
+  if (ui.panel !== "queue" || ui.queuedRequestId !== requestId) return ui;
+  const remaining = after.filter((row) => row.requestId !== requestId);
+  const at = before.findIndex((row) => row.requestId === requestId);
+  const neighbors = [...before.slice(at + 1), ...before.slice(0, Math.max(0, at)).reverse()];
+  const next = neighbors.find((row) => remaining.some((visible) => visible.requestId === row.requestId)) ?? remaining[0];
+  return { ...ui, panel: next ? "queue" : "timeline", queuedRequestId: next?.requestId };
 }
 
 // The agent.json fields the briefing edits, in the order it lists them. INSTRUCTIONS.md is
@@ -154,10 +165,12 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
   }
   switch (key) {
     case "i": return { ui: { ...ui, sidebar: !ui.sidebar, panel: ui.sidebar && ui.panel === "queue" ? "timeline" : ui.panel } };
-    case "s": {
+    case "s": case "w": {
       const message = ui.panel === "queue" ? queue.find((item) => item.requestId === ui.queuedRequestId) : undefined;
       if (ui.panel === "queue" && ui.queuedRequestId && !message) return { ui, effect: { kind: "notice", text: ALREADY_PLACED } };
-      return message?.mode === "followUp" ? { ui, effect: call("POST", `steer/${encodeURIComponent(message.requestId)}`) } : { ui };
+      if (!message) return { ui };
+      if (key === "w") return { ui, effect: call("DELETE", `messages/${encodeURIComponent(message.requestId)}`) };
+      return message.mode === "followUp" ? { ui, effect: call("POST", `steer/${encodeURIComponent(message.requestId)}`) } : { ui };
     }
     case "a": return { ui: { ...ui, alerts: !ui.alerts } };
     case "c": return alert && alert.kind !== "abandoned" ? { ui, effect: call("POST", "checked", { id: alert.id }) } : { ui };

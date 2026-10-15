@@ -262,6 +262,154 @@ test("retries an admitted steer without changing ID or mode, and reports a real 
   } finally { requests.mockRestore(); setup.renderer.destroy(); other.host.kill("SIGTERM"); }
 }, 60_000);
 
+test("withdraws queued follow-ups and steers while paused, restores visible focus, and never delivers them on resume", async () => {
+  const other = await startHost();
+  const key = other.link.hash.slice("#token=".length);
+  const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+  const path = other.link.origin + "/api/agents/shop";
+  const current = async () => await (await fetch(path, { headers })).json() as ConsoleView;
+  const post = async (action: string, body: unknown) => {
+    expect((await fetch(path + action, { method: "POST", headers, body: JSON.stringify(body) })).status).toBe(204);
+  };
+  const { setup, until, keys } = await draw(130, 48, other.link.origin, key);
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    await post("/paused", { value: true });
+    await post("/messages", { requestId: "withdraw-followup", text: "Withdraw this follow-up." });
+    await post("/messages", { requestId: "withdraw-steer", text: "Withdraw this steer.", steer: true });
+    const queued = await until((frame) => frame.includes("Queued messages · 2") && frame.includes("● paused"));
+    expect(queued).toContain("Follow-up · s steer · w withdraw");
+    expect(queued).toContain("Steer · w withdraw");
+    expect(queued).toContain("Tab queue · s steer · w withdraw");
+    keys.pressKey("?");
+    await until((frame) => frame.includes("withdraw the selected queued follow-up or steer"));
+    keys.pressKey("?");
+    keys.pressTab();
+    keys.pressTab();
+    await until((frame) => frame.includes("▶ Follow-up"));
+    keys.pressKey("w");
+    await until((frame) => frame.includes("Message withdrawn.") && frame.includes("Queued messages · 1") && frame.includes("▶ Steer"));
+    expect((await current()).queuedMessages.map((row) => row.requestId)).toEqual(["withdraw-steer"]);
+    keys.pressKey("w");
+    await until((frame) => frame.includes("Message withdrawn.") && frame.includes("Queued messages · 0"));
+    expect((await current()).queuedMessages).toHaveLength(0);
+
+    // Empty-queue success moves focus to the timeline, not a future replacement row.
+    await post("/messages", { requestId: "kept-followup", text: "Keep this later follow-up." });
+    await until((frame) => frame.includes("Queued messages · 1"));
+    keys.pressKey("w");
+    await setup.renderOnce();
+    expect((await current()).queuedMessages.map((row) => row.requestId)).toEqual(["kept-followup"]);
+    expect(setup.captureCharFrame()).not.toContain("▶ Follow-up");
+    keys.pressKey("p");
+    await until((frame) => frame.includes("Queued messages · 0") && frame.includes("Keep this later follow-up."));
+    expect((await current()).timeline.filter((turn) => turn.kind === "operator").map((turn) => turn.text)).toEqual(["Keep this later follow-up."]);
+  } finally { setup.renderer.destroy(); other.host.kill("SIGTERM"); }
+}, 60_000);
+
+test("keeps narrow queue withdrawal ID-bound through row shifts, pending repeats, and a lost acknowledgement", async () => {
+  const other = await startHost();
+  const key = other.link.hash.slice("#token=".length);
+  const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+  const path = other.link.origin + "/api/agents/shop";
+  const fetchReal = globalThis.fetch;
+  const current = async () => await (await fetchReal(path, { headers })).json() as ConsoleView;
+  const post = async (action: string, body: unknown) => {
+    expect((await fetchReal(path + action, { method: "POST", headers, body: JSON.stringify(body) })).status).toBe(204);
+  };
+  const { setup, until, keys } = await draw(90, 48, other.link.origin, key);
+  let release = () => {};
+  const dispatch = new Promise<void>((resolve) => { release = resolve; });
+  const deletions: string[] = [];
+  const requests = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const url = String(input);
+    if (url.startsWith(path + "/messages/") && init?.method === "DELETE") {
+      deletions.push(url);
+      expect(init.body).toBeUndefined();
+      expect(new Headers(init.headers).has("content-type")).toBe(false);
+      await dispatch;
+      const response = await fetchReal(input, init);
+      expect(response.status).toBe(204);
+      throw new Error("Test dropped withdrawal reply.");
+    }
+    return fetchReal(input, init);
+  }, { preconnect: fetchReal.preconnect }));
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    await post("/paused", { value: true });
+    await post("/messages", { requestId: "earlier-row", text: "Earlier row to remove." });
+    await post("/messages", { requestId: "chosen-steer", text: "Chosen steer to withdraw.", steer: true });
+    await post("/messages", { requestId: "untouched", text: "Do not withdraw the replacement row." });
+    await until((frame) => frame.includes("● paused"));
+    keys.pressTab();
+    keys.pressTab();
+    await until((frame) => frame.includes("Queued messages · 3"));
+    keys.pressKey("j");
+    await until((frame) => frame.includes("▶ Steer"));
+    expect((await fetchReal(path + "/messages/earlier-row", { method: "DELETE", headers: { authorization: headers.authorization } })).status).toBe(204);
+    await until((frame) => frame.includes("Queued messages · 2") && frame.includes("▶ Steer"));
+    keys.pressKey("w");
+    await until(() => deletions.length === 1);
+    keys.pressKey("w");
+    keys.pressKey("w");
+    await setup.renderOnce();
+    expect(deletions).toEqual([path + "/messages/chosen-steer"]); // Pending guard, not a row-index delete.
+    release();
+    await until((frame) => frame.includes("Test dropped withdrawal reply.") && frame.includes("Queued messages · 1"));
+    expect((await current()).queuedMessages.map((row) => row.requestId)).toEqual(["untouched"]);
+    keys.pressKey("w");
+    await until((frame) => frame.includes("The agent already has this message."));
+    expect(deletions).toHaveLength(1); // Stale selection never deletes the replacement row.
+    expect(setup.captureCharFrame()).toContain("Selected message left the queue.");
+    keys.pressKey("p");
+    await until((frame) => frame.includes("Queued messages · 0"));
+    const delivered = (await current()).timeline.filter((turn) => turn.kind === "operator").map((turn) => turn.text);
+    expect(delivered).toEqual(["Do not withdraw the replacement row."]);
+  } finally { release(); requests.mockRestore(); setup.renderer.destroy(); other.host.kill("SIGTERM"); }
+}, 60_000);
+
+test("reports a real withdrawal placement race as a notice without touching another queued message", async () => {
+  const other = await startHost();
+  const key = other.link.hash.slice("#token=".length);
+  const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+  const path = other.link.origin + "/api/agents/shop";
+  const fetchReal = globalThis.fetch;
+  const current = async () => await (await fetchReal(path, { headers })).json() as ConsoleView;
+  const { setup, until, keys } = await draw(130, 48, other.link.origin, key);
+  const statuses: number[] = [];
+  const requests = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    if (String(input) === path + "/messages/too-late" && init?.method === "DELETE") {
+      // The row was visible at the keypress. Resume and let placement win at the host.
+      await fetchReal(path + "/paused", { method: "POST", headers, body: JSON.stringify({ value: false }) });
+      for (let tries = 0; tries < 200 && (await current()).queuedMessages.length; tries++) await Bun.sleep(10);
+      const response = await fetchReal(input, init);
+      statuses.push(response.status);
+      return response;
+    }
+    return fetchReal(input, init);
+  }, { preconnect: fetchReal.preconnect }));
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    expect((await fetchReal(path + "/paused", { method: "POST", headers, body: JSON.stringify({ value: true }) })).status).toBe(204);
+    expect((await fetchReal(path + "/messages", { method: "POST", headers, body: JSON.stringify({ requestId: "too-late", text: "Placement wins this withdrawal." }) })).status).toBe(204);
+    await until((frame) => frame.includes("Queued messages · 1"));
+    keys.pressTab();
+    keys.pressTab();
+    await until((frame) => frame.includes("▶ Follow-up"));
+    keys.pressKey("w");
+    await until((frame) => frame.includes("The agent already has this message."));
+    expect(statuses).toEqual([409]);
+    expect((await current()).timeline.filter((turn) => turn.kind === "operator").map((turn) => turn.text)).toEqual(["Placement wins this withdrawal."]);
+    await fetchReal(path + "/paused", { method: "POST", headers, body: JSON.stringify({ value: true }) });
+    await fetchReal(path + "/messages", { method: "POST", headers, body: JSON.stringify({ requestId: "next-message", text: "Keep the next message queued." }) });
+    await until((frame) => frame.includes("Queued messages · 1") && frame.includes("Keep the next message queued."));
+    keys.pressKey("w");
+    await setup.renderOnce();
+    expect(statuses).toEqual([409]);
+    expect((await current()).queuedMessages.map((row) => row.requestId)).toEqual(["next-message"]);
+  } finally { requests.mockRestore(); setup.renderer.destroy(); other.host.kill("SIGTERM"); }
+}, 60_000);
+
 test("folds the sidebar away below 100 columns", async () => {
   const { setup, until, keys } = await draw(90, 40);
   const narrow = await until((frame) => frame.includes("i sidebar"));

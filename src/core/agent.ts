@@ -7,7 +7,7 @@ import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_C
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { agentDirectory, providerSettings } from "./folder.js";
-import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult } from "./operator.js";
+import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult, type WithdrawResult } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { marketplacePrompt } from "./prompt.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
@@ -73,6 +73,7 @@ export interface OperatorControls {
   message(message: { requestId: string; text: string; steer?: true }): Promise<void>;
   queued(): Promise<QueuedOperatorMessage[]>;
   steer(requestId: string): Promise<SteerResult>;
+  withdraw(requestId: string): Promise<WithdrawResult>;
   addOrder(order: string): Promise<void>;
   removeOrder(index: number): Promise<void>;
   markChecked(id: string): Promise<void>;
@@ -151,7 +152,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     await conversation.commit(async (tx) => { await tx.doc(Events); }, context);
     let closed = false;
     let recovering: Promise<void> | undefined;
-    // Serializes operator admission, promotion and drains, not model/tool work.
+    // Serializes operator admission, promotion, withdrawal and drains, not model/tool work.
     let operatorLine: Promise<void> = Promise.resolve();
     function onOperatorLine<T>(change: () => Promise<T>): Promise<T> {
       const next = operatorLine.then(change);
@@ -327,6 +328,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       message: async ({ requestId, text, steer }) => {
         await onOperatorLine(() => conversation.commit(async (tx) => {
           const state = await tx.doc(Operator);
+          if (state.withdrawn && Object.hasOwn(state.withdrawn, requestId)) return;
           if (await tx.submissionByRequest(conversation.id, `operator:${requestId}`)) return;
           if (await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`)) return;
           if (!state.messages.some((item) => item.requestId === requestId)) {
@@ -377,6 +379,30 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         if (result !== "not_found") await recoverLogged();
         return result;
       },
+      withdraw: (requestId) => onOperatorLine(() => conversation.commit(async (tx): Promise<WithdrawResult> => {
+        const state = await tx.doc(Operator);
+        if (state.withdrawn && Object.hasOwn(state.withdrawn, requestId)) return "withdrawn";
+        const original = await tx.submissionByRequest(conversation.id, `operator:${requestId}`);
+        const replacement = await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`);
+        const intent = state.pendingSteers && Object.hasOwn(state.pendingSteers, requestId) ? state.pendingSteers[requestId] : undefined;
+        if (intent && original?.id !== intent.submission) throw new Error("operator steer submission identity changed");
+        // An aborted original is withdrawable only with its durable promotion
+        // intent or replacement. Any placed/settled input wins the race.
+        const records = [original, replacement].filter((record) => record !== undefined);
+        if (records.some((record) => record.status !== "queued" && !(record === original && (intent || replacement) && unplacedAbort(record)))) return "already_placed";
+        if (!records.length && !state.messages.some((message) => message.requestId === requestId)) return "not_found";
+        // This is Pi's queued-abort transition, inside the SAME session transaction
+        // as buffer/intent cleanup and the tombstone. Placement uses this line too.
+        const inbox = await tx.doc(InboxDoc, conversation.id);
+        const ids = new Set(records.map((record) => record.id));
+        for (const record of records) if (record.status === "queued") tx.settleSubmission(record.id, { status: "unanswered", reason: "aborted" });
+        inbox.items = inbox.items.filter((item) => !ids.has(item.id));
+        state.messages = state.messages.filter((message) => message.requestId !== requestId);
+        delete state.pendingSteers?.[requestId];
+        if (state.queuedOrder) state.queuedOrder = state.queuedOrder.filter((id) => id !== requestId);
+        state.withdrawn = { ...(state.withdrawn ?? {}), [requestId]: true };
+        return "withdrawn";
+      }, context)),
       addOrder: async (order) => {
         // Each order renders as one bullet line in the system prompt; collapsing line
         // breaks keeps a multi-line order from forging extra prompt lines.

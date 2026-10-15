@@ -17,10 +17,12 @@ type Ledger = Awaited<ReturnType<ConsoleAgent["agent"]["status"]>>;
 type Work = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["events"]>>;
 type QueuedMessages = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["queued"]>>;
 type SteerResult = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["steer"]>>;
-function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], state = initialOperator(), queuedMessages = [], steerResult = "steered" }: {
+type WithdrawResult = Awaited<ReturnType<ConsoleAgent["agent"]["operator"]["withdraw"]>>;
+function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], state = initialOperator(), queuedMessages = [], steerResult = "steered", withdrawResult = "withdrawn" }: {
   id?: string; actions?: Ledger["actions"]; events?: Work; transcript?: Message[]; state?: OperatorState;
   queuedMessages?: QueuedMessages;
   steerResult?: SteerResult;
+  withdrawResult?: WithdrawResult;
 } = {}) {
   const asked: unknown[][] = [];
   const record = (name: string) => async (...args: unknown[]) => { asked.push([name, ...args]); };
@@ -35,6 +37,7 @@ function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], sta
       operator: {
         state: async () => state, events: async () => events, queued: async () => queuedMessages,
         steer: async (requestId: string) => { asked.push(["steer", requestId]); return steerResult; },
+        withdraw: async (requestId: string) => { asked.push(["withdraw", requestId]); return withdrawResult; },
         setFrozen: record("setFrozen"), setPaused: record("setPaused"), message: record("message"),
         addOrder: record("addOrder"), removeOrder: record("removeOrder"), markChecked: record("markChecked"), retryEvent: record("retryEvent"),
       },
@@ -317,6 +320,34 @@ it("turns console actions into the agent's operator controls and refuses malform
   }
   expect((await call(port, "/api/agents/foo/orders/x", { method: "DELETE", headers: auth })).status).toBe(400);
   expect(asked).toHaveLength(7);
+});
+
+it("withdraws by immutable request ID and maps operator outcomes to HTTP status", async () => {
+  for (const withdrawResult of ["withdrawn", "already_placed", "not_found"] as const) {
+    const { agent, asked } = fakeAgent({ withdrawResult });
+    const { port } = await serve([agent]);
+    for (let retry = 0; retry < 2; retry++) {
+      const result = await call(port, "/api/agents/foo/messages/follow-up_1", { method: "DELETE", headers: auth });
+      expect(result.status).toBe(withdrawResult === "withdrawn" ? 204 : withdrawResult === "already_placed" ? 409 : 404);
+      if (withdrawResult === "withdrawn") expect(result.text).toBe("");
+      else expect(JSON.parse(result.text)).toEqual({ error: withdrawResult === "already_placed" ? "The agent already has this message." : "Queued message not found." });
+    }
+    expect(asked).toEqual([["withdraw", "follow-up_1"], ["withdraw", "follow-up_1"]]);
+  }
+});
+
+it("guards withdrawal with authentication, origin, method and the shared request-ID validation", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  const path = "/api/agents/foo/messages/r1";
+  expect((await call(port, path, { method: "DELETE" })).status).toBe(401);
+  expect((await call(port, path, { method: "DELETE", headers: { ...auth, origin: "http://evil.test" } })).status).toBe(403);
+  for (const method of ["GET", "POST", "PUT"]) expect((await call(port, path, { method, headers: auth })).status).toBe(404);
+  for (const id of ["%20", "%2F", "bad%id", "x".repeat(129)]) expect((await call(port, "/api/agents/foo/messages/" + id, { method: "DELETE", headers: auth })).status).toBe(400);
+  expect((await call(port, "/api/agents/foo/messages", { method: "DELETE", headers: auth })).status).toBe(404);
+  expect(asked).toEqual([]);
+  expect((await call(port, path, { method: "DELETE", headers: auth })).status).toBe(204);
+  expect(asked).toEqual([["withdraw", "r1"]]);
 });
 
 it("admits follow-ups and explicit steers without changing their request identity", async () => {

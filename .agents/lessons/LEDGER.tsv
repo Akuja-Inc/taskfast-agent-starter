@@ -1,4 +1,5 @@
 source_id	origin	first_seen	disposition	target	note
+hand:7d83dc16abf9	hand	2026-10-15T14:58:05Z	lesson	.agents/lessons/operator-steering.md	Withdrawal must settle both promotion identities and retain buffered-message request tombstones atomically.
 hand:85974fb5fbc1	hand	2026-10-14T20:34:36Z	agents_md	AGENTS.md	Main-checkout work on the #29 branch collided with the gh38 pi-1.2.0 bump reworking package.json and pnpm-lock.yaml under it.
 hand:eddef8721dda	kimi	2026-10-14T20:39:24Z	lesson	.agents/lessons/pi-storage-failure-injection.md	storage failure tests need a state-changing commit
 hand:55dc6c1a746c	hand	2026-10-14T21:39:27Z	lesson	.agents/lessons/operator-steering.md	Pi 1.1.0 steering recovery must distinguish a previously aborted original from other settled inputs and preserve its legacy queue order.
