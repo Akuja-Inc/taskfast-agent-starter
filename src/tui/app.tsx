@@ -30,9 +30,10 @@ export const HELP: [string, string][] = [
   ["i", "show the sidebar"], ["?", "this help"], ["q", "quit the TUI; the agents keep running"],
 ];
 
-// A coloured span. OpenTUI applies fg and bg to the text node; its span type lists neither.
+// A coloured span. @opentui/solid sets only href and style on text nodes, so fg and bg
+// must ride in style; as plain props they were silently dropped.
 function Span(p: { fg?: string; bg?: string; children?: JSX.Element }) {
-  return <span {...(p as object)} />;
+  return <span style={{ fg: p.fg, bg: p.bg }}>{p.children}</span>;
 }
 
 // A reply's markdown (console-markdown.ts, parsed after clean()) as styled runs. Code wears

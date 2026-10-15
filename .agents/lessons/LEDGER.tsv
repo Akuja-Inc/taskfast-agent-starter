@@ -8,3 +8,4 @@ hand:c99002861817	hand	2026-10-15T00:07:59Z	lesson	.agents/lessons/pi-compaction
 hand:952347a6f127	hand	2026-10-15T00:07:59Z	lesson	.agents/lessons/pi-compaction-tests.md	Wait for the persisted compaction entry because idle excludes background tasks.
 hand:1cb60bca608b	hand	2026-10-15T02:24:36Z	lesson	.agents/lessons/taskfast-wallet-password.md	The CLI prefers TASKFAST_WALLET_PASSWORD and its own init prompt over the password file the host uses.
 hand:e031a88813eb	hand	2026-10-15T06:08:56Z	lesson	.agents/lessons/tui-smoke-frames.md	A longer tui-host.mjs reply scrolled later smoke-test waits out of the visible TUI frame.
+hand:4eda324ea8ff	hand	2026-10-15T06:27:43Z	lesson	.agents/lessons/opentui-span-colours.md	The TUI Span helper passed fg and bg as props, which @opentui/solid drops on text nodes, so no span was ever coloured.
