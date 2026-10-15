@@ -128,8 +128,8 @@ export interface SetupIO {
   env: NodeJS.ProcessEnv;
   // Trims answers, except hidden ones, which are returned as typed.
   ask(question: string, hidden?: boolean): Promise<string>;
-  // Runs a command with the terminal attached; returns its exit status.
-  run(cmd: string, args: string[], cwd: string): number;
+  // Runs a command with the terminal attached and the given environment; returns its exit status.
+  run(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): number;
   log(line: string): void;
 }
 
@@ -205,9 +205,6 @@ function checkOptions({ options: o, io, catalogue }: { options: SetupOptions; io
     const p = passwordProblem(io.env[o.walletPasswordEnv] ?? "");
     if (p) bad("wallet-password-env", `${o.walletPasswordEnv}: ${p}`);
   }
-  // The CLI prefers this variable to the password file, but the host never passes it,
-  // so a wallet encrypted with it could not be unlocked when the agent signs.
-  if (o.init !== false && io.env.TASKFAST_WALLET_PASSWORD) problems.push("TASKFAST_WALLET_PASSWORD is set: taskfast init would use it instead of the agent's password file. Unset it, or pass --no-init");
   const selected = catalogue.find((p) => p.id === o.provider);
   if (selected) for (const name of set.keys()) {
     if (!selected.settings.some((s) => s.name === name)) bad("set", `${name} is not a setting for ${selected.id}; see docs/providers.md`);
@@ -385,7 +382,12 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
     if (!existsSync(join(dir, WALLET_PATH)) && !existsSync(join(dir, ".taskfast/config.json"))) initArgs.push("--generate-wallet");
     initArgs.push(`--wallet-password-file=${PASSWORD_PATH}`);
   }
-  const status = ran ? io.run("taskfast", initArgs, dir) : -1;
+  // The CLI prefers TASKFAST_WALLET_PASSWORD to the password file, but the host never
+  // passes it, so init must not see it either: a wallet encrypted with it could not be
+  // unlocked when the agent signs. Pass --wallet-password-env TASKFAST_WALLET_PASSWORD to use its value.
+  const { TASKFAST_WALLET_PASSWORD: shellPassword, ...initEnv } = io.env;
+  if (ran && shellPassword) io.log(`taskfast init runs without TASKFAST_WALLET_PASSWORD, so the wallet uses agents/${id}/${PASSWORD_PATH} as the agent does.`);
+  const status = ran ? io.run("taskfast", initArgs, dir, initEnv) : -1;
   if (status !== 0) io.log(`\n${ran ? "taskfast init did not finish. " : ""}Run it yourself when ready:\n  cd agents/${id} && taskfast ${initArgs.join(" ")}`);
 
   io.log(`\nNext:\n  pnpm agents --env ${environment}`);
@@ -439,11 +441,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (next.done) throw new Error("input ended before setup finished; pass the remaining answers as flags (see --help)");
       return hidden ? next.value : next.value.trim();
     },
-    run: (cmd, args, cwd) => {
+    run: (cmd, args, cwd, env) => {
       rl?.pause();
       process.stdin.pause();
       try {
-        const r = spawnSync(cmd, args, { cwd, stdio: "inherit" });
+        const r = spawnSync(cmd, args, { cwd, env, stdio: "inherit" });
         if (r.error) console.error(`${cmd}: ${r.error.message}`);
         return r.status ?? 1;
       } finally {

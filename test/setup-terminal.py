@@ -15,6 +15,8 @@ child.write_text(
     "state = termios.tcgetattr(0)\n"
     "print('CHILD_CANONICAL=' + str(bool(state[3] & termios.ICANON)), flush=True)\n"
     "print('CHILD_ECHO=' + str(bool(state[3] & termios.ECHO)), flush=True)\n"
+    "import os\n"
+    "print('CHILD_SHELL_PASSWORD=' + str('TASKFAST_WALLET_PASSWORD' in os.environ), flush=True)\n"
     "print('Child input: ', end='', flush=True)\n"
     "assert sys.stdin.readline().strip() == 'hello'\n"
 )
@@ -26,7 +28,7 @@ args = [node, setup, "--env", "staging", "--provider", "anthropic", "--model", "
         "--description", "Demo", "--goals", "Demo"]
 if scenario != "secret":
     args += ["--set", "ANTHROPIC_API_KEY=dummy"]
-env = {"HOME": os.environ["HOME"], "PATH": root + os.pathsep + os.environ["PATH"], "TERM": "xterm-256color"}
+env = {"HOME": os.environ["HOME"], "PATH": root + os.pathsep + os.environ["PATH"], "TERM": "xterm-256color", "TASKFAST_WALLET_PASSWORD": "shell-only"}
 proc = subprocess.Popen(args, cwd=root, stdin=slave, stdout=slave, stderr=slave, env=env)
 transcript = b""
 
@@ -76,6 +78,8 @@ try:
             assert (pathlib.Path(root) / "agents" / "check" / ".taskfast" / "wallet-password").read_text() == "s3cret-unlock"
         assert b"CHILD_CANONICAL=True" in transcript, "child inherited raw mode"
         assert b"CHILD_ECHO=True" in transcript, "child inherited disabled echo"
+        assert b"CHILD_SHELL_PASSWORD=False" in transcript, "taskfast init saw TASKFAST_WALLET_PASSWORD"
+        assert b"shell-only" not in transcript, "shell password appeared on screen"
         os.write(master, b"hello\n")
         assert proc.wait(timeout=5) == 0, "child input did not complete"
     final = termios.tcgetattr(slave)

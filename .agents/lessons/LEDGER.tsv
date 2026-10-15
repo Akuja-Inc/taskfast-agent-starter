@@ -6,4 +6,4 @@ hand:63a96d0e39d4	kimi	2026-10-14T22:16:22Z	lesson	.agents/lessons/console-page-
 hand:abdc4c9a5ae8	kimi	2026-10-14T23:57:02Z	lesson	.agents/lessons/console-evidence-playwright-csp.md	the console page CSP refuses Playwright evaluate and wait_for_function; bypass_csp=True on the browser context
 hand:c99002861817	hand	2026-10-15T00:07:59Z	lesson	.agents/lessons/pi-compaction-tests.md	Inspect transaction-bound document overlays before the commit settles.
 hand:952347a6f127	hand	2026-10-15T00:07:59Z	lesson	.agents/lessons/pi-compaction-tests.md	Wait for the persisted compaction entry because idle excludes background tasks.
-hand:0612f1f245cd	hand	2026-10-15T02:24:36Z	lesson	.agents/lessons/taskfast-wallet-password.md	The CLI prefers TASKFAST_WALLET_PASSWORD and its own init prompt over the password file the host uses.
+hand:1cb60bca608b	hand	2026-10-15T02:24:36Z	lesson	.agents/lessons/taskfast-wallet-password.md	The CLI prefers TASKFAST_WALLET_PASSWORD and its own init prompt over the password file the host uses.

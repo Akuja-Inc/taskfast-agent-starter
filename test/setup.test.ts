@@ -29,6 +29,7 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
   }
   const asked: { question: string; hidden: boolean }[] = [];
   const ran: { cmd: string; args: string[]; cwd: string }[] = [];
+  const envs: NodeJS.ProcessEnv[] = [];
   const logs: string[] = [];
   const io: SetupIO = {
     root, env: opts.env ?? {},
@@ -38,12 +39,12 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
       if (answer === undefined) throw new Error(`no scripted answer for: ${question}`);
       return answer;
     },
-    run: (cmd, args, cwd) => (ran.push({ cmd, args, cwd }), opts.runStatus ?? 0),
+    run: (cmd, args, cwd, env) => (ran.push({ cmd, args, cwd }), envs.push(env), opts.runStatus ?? 0),
     log: (line) => void logs.push(line),
   };
   const agent = (id: string) => JSON.parse(readFileSync(join(root, "agents", id, "agent.json"), "utf8"));
   const instructions = (id: string) => readFileSync(join(root, "agents", id, "INSTRUCTIONS.md"), "utf8");
-  return { root, io, asked, ran, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
+  return { root, io, asked, ran, envs, logs, agent, instructions, run: (o: SetupOptions = {}) => setup(io, o), env: (id = "flagged") => readFileSync(existsSync(join(root, "agents", id, ".env")) ? join(root, "agents", id, ".env") : join(root, ".env"), "utf8") };
 }
 const ME = ["Ada Lovelace", "Ada Analytics", "Data clean-up for small charities."];
 // Running init asks for a wallet password; an empty answer skips it.
@@ -123,13 +124,19 @@ describe("setup", () => {
     }
   });
 
-  it("refuses TASKFAST_WALLET_PASSWORD before writing anything when init may run", async () => {
-    const k = kit([], { env: { TASKFAST_WALLET_PASSWORD: "shell password" } });
-    await expect(k.run({ ...ALL, env: "staging" })).rejects.toThrow(/TASKFAST_WALLET_PASSWORD is set/);
-    expect(existsSync(join(k.root, "agents", "flagged"))).toBe(false);
-    expect(k.ran).toEqual([]);
-    await k.run({ ...ALL, env: "staging", init: false });
-    expect(existsSync(join(k.root, "agents", "flagged", "agent.json"))).toBe(true);
+  it("hides TASKFAST_WALLET_PASSWORD from taskfast init so the wallet uses the password file", async () => {
+    const k = kit([], { env: { TASKFAST_WALLET_PASSWORD: "shell password", WALLET_PW: "file password", PATH: "/usr/bin" } });
+    await k.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" });
+    expect(k.envs).toEqual([{ WALLET_PW: "file password", PATH: "/usr/bin" }]);
+    expect(k.ran.at(-1)?.args.slice(-2)).toEqual(["--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"]);
+    expect(readFileSync(join(k.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe("file password");
+    expect(k.logs).toContain("taskfast init runs without TASKFAST_WALLET_PASSWORD, so the wallet uses agents/flagged/.taskfast/wallet-password as the agent does.");
+    expect(k.logs.join("\n")).not.toContain("shell password");
+    // Naming the variable makes its value the agent's password.
+    const adopt = kit([], { env: { TASKFAST_WALLET_PASSWORD: "shell password" } });
+    await adopt.run({ ...ALL, env: "staging", walletPasswordEnv: "TASKFAST_WALLET_PASSWORD" });
+    expect(readFileSync(join(adopt.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe("shell password");
+    expect(adopt.envs[0]).not.toHaveProperty("TASKFAST_WALLET_PASSWORD");
   });
 
   it("writes the flagged password even when init is skipped, and asks nothing without the flag", async () => {
