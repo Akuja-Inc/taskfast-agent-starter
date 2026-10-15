@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { createSession, defineDoc } from "@earendil-works/pi-durable";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
+import { createSession, defineDoc, LiveDoc } from "@earendil-works/pi-durable";
 import { afterEach, expect, it, vi } from "vitest";
 import { failingStorage } from "../../test/failing-storage.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
@@ -28,8 +28,8 @@ function spec(): AgentSpec {
   const value: unknown = JSON.parse(readFileSync(new URL("../../examples/brisk-poster.json", import.meta.url), "utf8"));
   return { ...parseAgentSpec(value), model: "faux:test", limits: { dailyUsd: 5, perJobUsd: 4 } };
 }
-function testModels() {
-  const faux = fauxProvider({ models: [{ id: "test" }] });
+function testModels(contextWindow = 128000) {
+  const faux = fauxProvider({ models: [{ id: "test", contextWindow }] });
   const models = createModels();
   models.setProvider(faux.provider);
   return { models, faux };
@@ -332,6 +332,154 @@ it("preserves marketplace policy and operator state when Pi actually compacts th
   kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" }), fauxAssistantMessage("Skipped")]);
   await run(kit.agent);
   expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
+});
+
+it.each([
+  { contextWindow: 128000, charsPerEntry: 140000 },
+  { contextWindow: 32768, charsPerEntry: 35000 },
+])("automatically compacts with Pi defaults and preserves state across restart ($contextWindow tokens)", async ({ contextWindow, charsPerEntry }) => {
+  const selected = testModels(contextWindow);
+  const now = () => new Date("2026-06-20T12:00:00Z");
+  const kit = await open({ models: selected.models, now });
+  selected.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("remember", { note: "Keep the permanent ledger." }), fauxToolCall("post_task", post)], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Posted once."),
+  ]);
+  await run(kit.agent);
+  const policy = await kit.agent.status();
+  expect(Object.values(policy.actions).map((action) => action.status)).toEqual(["done"]);
+  expect(policy.spend).toEqual({ "2026-06-20": 3 });
+  expect(policy.memory).toEqual(["Keep the permanent ledger."]);
+  await kit.agent.operator.setFrozen(true);
+  await kit.agent.operator.addOrder("Read current state before acting.");
+
+  // Passive entries cross the blocking threshold without a generation starting a
+  // background summary first. Pi needs separate entries to find a safe cut.
+  for (const label of ["Old context", "Recent context", "Newest context"]) {
+    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: `${label}: ` + "x".repeat(charsPerEntry), timestamp: 0 }] } }, context);
+  }
+  expect((await kit.agent.conversation.context(context)).head).toBeUndefined();
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let summaryStarted = false;
+  let summaryBudget: number | undefined;
+  let summaryPrompt = "";
+  let continued = false;
+  selected.faux.setResponses([
+    async (input, options) => {
+      summaryPrompt = JSON.stringify(input.messages.filter((message) => message.role === "system"));
+      summaryBudget = options?.maxTokens;
+      summaryStarted = true;
+      await gate;
+      return fauxAssistantMessage("Earlier work is complete. Read the permanent ledger before acting.");
+    },
+    () => { continued = true; return fauxAssistantMessage("Continued after compaction."); },
+  ]);
+  let operator = await kit.agent.operator.state();
+  await kit.agent.ping();
+  try {
+    await expect.poll(() => summaryStarted).toBe(true);
+    expect(summaryPrompt).toContain("context summarization assistant");
+    // Pi 1.2.0: floor(0.8 * 16384), below this faux model's 16384 maxTokens.
+    expect(summaryBudget).toBe(13107);
+    expect(continued).toBe(false);
+    await kit.agent.conversation.commit(async (tx) => {
+      expect((await tx.doc(LiveDoc, kit.agent.conversation.id)).compactions).toEqual([expect.objectContaining({ reason: "threshold", blocking: true })]);
+    }, context);
+    // Pause does not cancel a turn already running, nor its compaction.
+    await kit.agent.operator.setPaused(true);
+    operator = await kit.agent.operator.state();
+    expect(operator).toMatchObject({ frozen: true, paused: true, orders: ["Read current state before acting."] });
+  } finally { release(); }
+  await kit.agent.waitForIdle();
+  expect(continued).toBe(true);
+  expect(selected.faux.getPendingResponseCount()).toBe(0);
+  const compacted = await kit.agent.conversation.context(context);
+  expect(compacted.head?.kind).toBe("pi.compaction");
+  expect(JSON.stringify(compacted.messages)).not.toContain("Old context:");
+  expect(JSON.stringify(compacted.messages)).toContain("Newest context:");
+  if (contextWindow === 32768) expect(JSON.stringify(compacted.messages)).toContain("Recent context:");
+  expect(await kit.agent.status()).toEqual(policy);
+  expect(await kit.agent.operator.state()).toEqual(operator);
+  await kit.agent.close();
+
+  const fresh = testModels(contextWindow);
+  const reopened = await openMarketplaceAgent({
+    storePath: join(kit.dir, "state.sqlite"), spec: spec(), runtime: { env: "staging", configPath: join(kit.dir, "config.json") }, models: fresh.models, now,
+    command: async (_runtime, args) => { kit.calls.push(args); return args[0] === "me" ? me : { outcome: "ok" }; },
+  });
+  opened.push(reopened);
+  expect((await reopened.conversation.context(context)).head?.id).toBe(compacted.head?.id);
+  expect(await reopened.status()).toEqual(policy);
+  expect(await reopened.operator.state()).toEqual(operator);
+  // Unfreeze before testing deduplication, otherwise the freeze would mask a lost ledger.
+  await reopened.operator.setFrozen(false);
+  await reopened.operator.setPaused(false);
+  let normalRequests = 0;
+  let summaries = 0;
+  const respond: FauxResponseFactory = (input) => {
+    if (JSON.stringify(input.messages).includes("context summarization assistant")) {
+      summaries++;
+      return fauxAssistantMessage("Earlier work is complete. Read the permanent ledger.");
+    }
+    normalRequests++;
+    return normalRequests === 1
+      ? fauxAssistantMessage([fauxToolCall("post_task", post, { id: "after-restart" })], { stopReason: "toolUse" })
+      : fauxAssistantMessage("Skipped the completed post.");
+  };
+  // Small windows can still exceed the threshold after retaining 20000 recent
+  // tokens. Bound requests explicitly so a repeat-compaction loop fails this test.
+  fresh.faux.setResponses(Array.from({ length: 4 }, () => respond));
+  await run(reopened);
+  expect(normalRequests).toBe(2);
+  expect(summaries).toBeLessThanOrEqual(2);
+  expect(kit.calls.filter((args) => args[0] === "post")).toHaveLength(1);
+  expect(JSON.stringify((await reopened.conversation.context(context)).messages)).toContain("already done");
+  expect(await reopened.status()).toEqual(policy);
+  expect(await reopened.operator.state()).toEqual({ ...operator, frozen: false, paused: false });
+});
+
+it("inherits Pi's background threshold without blocking the normal request", async () => {
+  const kit = await open(); // Faux model: 128000-token window.
+  for (let index = 0; index < 3; index++) {
+    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: "x".repeat(35000), timestamp: index }] } }, context);
+  }
+  kit.faux.setResponses([fauxAssistantMessage("Below the background threshold.")]);
+  await run(kit.agent);
+  expect(kit.faux.state.callCount).toBe(1);
+  expect((await kit.agent.conversation.context(context)).head).toBeUndefined();
+  // Including faux cache-write usage, the previous request used about 53000
+  // tokens. These entries add about 36000: above 78848, below 111616.
+  for (let index = 0; index < 3; index++) {
+    await kit.agent.conversation.submit({ type: "write", entry: { kind: "app.context", model: [{ role: "user", content: "x".repeat(42000), timestamp: index }] } }, context);
+  }
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let summaryStarted = false;
+  let normalRequests = 0;
+  const respond: FauxResponseFactory = async (input) => {
+    if (JSON.stringify(input.messages).includes("context summarization assistant")) {
+      summaryStarted = true;
+      await gate;
+      return fauxAssistantMessage("Earlier context summarized in the background.");
+    }
+    normalRequests++;
+    return fauxAssistantMessage("Continued while the summary was pending.");
+  };
+  kit.faux.setResponses([respond, respond]);
+  await kit.agent.ping();
+  try {
+    await expect.poll(() => summaryStarted).toBe(true);
+    await expect.poll(() => normalRequests).toBe(1);
+    await kit.agent.waitForIdle(); // Does not wait for background work.
+    await kit.agent.conversation.commit(async (tx) => {
+      expect((await tx.doc(LiveDoc, kit.agent.conversation.id)).compactions).toEqual([expect.objectContaining({ reason: "threshold", blocking: false })]);
+    }, context);
+    expect((await kit.agent.conversation.context(context)).head).toBeUndefined();
+  } finally { release(); }
+  // waitForIdle excludes background tasks; wait for their durable result instead.
+  await expect.poll(async () => (await kit.agent.conversation.context(context)).head?.kind).toBe("pi.compaction");
+  expect(kit.faux.state.callCount).toBe(3);
 });
 
 it("a failed blocking compaction fails the run with model_error and queues at most one resume input", async () => {

@@ -211,6 +211,23 @@ The policy is session-scoped: resetting or compacting conversation history does 
 
 Events are acknowledged after durable local admission, not after a model finishes. Stored events can resume after a restart. Read current marketplace state to investigate an uncertain result; never repeat that write blindly.
 
+### Conversation compaction
+
+The kit inherits compaction settings from the pinned Pi Durable version. It supplies no overrides, percentage thresholds or agent-file setting. In Pi Durable 1.2.0:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `enabled` | `true` | Enables automatic threshold and context-overflow compaction |
+| `reserveTokens` | `16,384` | Above `contextWindow - reserveTokens`, the next model request waits for compaction |
+| `keepRecentTokens` | `20,000` | Guides how much recent context Pi keeps while summarizing older entries |
+| `backgroundTokens` | `32,768` | Starts background compaction this many tokens before the blocking threshold |
+
+Pi uses provider usage and token estimates to measure context. Both threshold paths need a safe cut between entries. Background compaction lets the current request proceed while the summary is prepared. Blocking compaction waits for the summary; a failed blocking compaction fails the run rather than sending the oversized request. A provider context-overflow error can also trigger one compaction and retry.
+
+These are fixed token budgets, not percentages. The local model's 32,768-token window has a blocking threshold of 16,384 tokens and a negative background threshold, so Pi can start background compaction whenever it finds a safe cut. Keeping 20,000 recent tokens can leave a small window above its blocking threshold even after compaction. Later requests may compact again; the kit does not tune these values. A Pi upgrade can change the inherited defaults and must revalidate this behavior.
+
+Compaction summarizes older model context; it does not erase stored history or the session-scoped actions, daily spend, notes and operator controls. Summary requests use the model provider and count toward model usage, not the TaskFast posting and escrow spending limits. Local regression tests cover automatic compaction, restart and write deduplication with faux 32K and 128K models; they do not establish live provider behavior.
+
 ## Code
 
 - `src/core/`: agent integration and marketplace policy.
