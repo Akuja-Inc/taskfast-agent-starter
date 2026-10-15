@@ -192,7 +192,7 @@ const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { 
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, windowN: 12 };
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
 let list = null, view = null;
 
 function el(tag, attrs, ...children) {
@@ -398,9 +398,12 @@ function draftInto(text) {
   ui.messageError = "";
   const textarea = document.querySelector("form.composer textarea");
   if (textarea) textarea.value = text;
+  // The operator asked for the composer: its focus scrolls it into view. A rebuild
+  // that only restores focus does not scroll (render reads scrollComposer).
   ui.focusComposer = true;
+  ui.scrollComposer = true;
   render();
-  if (textarea) { textarea.focus(); ui.focusComposer = false; }
+  if (textarea) { textarea.focus(); ui.focusComposer = ui.scrollComposer = false; }
 }
 function attnActions(id, draftFix) {
   return el("span", { class: "attn-actions" },
@@ -855,8 +858,14 @@ function render() {
   updateMessageStatus();
   measureComposer();
   onScroll();
-  const next = document.querySelector("textarea");
-  if (ui.focusComposer && next) { next.focus(); ui.focusComposer = false; }
+  // Only the composer's own textarea: a bare "textarea" query can land on a Briefing
+  // field. Restored focus keeps the reader's scroll position; a deliberate ask
+  // (draftInto) scrolls the composer into view.
+  const next = document.querySelector("form.composer textarea");
+  if (ui.focusComposer && next) {
+    next.focus({ preventScroll: !ui.scrollComposer });
+    ui.focusComposer = ui.scrollComposer = false;
+  }
 }
 // Catch Save Page even when Send or a queue control has keyboard focus. The
 // textarea handles its own shortcut first; defaultPrevented avoids a second send.
