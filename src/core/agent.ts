@@ -482,8 +482,9 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         // and still drains operator admission before releasing ownership.
         await recovering?.catch(() => {});
         await operatorLine;
-        await owner.close(context);
-        await mcp.close();
+        // Servers stop even when closing the store fails.
+        try { await owner.close(context); }
+        finally { await mcp.close(); }
       },
     };
   } catch (error) {

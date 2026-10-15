@@ -107,6 +107,14 @@ it("reports a server's tool error as a tool error, and bounds a large answer", a
   expect(big).toMatch(/\[truncated 67232 characters\]$/);
 });
 
+it("refuses a server's request for a model completion instead of hanging or answering it", async () => {
+  const dir = agentDir();
+  writeMcp(dir, { docs: local({ sample: approve("sample") }) });
+  const mcp = await connect(dir);
+  const answer = JSON.parse(text(await call(mcp, "mcp_docs_sample", {})));
+  expect(answer).toMatchObject({ code: -32601, message: "Method not found: sampling/createMessage" });
+});
+
 it("times out a slow call and stops it when the run is aborted", async () => {
   const dir = agentDir();
   writeMcp(dir, { docs: local({ slow: approve("slow") }) });
