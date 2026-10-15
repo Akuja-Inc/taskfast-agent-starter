@@ -24,7 +24,7 @@ agents/1/
   .taskfast/
     config.json              # private TaskFast credentials
     wallet.json              # encrypted wallet, when initialized
-    wallet-password          # user-created private unlock file
+    wallet-password          # your private unlock file
   .pi-state/<cli-env>/        # conversation, events and permanent ledger
 ```
 
@@ -50,7 +50,7 @@ pnpm setup-agent --env staging
 3. **Settings:** supply the provider's credentials and settings. Keys show asterisks as you type or paste; Enter submits and Ctrl-C cancels setup. Keys are saved to private, git-ignored `agents/<name>/.env`. Required exported settings are saved there too. Existing settings in that folder are kept; repository-level `.env` and other agents' settings are not loaded. TaskFast children do not receive model keys.
 4. **Model:** choose a tool-calling text model from the pinned catalogue. Suggestions are catalogue defaults, not promises about which release is newest. See [Providers](docs/providers.md) for model-id exceptions and cloud auth requirements.
 5. **Your agent:** whether it takes jobs, posts jobs or both, and who it is (name, business, goals and a per-job posting budget). Setup writes your answers to `agents/<name>/INSTRUCTIONS.md` and copies `agents/<name>/agent.json` from the matching folder in `examples/`.
-6. **TaskFast account:** setup runs `taskfast init --keystore-path=.taskfast/wallet.json` in that agent's folder for the selected environment, unless you pass `--no-init`. This creates the account and wallet and writes `agents/<name>/.taskfast/config.json`. The config holds your TaskFast API key and is git-ignored.
+6. **TaskFast account:** setup runs `taskfast init --keystore-path=.taskfast/wallet.json` in that agent's folder for the selected environment, unless you pass `--no-init`. This creates the account and wallet and writes `agents/<name>/.taskfast/config.json`. The config holds your TaskFast API key and is git-ignored. Before init runs, setup asks for a wallet password and writes it to `agents/<name>/.taskfast/wallet-password` with mode `0400`. It must be one line of at least 12 characters, and you type it twice to confirm it. It shows asterisks as you type and is saved exactly as typed, spaces included; Enter skips it. Setup never replaces a password file that already exists, because a wallet may already be encrypted with it. With a password file and no wallet or TaskFast config yet, setup adds `--generate-wallet`, so init encrypts the new wallet with that file instead of asking for a password of its own. Setup refuses to run init while `TASKFAST_WALLET_PASSWORD` is set, because the CLI would use it instead of the file and the host never passes it on.
 
 Run setup again with a new folder name to add another agent. Fresh setup does not convert old agent files, provider settings or runtime state.
 
@@ -68,6 +68,7 @@ Every question has a flag. Setup checks supplied answers before changing files o
 | `--role worker\|poster\|both` | what the agent does |
 | `--name`, `--business`, `--description`, `--goals` | who the agent is |
 | `--budget <usd>` | budget per job, for `poster` and `both` |
+| `--wallet-password-env NAME` | read the wallet password (one line, at least 12 characters) from environment variable `NAME` into `.taskfast/wallet-password` |
 | `--init` / `--no-init` | run `taskfast init` now, or skip it |
 
 For example, after exporting `ANTHROPIC_API_KEY` in your shell:
@@ -80,7 +81,7 @@ pnpm setup-agent --env staging --provider anthropic --set ANTHROPIC_API_KEY \
   --goals "do a few jobs very well and earn repeat clients" --no-init
 ```
 
-Then run `taskfast --env staging init --keystore-path=.taskfast/wallet.json` in `agents/my-agent/`. Never put keys in chat or command-line values. Setup also accepts `--set NAME=value`, but prefer `--set NAME` so secrets stay out of shell history and transcripts. `pnpm setup-agent --help` lists all flags.
+Then run `taskfast --env staging init --keystore-path=.taskfast/wallet.json` in `agents/my-agent/`. Never put keys in chat or command-line values. Setup also accepts `--set NAME=value`, but prefer `--set NAME` so secrets stay out of shell history and transcripts. The wallet password has no value form: export it and pass `--wallet-password-env NAME`. A run answered entirely by flags never asks for the password, so without that flag no password file is written. `pnpm setup-agent --help` lists all flags.
 
 ## Run it
 
@@ -153,13 +154,13 @@ Steering proof: [normal sidebar](docs/tui/steer-after-normal.png), [narrow sideb
 
 ### Wallet unlock
 
-For posting, funding escrow and settlement, create a one-line `.taskfast/wallet-password` inside each agent folder yourself with mode `0400`. Use that file when initializing the wallet; setup supplies its relative path when it exists. The host discovers each folder's own file automatically:
+For posting, funding escrow and settlement, each agent folder needs a one-line `.taskfast/wallet-password` with mode `0400`. Setup writes it from your answer or from `--wallet-password-env NAME`, or you can create it yourself. Use that file when initializing the wallet; setup supplies its relative path when it exists. The host discovers each folder's own file automatically:
 
 ```bash
 pnpm agents --env development
 ```
 
-The path is not an `agent.json` field or model parameter. The kit passes it only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Every CLI command runs from the agent folder, so the config's relative wallet path continues to work after moving it. Stored wallet and provider-file references must be folder-relative. Startup refuses absolute references, escapes and symlinks rather than rewriting private files. Without an unlock file, signing can be refused. A coding agent must ask you to create the file, never create or request its password.
+The path is not an `agent.json` field or model parameter. The kit passes it only to `post`, `escrow sign` and `settle`, before positional arguments; it never reads the password or forwards it through the child environment. Every CLI command runs from the agent folder, so the config's relative wallet path continues to work after moving it. Stored wallet and provider-file references must be folder-relative. Startup refuses absolute references, escapes and symlinks rather than rewriting private files. Without an unlock file, signing can be refused. A coding agent must ask you to create the file or run setup yourself. It must never create the file, request the password, answer setup's password question or pass `--wallet-password-env`.
 
 Embedding hosts may supply `Runtime.walletPasswordFile` explicitly. `--wallet-password-file <path>` remains an explicit fallback for folders without their own file; the folder-local file takes precedence. An external fallback is not included when archiving the agent, so use the local file for a self-contained agent.
 

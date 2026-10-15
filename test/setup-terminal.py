@@ -31,10 +31,10 @@ proc = subprocess.Popen(args, cwd=root, stdin=slave, stdout=slave, stderr=slave,
 transcript = b""
 
 
-def until(marker):
+def until(marker, since=0):
     global transcript
     deadline = time.monotonic() + 5
-    while marker not in transcript:
+    while marker not in transcript[since:]:
         assert time.monotonic() < deadline, "terminal stopped responding"
         if select.select([master], [], [], 0.05)[0]:
             try:
@@ -59,7 +59,21 @@ try:
         assert proc.wait(timeout=5) == 130, "Ctrl-C must cancel setup"
     else:
         os.write(master, b"\r")
+        until(b"Wallet password")
+        if scenario == "secret":
+            os.write(master, b"s3cret-unlock")
+            until(b"***********")
+            assert b"s3cret-unlock" not in transcript, "wallet password appeared on screen"
+            os.write(master, b"\r")
+            until(b"Confirm the wallet password")
+            confirm = transcript.index(b"Confirm the wallet password")
+            os.write(master, b"s3cret-unlock")
+            until(b"***********", confirm)
+            assert b"s3cret-unlock" not in transcript, "wallet password appeared on screen"
+        os.write(master, b"\r")
         until(b"Child input:")
+        if scenario == "secret":
+            assert (pathlib.Path(root) / "agents" / "check" / ".taskfast" / "wallet-password").read_text() == "s3cret-unlock"
         assert b"CHILD_CANONICAL=True" in transcript, "child inherited raw mode"
         assert b"CHILD_ECHO=True" in transcript, "child inherited disabled echo"
         os.write(master, b"hello\n")
