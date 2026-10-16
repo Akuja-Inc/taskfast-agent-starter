@@ -13,3 +13,4 @@ hand:ee25cb281a5d	claude	2026-10-15T06:09:11Z	lesson	.agents/lessons/console-evi
 hand:4eda324ea8ff	hand	2026-10-15T06:27:43Z	lesson	.agents/lessons/opentui-span-colours.md	The TUI Span helper passed fg and bg as props, which @opentui/solid drops on text nodes, so no span was ever coloured.
 hand:3af3947f6ad3	hand	2026-10-16T00:56:24Z	lesson	.agents/lessons/taskfast-cli-error-codes.md	CLI 4xx codes collapse to validation, so a refusal code can follow an on-chain post that already confirmed.
 hand:4d74929bcd73	hand	2026-10-16T01:46:57Z	lesson	.agents/lessons/mcp-lifecycle.md	Pi-mcp timeouts do not bound notification handshakes or cancel HTTP I/O; bound the whole opening, close on abort, and reap stdio descendants.
+hand:2ce57c29874e	hand	2026-10-16T02:26:34Z	lesson	.agents/lessons/capability-publication.md	Do not run crash recovery against an intentional capability reopen before its new registry opens.

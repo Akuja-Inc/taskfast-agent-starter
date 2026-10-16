@@ -48,6 +48,8 @@ export interface AgentOptions {
   recoverEveryMs?: number;
   // Cancels opening; the returned agent still has its explicit close() lifecycle.
   signal?: AbortSignal;
+  // A management reopen validates/commits its registry before scheduling work.
+  startHeld?: boolean;
   log?: (line: string) => void;
   // Tests substitute a wrapping opener to inject storage failures.
   openStorage?: (file: string) => Promise<Storage>;
@@ -68,6 +70,12 @@ export interface MarketplaceAgent {
   // has already closed its store, so the host must stop the agent without ACKing.
   closed: Promise<SessionEnd>;
   waitForIdle(): Promise<void>;
+  // Hold host admissions to Pi while the current work finishes, without changing the
+  // owner's durable Pause choice. Cancellation releases the hold, never aborts a write.
+  quiesce(signal: AbortSignal): Promise<() => Promise<void>>;
+  releaseInitialHold(): Promise<void>;
+  // Live transport health is separate from configured tool access and test results.
+  capabilityConnections(): { name: string; state: "connected" | "disconnected" }[];
   close(): Promise<void>;
 }
 // The user's controls, committed to the store before they take effect.
@@ -186,6 +194,8 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     await conversation.commit(async (tx) => { await tx.doc(Events); }, context);
     let closed = false;
     let recovering: Promise<void> | undefined;
+    let initialHold = o.startHeld === true;
+    let schedulingHolds = initialHold ? 1 : 0;
     // Serializes operator admission, promotion, withdrawal and drains, not model/tool work.
     let operatorLine: Promise<void> = Promise.resolve();
     function onOperatorLine<T>(change: () => Promise<T>): Promise<T> {
@@ -239,7 +249,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       }
       const aborted = unplacedAbort(record);
       if (aborted) {
-        if ((await owner.snapshot(Operator, context))?.paused) return "steered";
+        if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return "steered";
         await conversation.submit({ type: "input", requestId: `operator-steer:${requestId}`, content: MESSAGE_PREFIX + intent.text, whenBusy: "steer" }, context);
       }
       await conversation.commit(async (tx) => { delete (await tx.doc(Operator)).pendingSteers?.[requestId]; }, context);
@@ -255,7 +265,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         // The first idle submission starts a run, so Pi cannot reorder this buffer.
         messages.sort((a, b) => Number(b.mode === "steer") - Number(a.mode === "steer"));
         for (const { requestId, text, mode } of messages) {
-          if ((await owner.snapshot(Operator, context))?.paused) return;
+          if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
           await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text, whenBusy: mode ?? "followUp" }, context);
           await conversation.commit(async (tx) => {
             const state = await tx.doc(Operator);
@@ -297,14 +307,14 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           if (current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
           // Re-read the pause state per event: a pause committed while this pass was
           // working on earlier events still stops the submissions that follow it.
-          if ((await owner.snapshot(Operator, context))?.paused) continue;
+          if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) continue;
           // Request dedupe covers death between submit() and saving its ID here.
           const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
         // Withdrawal may finish while paused; its replacement must wait for resume.
         await drainMessages();
-        if ((await owner.snapshot(Operator, context))?.paused) return;
+        if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
         owner.resume();
         const stalled = await owner.inspect(context);
         const queued = stalled.submissions.find((item) => item.status === "queued");
@@ -332,9 +342,9 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     }
     async function ping(): Promise<void> {
       await recover();
-      if ((await owner.snapshot(Operator, context))?.paused) return;
+      if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
       const work = await owner.inspect(context);
-      if (work.tasks.length || work.submissions.length) return;
+      if (work.tasks.length || work.submissions.length || schedulingHolds || closed) return;
       await conversation.submit({ type: "input", content: `Check your marketplace work in your ${spec.role} role and pursue the goals in your instructions. Read current state before acting; do not repeat uncertain writes.` }, context);
     }
     // Restore admitted events even if the process died before submitting to Pi;
@@ -472,7 +482,44 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       // A throwing listener is Pi's to report through onReport, which logs it.
       changes: (listener) => owner.subscribeCommits(listener),
       closed: owner.closed,
+      capabilityConnections: () => mcp.status(),
+      releaseInitialHold: async () => {
+        if (!initialHold) return;
+        initialHold = false;
+        schedulingHolds--;
+        if (!closed) { await recoverLogged(); await recoverLogged(); }
+      },
       waitForIdle: () => conversation.waitForIdle(context),
+      quiesce: async (signal) => {
+        signal.throwIfAborted();
+        if (closed) throw new Error("the agent is closed");
+        schedulingHolds++;
+        let released = false;
+        const release = async () => {
+          if (released) return;
+          released = true;
+          schedulingHolds--;
+          if (!closed) { await recoverLogged(); await recoverLogged(); }
+        };
+        let onAbort = () => {};
+        const cancelled = new Promise<never>((_resolve, reject) => {
+          onAbort = () => reject(signal.reason ?? new Error("waiting cancelled"));
+          signal.addEventListener("abort", onAbort, { once: true });
+          if (signal.aborted) onAbort();
+        });
+        try {
+          // Join admissions already in flight before observing idle. No timeout or
+          // cancellation path signals Pi or an in-flight marketplace operation.
+          await Promise.race([(async () => {
+            await recovering;
+            await operatorLine;
+            await conversation.waitForIdle(context);
+          })(), cancelled]);
+          signal.throwIfAborted();
+          return release;
+        } catch (error) { await release(); throw error; }
+        finally { signal.removeEventListener("abort", onAbort); }
+      },
       close: async () => {
         if (closed) return;
         closed = true;

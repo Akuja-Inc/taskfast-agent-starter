@@ -32,6 +32,14 @@ it("reads a local and a remote server, binding credentials by name from the priv
   ]);
 });
 
+it("keeps disabled servers out of the runtime even without their credentials", () => {
+  expect(loadMcpConfig(folder({ servers: { offline: { url: "https://offline.example/mcp", headers: { Authorization: "MISSING" }, tools: {}, enabled: false } } }))).toEqual([]);
+  expect(() => loadMcpConfig(folder({ servers: { offline: { url: "https://offline.example/mcp", enabled: "false" } } }))).toThrow(/enabled must be boolean/);
+  expect(() => loadMcpConfig(folder({ servers: { offline: { url: "http://unsafe.example/mcp", enabled: false } } }))).toThrow(/must use https/);
+});
+it.each(["https://example.com/mcp?token=private", "https://example.com/mcp#private"])("refuses credential-bearing URL components: %s", (url) => {
+  expect(() => loadMcpConfig(folder({ servers: { remote: { url, tools: {} } } }))).toThrow(/query or fragment/);
+});
 it("allows plain http only to this machine", () => {
   for (const url of ["http://127.0.0.1:9000/mcp", "http://localhost/mcp", "http://[::1]:9000/mcp"]) {
     expect(loadMcpConfig(folder({ servers: { web: { url, tools: {} } } }))[0]).toMatchObject({ url });

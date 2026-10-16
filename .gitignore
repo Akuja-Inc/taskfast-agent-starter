@@ -8,6 +8,8 @@ agents/
 .env
 # Each agent's MCP server credentials
 .mcp.env
+# Agent-private capability drafts, credentials and write-ahead recovery journal
+.capabilities/
 # Local shell environment setup can also contain credentials
 .envrc
 # Claude Code puts its worktrees here; they are untracked checkouts

@@ -70,10 +70,23 @@ function walk(o: { root: string; dir: string; depth: number; files: Map<string, 
 
 // The agent folder's skills. No skills folder means none; anything there that is not a
 // valid skill throws, so the agent fails closed before any marketplace work.
-export function loadSkills(agentDir: string): Skill[] {
+export function loadSkills(agentDir: string, options: { includeDisabled?: boolean } = {}): Skill[] {
+  const disabledPath = folderFile({ agentDir, path: ".agents/disabled-skills.json", resource: "disabled skills" });
+  const disabledStat = lstatSync(disabledPath, { throwIfNoEntry: false });
+  let disabled: string[] = [];
+  if (disabledStat) {
+    if (!disabledStat.isFile() || disabledStat.size > 8192) bad("disabled-skills.json must be a small regular file");
+    let value: unknown;
+    try { value = JSON.parse(readFileSync(disabledPath, "utf8")); } catch { bad("disabled-skills.json is not valid JSON"); }
+    if (!Array.isArray(value) || !value.every((name) => typeof name === "string" && NAME.test(name) && name.length <= 64) || new Set(value).size !== value.length) bad("disabled-skills.json must be a list of unique skill names");
+    disabled = value as string[];
+  }
   const root = folderFile({ agentDir, path: SKILLS_PATH, resource: "skills folder" });
   const stat = lstatSync(root, { throwIfNoEntry: false });
-  if (!stat) return [];
+  if (!stat) {
+    if (disabled.length) bad("disabled-skills.json names a skill that is not installed");
+    return [];
+  }
   if (!stat.isDirectory()) bad(`${SKILLS_PATH} must be a folder`);
   const skills: Skill[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -91,7 +104,8 @@ export function loadSkills(agentDir: string): Skill[] {
     if (!description || description.length > 1024) bad(`${where}/SKILL.md: description must be 1-1024 characters`);
     skills.push({ name: entry.name, description, files });
   }
-  return skills;
+  for (const name of disabled) if (!skills.some((skill) => skill.name === name)) bad("disabled-skills.json names a skill that is not installed");
+  return options.includeDisabled ? skills : skills.filter((skill) => !disabled.includes(skill.name));
 }
 
 // skill_read: one listed file of one installed skill, SKILL.md by default.
