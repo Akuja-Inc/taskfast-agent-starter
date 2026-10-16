@@ -415,6 +415,37 @@ it("clears its own uploads from a failed submit before it submits again", async 
   expect((await kit.agent.status()).actions[`submit:${task}`]!.status).toBe("done");
 });
 
+it.each(["list", "delete"])("does not dispatch cleanup writes after aborting during artifact %s", async (pending) => {
+  const started = hold();
+  const gate = hold();
+  const writes: string[][] = [];
+  const uploads = [mine, "550e8400-e29b-41d4-a716-446655440003"];
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact" && args[1] === "list") {
+      if (pending === "list") { started.release(); await gate.held; }
+      return { outcome: "ok", data: { artifacts: uploads.map((id) => ({ id, uploaded_by_id: agentId })) } };
+    }
+    writes.push(args);
+    if (pending === "delete" && args[0] === "artifact" && args[1] === "delete" && args.at(-1) === mine) {
+      started.release(); await gate.held;
+    }
+    return { outcome: "ok", data: { deleted: true } };
+  } });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
+  await kit.agent.ping();
+  await started.held;
+  const aborting = kit.agent.conversation.abort(context);
+  try {
+    await expect.poll(async () => (await kit.agent.conversation.commit((tx) => tx.scanTasks({ conversationId: kit.agent.conversation.id, kind: "pi.tool", abortRequested: true }, 1), context)).items.length).toBe(1);
+  } finally { gate.release(); }
+  await aborting;
+  // An already-dispatched delete may finish, but cancellation forbids the next write.
+  expect(writes).toEqual(pending === "list" ? [] : [["artifact", "delete", "--", task, mine]]);
+  expect((await kit.agent.status()).actions).toEqual({});
+  expect((await kit.agent.status()).spend).toEqual({});
+});
+
 it("refuses a resubmit whose cleanup fails, and reserves nothing", async () => {
   let submits = 0;
   const kit = await open({ command: async (_rt, args): Promise<CliResult> => {

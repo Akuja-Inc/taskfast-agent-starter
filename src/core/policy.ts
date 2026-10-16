@@ -104,12 +104,12 @@ export function marketplacePolicy(o: PolicyOptions) {
   }
   // Each delete is safe to repeat; anything short of ok refuses, and the next try lists again.
   // ponytail: one page of 100 uploads; page with --cursor if a task ever holds more.
-  async function clearUploads(task: string, agentId: string): Promise<string | null> {
+  async function clearUploads(task: string, agentId: string, dispatchDelete: (args: string[]) => Promise<CliResult>): Promise<string | null> {
     const list = await command(o.runtime, ["artifact", "list", "--limit=100", "--", task]);
     const ids = list.outcome === "ok" ? ownUploads(list.data, agentId) : null;
     if (!ids) return `could not list earlier uploads: ${list.error ?? "unreadable artifact list"}`;
     for (const id of ids) {
-      const done = await command(o.runtime, ["artifact", "delete", "--", task, id]);
+      const done = await dispatchDelete(["artifact", "delete", "--", task, id]);
       if (done.outcome !== "ok") return `could not delete earlier upload ${id}: ${done.error ?? done.outcome}`;
     }
     return null;
@@ -152,7 +152,13 @@ export function marketplacePolicy(o: PolicyOptions) {
       // refusal, so a resubmit would pile copies on the task. On a task still being
       // submitted every upload of ours is such a leftover: delete them first.
       if (tool === "task_submit" && files.length) {
-        const cleared = await clearUploads(input.task_id as string, state.identity!.agentId);
+        const cleared = await clearUploads(input.task_id as string, state.identity!.agentId, async (args) => {
+          // Cleanup is repeat-safe, but each delete is still a write. The invocation's
+          // bound commit rejects durable abort marks and closure before dispatch.
+          await commit(async () => {});
+          signal?.throwIfAborted();
+          return command(o.runtime, args);
+        });
         if (cleared) return { refused: cleared };
       }
       const read = (args: string[]) => command(o.runtime, args);
