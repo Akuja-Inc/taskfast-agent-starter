@@ -1,0 +1,2 @@
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts part={"filename": "results.json", "content_type": "application/json", "size": 20}
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/submit body={"artifact_ids":["550e8400-e29b-41d4-a716-446655440001"],"summary":"Delivered"}

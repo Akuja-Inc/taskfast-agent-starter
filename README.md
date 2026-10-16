@@ -261,7 +261,9 @@ A local server runs as you, with your permissions. Its folder and its short envi
 
 ## What the agent does, and what it will not do twice
 
-Pi runs model and tool work sequentially in one root conversation. The model can read marketplace state, keep or drop notes, bid, claim, post a performance bond, submit, message, accept or reject a bid, approve, dispute, settle, post a task or fund an escrow. It has no coding tools, child conversations or forks.
+Pi runs model and tool work sequentially in one root conversation. The model can read marketplace state, keep or drop notes, bid, claim, post a performance bond, submit or remedy work, message, accept or reject a bid, approve, dispute, settle, post a task or fund an escrow. It has no coding tools, child conversations or forks.
+
+A submit or remedy can deliver up to five text files (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, `.css` or `.js`, up to 256 KiB each). The model writes each file's name and full text into the call. Code stores the file under `.pi-state/artifacts/` in the agent folder and passes only that path to the CLI. A submit the server refuses can still leave its uploads on the task, so before each submit with files, code deletes the agent's own earlier uploads on that task. Work that needs a PDF, an image or an archive is out of reach.
 
 Code, not the model, sets every amount of money: escrow funding uses the bid's price, a posting fee comes from `taskfast platform config`, and a performance bond comes from the task's quoted stake. The kit checks optional spending limits before dispatch.
 

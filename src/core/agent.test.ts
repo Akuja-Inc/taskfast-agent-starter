@@ -1,4 +1,5 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
@@ -369,6 +370,132 @@ it("counts a bond post that failed after its preflight as uncertain, and never r
   await run(kit.agent);
   expect(posts).toBe(1);
   expect(Object.values((await kit.agent.status()).spend)).toEqual([2.5]);
+});
+
+const results = { name: "results.json", content: '{"results":[1,2,3]}\n' };
+const mine = "550e8400-e29b-41d4-a716-446655440001";
+const theirs = "550e8400-e29b-41d4-a716-446655440002";
+const toolResults = async (agent: MarketplaceAgent) => (await agent.conversation.context(context)).messages.filter((message) => message.role === "toolResult").flatMap((message) => message.content).filter((part) => part.type === "text").map((part) => part.text);
+
+it("writes each artifact in the agent folder, then submits it", async () => {
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact") return { outcome: "ok", data: { artifacts: [] } };
+    return { outcome: "ok", data: { submission: { status: "under_review" } } };
+  } });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
+  await run(kit.agent);
+  const path = `.pi-state/artifacts/${task}/${createHash("sha256").update(results.content).digest("hex").slice(0, 16)}/results.json`;
+  expect(readFileSync(join(kit.dir, path), "utf8")).toBe(results.content);
+  expect(statSync(join(kit.dir, path)).mode & 0o777).toBe(0o600);
+  expect((await kit.agent.status()).actions[`submit:${task}`]!.status).toBe("done");
+});
+
+it("clears its own uploads from a failed submit before it submits again", async () => {
+  const commands: string[][] = [];
+  let submits = 0;
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    commands.push(args);
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact" && args[1] === "list") return { outcome: "ok", data: { artifacts: submits ? [{ id: theirs, uploaded_by_id: "44444444-4444-4444-8444-444444444444" }, { id: mine, uploaded_by_id: agentId }] : [] } };
+    if (args[0] === "artifact") return { outcome: "ok", data: { deleted: true } };
+    submits += 1;
+    // What the CLI prints when criteria fail after every upload landed (gh71 captures).
+    return submits === 1 ? { outcome: "failed", error: "validation: validation [validation_error]: Completion criteria not met" } : { outcome: "ok", data: { submission: { status: "under_review" } } };
+  } });
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Fixed", artifacts: [{ ...results, content: '{"results":[1,2,3,4]}\n' }] }, { id: "again" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Done"),
+  ]);
+  await run(kit.agent);
+  expect(submits).toBe(2);
+  const list = ["artifact", "list", "--limit=100", "--", task];
+  expect(commands.filter((args) => args[0] === "artifact")).toEqual([list, list, ["artifact", "delete", "--", task, mine]]);
+  expect((await kit.agent.status()).actions[`submit:${task}`]!.status).toBe("done");
+});
+
+it.each(["list", "delete"])("does not dispatch cleanup writes after aborting during artifact %s", async (pending) => {
+  const started = hold();
+  const gate = hold();
+  const writes: string[][] = [];
+  const uploads = [mine, "550e8400-e29b-41d4-a716-446655440003"];
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact" && args[1] === "list") {
+      if (pending === "list") { started.release(); await gate.held; }
+      return { outcome: "ok", data: { artifacts: uploads.map((id) => ({ id, uploaded_by_id: agentId })) } };
+    }
+    writes.push(args);
+    if (pending === "delete" && args[0] === "artifact" && args[1] === "delete" && args.at(-1) === mine) {
+      started.release(); await gate.held;
+    }
+    return { outcome: "ok", data: { deleted: true } };
+  } });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
+  await kit.agent.ping();
+  await started.held;
+  const aborting = kit.agent.conversation.abort(context);
+  try {
+    await expect.poll(async () => (await kit.agent.conversation.commit((tx) => tx.scanTasks({ conversationId: kit.agent.conversation.id, kind: "pi.tool", abortRequested: true }, 1), context)).items.length).toBe(1);
+  } finally { gate.release(); }
+  await aborting;
+  // An already-dispatched delete may finish, but cancellation forbids the next write.
+  expect(writes).toEqual(pending === "list" ? [] : [["artifact", "delete", "--", task, mine]]);
+  expect((await kit.agent.status()).actions).toEqual({});
+  expect((await kit.agent.status()).spend).toEqual({});
+});
+
+it("refuses a resubmit whose cleanup fails, and reserves nothing", async () => {
+  let submits = 0;
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact" && args[1] === "list") return { outcome: "ok", data: { artifacts: [{ id: mine, uploaded_by_id: agentId }] } };
+    if (args[0] === "artifact") return { outcome: "uncertain", error: "timeout" };
+    submits += 1;
+    return { outcome: "ok", data: null };
+  } });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
+  await run(kit.agent);
+  expect(submits).toBe(0);
+  expect(await toolResults(kit.agent)).toEqual([`{"refused":"could not delete earlier upload ${mine}: timeout"}`]);
+  expect((await kit.agent.status()).actions).toEqual({});
+});
+
+it("refuses a submit whose files cannot be written in the agent folder, before any CLI call", async () => {
+  const commands: string[][] = [];
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => { commands.push(args); return args[0] === "me" ? me : { outcome: "ok", data: null }; } });
+  const outside = mkdtempSync(join(tmpdir(), "outside-"));
+  dirs.push(outside);
+  symlinkSync(outside, join(kit.dir, ".pi-state"));
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
+  await run(kit.agent);
+  expect(commands.filter((args) => args[0] !== "me")).toEqual([]);
+  expect((await toolResults(kit.agent))[0]).toMatch(/^\{"refused":"could not write the artifact files: artifact must not use a symlink/);
+  expect((await kit.agent.status()).actions).toEqual({});
+});
+
+it("runs a changed remedy again but never repeats an uncertain one, across a restart", async () => {
+  const remedies: string[][] = [];
+  const command = async (_rt: unknown, args: string[]): Promise<CliResult> => {
+    if (args[0] === "me") return me;
+    remedies.push(args);
+    return remedies.length === 1 ? { outcome: "uncertain", error: "timeout" } : { outcome: "ok", data: { submission: { status: "under_review" } } };
+  };
+  const first = await open({ command });
+  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_remedy", { task_id: task, summary: "Revised", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Unknown")]);
+  await run(first.agent);
+  await first.agent.close();
+  const kit = await open({ dir: first.dir, command });
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("task_remedy", { task_id: task, summary: "Revised", artifacts: [results] }, { id: "same" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("task_remedy", { task_id: task, summary: "Revised twice", artifacts: [results] }, { id: "changed" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Done"),
+  ]);
+  await run(kit.agent);
+  // A remedy clears nothing: the task's first delivery is also this agent's upload.
+  expect(remedies.map((args) => args.slice(0, 3))).toEqual([["task", "remedy", "--summary=Revised"], ["task", "remedy", "--summary=Revised twice"]]);
+  expect(Object.values((await kit.agent.status()).actions).map((action) => action.status).sort()).toEqual(["done", "uncertain"]);
 });
 
 it("starts a new UTC spending day without clearing completed keys", async () => {

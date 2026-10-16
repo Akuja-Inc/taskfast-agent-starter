@@ -14,10 +14,14 @@ export type ToolKind = "read" | "write" | "money" | "memory";
 // submissionFee are prices the server publishes; bondStake is the bond a task's quote
 // requires.
 export type AmountSource = "bidPrice" | "submissionFee" | "bondStake";
+type Schema = { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[]; items?: Schema }>; required: string[]; additionalProperties: false };
 interface ToolBase {
   description: string;
-  schema: { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[] }>; required: string[]; additionalProperties: false };
+  schema: Schema;
   args(input: Record<string, unknown>): string[];
+  // Files policy writes inside the agent folder before dispatch: folder-relative paths
+  // code builds, with the model's text as content.
+  files?(input: Record<string, unknown>): { path: string; content: string }[];
 }
 export type ToolSpec =
   | (ToolBase & { kind: "read" | "memory"; amount?: never; key?: never })
@@ -48,7 +52,48 @@ const money = (v: unknown, n: string) => (typeof v === "string" && PRICE.test(v)
 const digest = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
 
 const s = (description: string) => ({ type: "string", description });
-const obj = (properties: ToolSpec["schema"]["properties"], required: string[] = []): ToolSpec["schema"] => ({ type: "object", properties, required, additionalProperties: false });
+const obj = (properties: Schema["properties"], required: string[] = []): Schema => ({ type: "object", properties, required, additionalProperties: false });
+
+// Artifacts are text the model writes. Code stores each one under a folder it builds
+// from the task and the content's digest, and passes that path. The model names the
+// file, because a task's criteria can require one such as results.json; the name is one
+// basename with an extension the server accepts as text, so it cannot leave its folder.
+export const ARTIFACTS_PATH = ".pi-state/artifacts";
+const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.(txt|md|csv|json|xml|html|css|js)$/;
+const MAX_ARTIFACTS = 5;
+const MAX_ARTIFACT_BYTES = 256 * 1024;
+function artifacts(v: unknown, task: string): { path: string; content: string }[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length < 1 || v.length > MAX_ARTIFACTS) bad(`artifacts must be a list of 1 to ${MAX_ARTIFACTS} files`);
+  const names = new Set<string>();
+  return (v as unknown[]).map((a) => {
+    if (a === null || typeof a !== "object" || Object.keys(a).some((k) => k !== "name" && k !== "content")) bad("each artifact is { name, content }");
+    const { name, content } = a as Record<string, unknown>;
+    if (typeof name !== "string" || !ARTIFACT_NAME.test(name) || names.has(name)) bad("artifact name must be a unique file name like results.json, ending in .txt, .md, .csv, .json, .xml, .html, .css or .js");
+    names.add(name as string);
+    const bytes = typeof content === "string" ? Buffer.byteLength(content) : 0;
+    if (bytes < 1 || bytes > MAX_ARTIFACT_BYTES) bad(`artifact ${name as string} content must be 1 to ${MAX_ARTIFACT_BYTES} bytes of text`);
+    return { path: `${ARTIFACTS_PATH}/${task}/${digest(content as string)}/${name as string}`, content: content as string };
+  });
+}
+const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
+const artifactList = {
+  type: "array",
+  description: `optional files to deliver, each as the whole text you write: at most ${MAX_ARTIFACTS}, each up to 256 KiB`,
+  items: obj({ name: s("file name a criterion may require, e.g. results.json; ends in .txt, .md, .csv, .json, .xml, .html, .css or .js"), content: s("the file's full text") }, ["name", "content"]),
+};
+// The CLI uploads each file, then submits exactly those uploads.
+const deliver = (command: string) => (i: Record<string, unknown>) =>
+  ["task", command, `--summary=${text(i.summary, "summary")}`, ...artifactFiles(i).map((f) => `--artifact=${f.path}`), "--", uuid(i.task_id, "task_id")];
+
+// This agent's uploads in `artifact list` output (data.artifacts[]), or null when the
+// output is not that shape or an id is not a UUID.
+export function ownUploads(data: unknown, agentId: string): string[] | null {
+  const rows = typeof data === "object" && data !== null && "artifacts" in data ? data.artifacts : null;
+  if (!Array.isArray(rows)) return null;
+  const ids = rows.filter((row) => typeof row?.uploaded_by_id === "string" && row.uploaded_by_id.toLowerCase() === agentId).map((row) => row.id);
+  return ids.every((id) => typeof id === "string" && UUID.test(id)) ? ids : null;
+}
 
 export const TOOLS: Record<string, ToolSpec> = {
   me: { kind: "read", description: "Your own agent profile and whether you are ready to work.", schema: obj({}), args: () => ["me"] },
@@ -101,12 +146,23 @@ export const TOOLS: Record<string, ToolSpec> = {
     amount: "bondStake",
     spendAfterPreflight: true,
   },
+  // Stored calls hold summary-only submits, so artifacts stays optional and the key per task.
   task_submit: {
     kind: "write",
-    description: "Submit your finished work on a task, with a summary.",
-    schema: obj({ task_id: s("task UUID"), summary: s("what you delivered") }, ["task_id", "summary"]),
-    args: (i) => ["task", "submit", `--summary=${text(i.summary, "summary")}`, "--", uuid(i.task_id, "task_id")],
+    description: "Submit your finished work on a task, with a summary and any files it needs.",
+    schema: obj({ task_id: s("task UUID"), summary: s("what you delivered"), artifacts: artifactList }, ["task_id", "summary"]),
+    args: deliver("submit"),
+    files: artifactFiles,
     key: (i) => `submit:${uuid(i.task_id, "task_id")}`,
+  },
+  // The server allows a few remedies per dispute, so each different remedy is its own action.
+  task_remedy: {
+    kind: "write",
+    description: "Resubmit revised work on a task disputed against you, with a summary and any files it needs.",
+    schema: obj({ task_id: s("task UUID"), summary: s("what you changed and delivered"), artifacts: artifactList }, ["task_id", "summary"]),
+    args: deliver("remedy"),
+    files: artifactFiles,
+    key: (i) => `remedy:${uuid(i.task_id, "task_id")}:${digest(JSON.stringify([text(i.summary, "summary"), artifactFiles(i).map((f) => f.path)]))}`,
   },
   message_send: {
     kind: "write",
@@ -185,7 +241,7 @@ export const TOOLS: Record<string, ToolSpec> = {
 
 // Validates a tool call from the model. Returns the command args and action key, or
 // throws with a message the model can read and correct.
-export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: string[]; key: string | null; input: Record<string, unknown> } {
+export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: string[]; key: string | null; files: { path: string; content: string }[]; input: Record<string, unknown> } {
   const spec = Object.hasOwn(TOOLS, tool) ? TOOLS[tool]! : bad(`no tool named ${tool}`);
   if (input === null || typeof input !== "object" || Array.isArray(input)) bad("tool input must be an object");
   const i = { ...(input as Record<string, unknown>) };
@@ -195,5 +251,5 @@ export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: s
     // and the policy reads, so a fresh model call cannot vary casing to run twice.
     if (k === "task_id" || k === "bid_id") i[k] = uuid(i[k], k).toLowerCase();
   }
-  return { spec, args: spec.args(i), key: spec.key ? spec.key(i) : null, input: i };
+  return { spec, args: spec.args(i), key: spec.key ? spec.key(i) : null, files: spec.files ? spec.files(i) : [], input: i };
 }

@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { prepare, TOOLS } from "./tools.js";
+import { ownUploads, prepare, TOOLS } from "./tools.js";
 
 const T = "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b";
 
@@ -90,5 +91,60 @@ describe("prepare", () => {
 
   it("names the right id in a bad bid id error", () => {
     expect(() => prepare("bid_accept", { bid_id: "--env=prod" })).toThrow(/bid_id must be a UUID/);
+  });
+});
+
+describe("artifacts", () => {
+  const results = { name: "results.json", content: '{"results":[1,2,3]}\n' };
+  const at = (name: string, content: string) => `.pi-state/artifacts/${T}/${createHash("sha256").update(content).digest("hex").slice(0, 16)}/${name}`;
+
+  it("writes each file under a folder code chooses and passes its path as an option before --", () => {
+    const call = prepare("task_submit", { task_id: T.toUpperCase(), summary: "Delivered", artifacts: [results, { name: "notes.md", content: "# Notes" }] });
+    expect(call.files).toEqual([{ path: at("results.json", results.content), content: results.content }, { path: at("notes.md", "# Notes"), content: "# Notes" }]);
+    expect(call.args).toEqual(["task", "submit", "--summary=Delivered", `--artifact=${at("results.json", results.content)}`, `--artifact=${at("notes.md", "# Notes")}`, "--", T]);
+    expect(call.key).toBe(`submit:${T}`);
+    expect(prepare("task_remedy", { task_id: T, summary: "Revised", artifacts: [results] }).args).toEqual(["task", "remedy", "--summary=Revised", `--artifact=${at("results.json", results.content)}`, "--", T]);
+  });
+
+  it("keeps a stored summary-only submit valid, with no files", () => {
+    expect(prepare("task_submit", { task_id: T, summary: "Done" }).files).toEqual([]);
+    expect(TOOLS.task_submit!.schema.required).toEqual(["task_id", "summary"]);
+  });
+
+  it("keys a remedy by its content, so a changed remedy is a new action", () => {
+    const key = prepare("task_remedy", { task_id: T, summary: "Revised", artifacts: [results] }).key;
+    expect(key).toMatch(new RegExp(`^remedy:${T}:[0-9a-f]{16}$`));
+    expect(prepare("task_remedy", { task_id: T, summary: "Revised", artifacts: [results] }).key).toBe(key);
+    expect(prepare("task_remedy", { task_id: T, summary: "Revised", artifacts: [{ ...results, content: "{}" }] }).key).not.toBe(key);
+    expect(prepare("task_remedy", { task_id: T, summary: "Revised again", artifacts: [results] }).key).not.toBe(key);
+  });
+
+  it.each([
+    ["a path", { name: "../results.json", content: "x" }, /artifact name/],
+    ["a folder", { name: "out/results.json", content: "x" }, /artifact name/],
+    ["a hidden file", { name: ".env.txt", content: "x" }, /artifact name/],
+    ["a flag", { name: "--env=prod.txt", content: "x" }, /artifact name/],
+    ["a binary type", { name: "report.pdf", content: "x" }, /artifact name/],
+    ["empty content", { name: "a.txt", content: "" }, /a.txt content must be 1 to 262144 bytes/],
+    ["content over 256 KiB", { name: "a.txt", content: "é".repeat(131073) }, /content must be 1 to 262144 bytes/],
+    ["an extra field", { name: "a.txt", content: "x", path: "/etc/passwd" }, /each artifact is \{ name, content \}/],
+  ])("refuses an artifact with %s", (_n, artifact, why) => {
+    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [artifact] })).toThrow(why);
+  });
+
+  it("refuses an empty list, more than five files and repeated names", () => {
+    const file = (n: number) => ({ name: `part${n}.txt`, content: "x" });
+    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [] })).toThrow(/1 to 5 files/);
+    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [1, 2, 3, 4, 5, 6].map(file) })).toThrow(/1 to 5 files/);
+    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [file(1), file(1)] })).toThrow(/unique/);
+  });
+
+  it("reads this agent's own uploads from real `taskfast artifact list` output", () => {
+    const me = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    const row = (id: string, by: string) => ({ id, uploaded_by_id: by });
+    const other = "550e8400-e29b-41d4-a716-446655440009";
+    expect(ownUploads({ artifacts: [row(other, T), row("550e8400-e29b-41d4-a716-446655440001", me.toUpperCase())] }, me)).toEqual(["550e8400-e29b-41d4-a716-446655440001"]);
+    expect(ownUploads({ artifacts: [row("--env=prod", me)] }, me)).toBeNull();
+    expect(ownUploads({ data: [] }, me)).toBeNull();
   });
 });

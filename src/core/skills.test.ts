@@ -131,6 +131,13 @@ it("lists names and one-line descriptions, the tool mapping and the precedence r
   expect(prompt).toContain("`taskfast bond post` is bond_post");
   expect(prompt).toContain("A stake-tier task (worth $1 or more) needs its performance bond first");
   expect(UNSUPPORTED_COMMANDS).not.toContain("bond");
+  expect(prompt).toContain("`taskfast task remedy` is task_remedy");
+  expect(prompt).toContain("task_submit and task_remedy deliver text files");
+  expect(prompt).not.toContain("summary only");
+  // `taskfast artifact` stays unsupported as a command, but artifact work is not off limits.
+  expect(prompt).toContain("The upload, list and delete steps of `taskfast artifact` happen inside them");
+  expect(prompt).toContain("a task that needs text files is work you can take");
+  expect(prompt).not.toContain("requires file artifacts");
   expect(prompt).toContain("do not bid on or claim work that needs one");
   expect(prompt).not.toMatch(/tell your operator|ask your operator/);
   expect(prompt).toMatch(/never repeat a write whose result was uncertain/);

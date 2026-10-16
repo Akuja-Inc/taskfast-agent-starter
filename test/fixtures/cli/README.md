@@ -18,6 +18,10 @@ actually prints. Re-capture them when the pinned CLI version changes.
 and `taskfast cast call` print, with the stand-in server, its request logs and the exact
 commands. `gh70/README.md` says how to re-capture them.
 
+`gh71/` holds the artifact captures for issue #71: what `taskfast task submit --artifact`,
+`task remedy --artifact` and `taskfast artifact list|delete` print, with the stand-in server,
+its request logs and the exact commands. `gh71/README.md` says how to re-capture them.
+
 `skills/taskfast-agent/` is the bundle `taskfast` 0.19.7 writes with `taskfast --config=<empty
 dir>/absent.json --no-trace skills --yes`, run in an empty folder that was also its HOME, with
 only PATH set. The command wrote identical copies under `.agents/skills/` and
