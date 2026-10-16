@@ -114,6 +114,7 @@ If the port is taken, the console tries the next one up, one at a time (up to 10
 - **Queued messages:** the list near the composer shows the oldest message first and labels each Follow-up or Steer. Use a follow-up's Steer button to promote it without sending it again. Withdraw removes either mode before the agent receives it, including across a restart. Sending, promotion and withdrawal work while paused. If placement wins the race, the console says "The agent already has this message." Withdrawal cannot cancel a message the agent already received. These notices do not mark your draft send as failed.
 - **Standing orders:** orders join the system prompt on every turn and only you can change them.
 - **Briefing:** edit the agent's `INSTRUCTIONS.md` instructions, temperament, dials and limits. Saving checks both files strictly, writes them, and reopens only that agent; the others keep running. If the agent cannot reopen, both files go back to what they were. The terminal UI edits the `agent.json` fields only. Saving mid-turn interrupts the agent: a write in flight is recorded as uncertain, as after a restart.
+- **Capabilities:** manage this agent's skills and MCP servers. Add the CLI skill or import a folder, configure private MCP bindings, consent to connection tests and approve read tools individually. Changes share a pending batch. **Review changes** shows active and proposed access. **Apply when idle** waits for current work without aborting a write, then reopens only this agent. Pause and spending freeze survive. See [Agent capabilities](docs/capabilities/README.md) for import, credential, conflict and recovery rules. The TUI has no capability editor.
 
 The console reads through the running host. It never opens a store or a second event stream: one store has one owner, and the server allows one stream per agent.
 
@@ -223,11 +224,11 @@ A skill is a folder of instructions, `SKILL.md` plus text references, in the [Ag
 
 The system prompt lists each skill's name and description. The model reads a skill with the `skill_read` tool, by skill name and one of the files that skill lists, never by path. Only `.md` and `.txt` files are readable; scripts and other files stay inert. Skill text is guidance, not permission: it adds no tool, no shell and no way around the policy. The prompt maps each `taskfast` command the skill names to the tool that runs it, and names the commands no tool runs: setup, webhooks, event polling, artifacts, payments, reviews and task changes beyond the tools above. The agent works without you, so it does not wait for help: it does not bid on or claim work that needs one, such as a task that requires file artifacts. If work it already holds turns out to need one, it keeps a note of what was missing, which the console shows. An uncertain write, `escrow_sign` included, is never repeated, whatever a skill says.
 
-The host reads skills when it opens the agent, so restart the agent after you change one. A malformed skill stops that agent before it opens its store or asks the server anything: a skill folder without `SKILL.md`, a `name` that differs from its folder, a symlink, an oversized or non-UTF-8 text file, or folders nested too deep. Without a `.agents/skills` folder an agent runs exactly as before.
+The host reads skills when it opens the agent. Use the console's **Capabilities** tab to stage imports, replacements, enable/disable or removal and apply them when idle. Restart after manual file edits. Disabling a skill prevents future loads but cannot erase instructions already in conversation history. A malformed skill stops that agent before it opens its store or asks the server anything: a skill folder without `SKILL.md`, a `name` that differs from its folder, a symlink, an oversized or non-UTF-8 text file, or folders nested too deep. Without a `.agents/skills` folder an agent runs exactly as before.
 
 ### MCP servers
 
-An agent can use read tools from [MCP](https://modelcontextprotocol.io) servers that you configure for it and approve one tool at a time. List the servers in `agents/<id>/mcp.json`. Put their credentials in `agents/<id>/.mcp.env`, apart from the model settings in `.env`. Run `chmod 600 .mcp.env` so only you can read it. `mcp.json` names a credential, never its value:
+An agent can use read tools from [MCP](https://modelcontextprotocol.io) servers that you configure for it and approve one tool at a time. Use the console's **Capabilities** tab for connection setup, private credentials and explicit tool review, or list the servers in `agents/<id>/mcp.json`. Put their credentials in `agents/<id>/.mcp.env`, apart from the model settings in `.env`. Run `chmod 600 .mcp.env` so only you can read it. `mcp.json` names a credential, never its value:
 
 ```json
 {
@@ -293,6 +294,8 @@ Compaction summarizes older model context; it does not erase stored history or t
 - `src/run.ts`: local host, stream lifecycle, recovery and periodic polling; starts the console with `--console` and reopens one agent after a saved agent file.
 - `src/console.ts`, `src/console-page.ts`, `src/console-lifecycle.ts`, `src/console-live.ts`, `src/console-markdown.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower and reply markdown subset the page and the TUI share.
 - `src/tui/`: the terminal UI, a Bun package of its own. `screen.ts` (what to draw from a view), `keys.ts` (what each key does) and `link.ts` are pure and tested under Node; `app.tsx` draws them with OpenTUI.
+- `src/capabilities.ts`, `src/capability-types.ts`: one agent folder's private staged batch, redacted management views, connection review and recoverable publication contract.
+- `src/console-capabilities-page.ts`: the Capabilities tab, folder import, server setup and shared review. It uses the existing console API protections and host lifecycle, not a second runtime.
 - `src/setup.ts`: fresh agent setup.
 - `examples/`: agent folders (`agent.json` and `INSTRUCTIONS.md`) to copy.
 

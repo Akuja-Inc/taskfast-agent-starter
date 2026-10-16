@@ -1,0 +1,20 @@
+{
+  "source": "4a7d37f957e02fe804000c937eab8e3bfd973369",
+  "passed": true,
+  "exercised": [
+    "directory import",
+    "private credential entry",
+    "explicit local execution consent",
+    "discovery only",
+    "explicit search read approval",
+    "blocked write",
+    "shared review",
+    "dormant reopen after commit",
+    "actual durable MCP read",
+    "live connection health",
+    "sibling isolation",
+    "credential redaction",
+    "phone consent layout"
+  ],
+  "services": "temporary SQLite stores, faux model, loopback console and local stdio MCP fixture only"
+}

@@ -9,6 +9,7 @@ import { parseAgentSpec } from "./core/spec.js";
 import { buildTimeline } from "./core/timeline.js";
 import type { AgentSpec, Env } from "./core/types.js";
 import type { AgentRosterEntry, StartupAction } from "./console-lifecycle.js";
+import { CapabilityError, type CapabilityManager } from "./capabilities.js";
 
 // What the console needs from one running agent.
 export interface ConsoleAgent {
@@ -44,6 +45,8 @@ export interface ConsoleOptions {
   roster?(): AgentRosterEntry[];
   // Schedules lifecycle intent without waiting for connection or cleanup.
   startup?(request: StartupAction): boolean;
+  // Folder management also works for a stopped agent; never borrow another slot's manager.
+  capabilities?(id: string): Pick<CapabilityManager, "view" | "command"> | undefined;
   // Event stream tuning; tests pass small values.
   coalesceMs?: number;
   pingMs?: number;
@@ -72,12 +75,12 @@ export const MAX_STREAMS = 8;
 // Past this many bytes queued for one reader it has stalled: end its stream rather than buffer views forever.
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, maximum = MAX_BODY): Promise<unknown> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) return undefined;
+    if (size > maximum) return undefined;
     chunks.push(chunk as Buffer);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return undefined; }
@@ -222,6 +225,19 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       if (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 0) return send(res, 400, { error: "generation must be a nonnegative safe integer" });
       if (generation !== entry.generation || !o.startup({ id: entry.id, generation, action: arg })) return send(res, 409, { error: "agent startup changed; refresh before trying again" });
       return send(res, 202, { accepted: true });
+    }
+    if (action === "capabilities" && id !== undefined) {
+      const manager = o.capabilities?.(id);
+      if (!manager) return send(res, 404, { error: "capability management is unavailable" });
+      try {
+        if (req.method === "GET" && arg === undefined) return send(res, 200, await manager.view());
+        if (req.method === "POST" && arg !== undefined) return send(res, 200, await manager.command(arg, await readJson(req, 4 * 1024 * 1024)));
+        return send(res, 404, { error: "not found" });
+      } catch (error) {
+        if (error instanceof CapabilityError) return send(res, error.status, { error: error.message });
+        // Filesystem and parser exceptions may contain private staging bytes.
+        return send(res, 500, { error: "Capability management failed. Check this agent's folder permissions and try again." });
+      }
     }
     if (!item || (entry && entry.state !== "ready")) return send(res, 409, { error: "agent is not ready" });
     // This one-shot read is not drained by closeStreams, so a fetch racing a spec-save

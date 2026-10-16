@@ -1,3 +1,4 @@
+import { capabilitiesPage, CAPABILITIES_CSS, readCapabilityFolder } from "./console-capabilities-page.js";
 import { follow } from "./console-live.js";
 import { markdown } from "./console-markdown.js";
 import { MAX_INSTRUCTIONS } from "./core/spec.js";
@@ -200,6 +201,7 @@ button.jump { display: none; position: absolute; left: 50%; top: -58px; transfor
 button.jump svg { transform: rotate(90deg); }
 body.away button.jump { display: inline-flex; }
 @media (max-width: 640px) { .railed { grid-template-columns: minmax(0, 1fr); } .rail { display: none; } form.composer .samples, form.composer .hint { display: none; } }
+${CAPABILITIES_CSS}
 </style>
 <script>try{var t=localStorage.getItem("tf-theme");if(t!=="dark"&&t!=="light")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
@@ -221,6 +223,8 @@ const generationOf = (entry) => entry ? entry.generation || 0 : 0;
 const ready = () => stateOf(selected()) === "ready";
 const selectionKey = () => token && ready() ? token + " " + ui.agent + " " + generationOf(selected()) : null;
 function selectAgent(id) {
+  if (id === ui.agent) return;
+  if (!capabilities.leave()) { const selector = document.querySelector('select[aria-label="Agent"]'); if (selector) selector.value = ui.agent; return; }
   drafts.set(ui.agent, { draft: ui.draft, attempt: ui.attempt, messageError: ui.messageError });
   ui.agent = id;
   Object.assign(ui, drafts.get(id) || { draft: "", attempt: null, messageError: "" });
@@ -310,8 +314,19 @@ function jsonBlock(key, value) {
 }
 async function api(method, path, body, signal) {
   const res = await fetch(path, { method, signal, headers: { authorization: "Bearer " + token, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (res.status === 401) { token = null; store.drop("token"); render(); throw new Error("The console token was refused. Paste the link pnpm agents printed."); }
-  if (!res.ok) { let message = res.statusText; try { message = (await res.json()).error || message; } catch {} const error = new Error(message); error.status = res.status; throw error; }
+  if (res.status === 401) { capabilities.clear(); token = null; store.drop("token"); render(); throw new Error("The console token was refused. Paste the link pnpm agents printed."); }
+  if (!res.ok) {
+    let message = res.statusText, safeCapability = false;
+    try {
+      const payload = await res.json();
+      if (payload && typeof payload.error === "string" && payload.error.length <= 4096) {
+        message = payload.error;
+        // This route returns only redacted CapabilityError details or a fixed generic error.
+        safeCapability = path.startsWith("/api/agents/") && path.split("/")[4] === "capabilities" && path.split("/").length <= 6 && (res.headers.get("content-type") || "").startsWith("application/json");
+      }
+    } catch {}
+    const error = new Error(message); error.status = res.status; error.safeCapability = safeCapability; throw error;
+  }
   return res.status === 204 ? null : res.json();
 }
 async function act(method, action, body) {
@@ -321,6 +336,13 @@ async function act(method, action, body) {
 }
 ${LIVE}
 ${MARKDOWN}
+const capabilities = (${capabilitiesPage.toString()})({ el, api, readFolder: ${readCapabilityFolder.toString()} });
+function selectTab(tab) {
+  if (tab === ui.tab) return;
+  if (ui.tab === "capabilities" && !capabilities.leave()) return;
+  ui.tab = tab; render(true);
+  document.querySelector(tab === "capabilities" ? "#capabilities-root h1" : 'nav a[aria-current="page"]')?.focus({ preventScroll: true });
+}
 // Every link that leaves the console opens a new tab that cannot reach back into this one.
 const AWAY = { target: "_blank", rel: "noopener noreferrer" };
 // A reply's markdown, built node by node: no markup string from the model reaches the DOM.
@@ -477,8 +499,9 @@ function header() {
     el("header", {}, el("div", { class: "row" },
       el("span", { class: "brand" }, el("span", { class: "sq brand-sq" + (!op ? " unready" : op.paused ? " paused" : ""), title: stateText }, pict("agent", 16)), "Agent console", el("span", { class: "sr-only", role: "status", text: stateText.toLowerCase() })),
       el("nav", { "aria-label": "Console" },
-        el("a", { href: "#", "aria-current": ui.tab === "timeline" ? "page" : null, onclick: (e) => { e.preventDefault(); ui.tab = "timeline"; render(); }, text: "Timeline" }),
-        el("a", { href: "#", "aria-current": ui.tab === "briefing" ? "page" : null, onclick: (e) => { e.preventDefault(); ui.tab = "briefing"; render(); }, text: "Briefing" })),
+        el("a", { href: "#", "aria-current": ui.tab === "timeline" ? "page" : null, onclick: (e) => { e.preventDefault(); selectTab("timeline"); }, text: "Timeline" }),
+        el("a", { href: "#", "aria-current": ui.tab === "briefing" ? "page" : null, onclick: (e) => { e.preventDefault(); selectTab("briefing"); }, text: "Briefing" }),
+        el("a", { href: "#", "aria-current": ui.tab === "capabilities" ? "page" : null, onclick: (e) => { e.preventDefault(); selectTab("capabilities"); }, text: "Capabilities" })),
       el("div", { class: "spacer" },
         el("span", { class: "rule" }),
         el("span", { class: "switcher" },
@@ -1012,6 +1035,17 @@ function render(force = false) {
       selector.dataset.roster = signature;
     }
   }
+  const capRoot = document.querySelector("#capabilities-root");
+  if (!force && token && ui.tab === "capabilities" && capRoot && capRoot.getAttribute("data-agent") === ui.agent) {
+    // Host pushes update the chrome, never the capability editor or its focused controls.
+    const chrome = document.querySelector("header");
+    if (chrome && !chrome.contains(document.activeElement)) {
+      const next = header().find((node) => node.tagName === "HEADER");
+      if (next) chrome.replaceChildren(...next.children);
+    }
+    renderedSelection = current;
+    return;
+  }
   const activeTag = document.activeElement && document.activeElement.tagName;
   // Keep keyboard focus on stable queue controls as well as on the editor.
   const queue = document.querySelector("#queued-messages");
@@ -1027,7 +1061,7 @@ function render(force = false) {
   renderedSelection = current;
   app.replaceChildren(...(!token ? [unlock()] :
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null,
-      !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+      ui.tab === "capabilities" && ui.agent && selected() ? capabilities.mount(ui.agent, selected().name || ui.agent) : !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
   updateStartupStatus();
   if (activeTag === "SELECT" && changed) document.querySelector('select[aria-label="Agent"]')?.focus({ preventScroll: true });
   // The timeline opens at its newest turn, as a chat does.
@@ -1051,7 +1085,7 @@ addEventListener("keydown", (e) => {
 });
 render();
 refresh();
-setInterval(() => { void refresh(); }, 1000);
+setInterval(() => { void refresh(); if (token && ui.tab === "capabilities") void capabilities.poll(); }, 1000);
 </script>
 </body>
 </html>
