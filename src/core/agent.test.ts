@@ -431,6 +431,19 @@ it("refuses a resubmit whose cleanup fails, and reserves nothing", async () => {
   expect((await kit.agent.status()).actions).toEqual({});
 });
 
+it("refuses a submit whose files cannot be written in the agent folder, before any CLI call", async () => {
+  const commands: string[][] = [];
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => { commands.push(args); return args[0] === "me" ? me : { outcome: "ok", data: null }; } });
+  const outside = mkdtempSync(join(tmpdir(), "outside-"));
+  dirs.push(outside);
+  symlinkSync(outside, join(kit.dir, ".pi-state"));
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Delivered", artifacts: [results] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
+  await run(kit.agent);
+  expect(commands.filter((args) => args[0] !== "me")).toEqual([]);
+  expect((await toolResults(kit.agent))[0]).toMatch(/^\{"refused":"could not write the artifact files: artifact must not use a symlink/);
+  expect((await kit.agent.status()).actions).toEqual({});
+});
+
 it("runs a changed remedy again but never repeats an uncertain one, across a restart", async () => {
   const remedies: string[][] = [];
   const command = async (_rt: unknown, args: string[]): Promise<CliResult> => {

@@ -9,12 +9,12 @@ A worker can deliver a task whose acceptance needs files. The model writes each 
 
 ## What the captures show
 
-Ten captures of the real `taskfast` 0.19.7 binary against `test/fixtures/cli/gh71/stand-in-server.py`, which answers the shapes `test/fixtures/openapi.yaml` documents. No marketplace account was touched. `test/fixtures/cli/gh71/README.md` lists them.
+Twelve captures of the real `taskfast` 0.19.7 binary against `test/fixtures/cli/gh71/stand-in-server.py`, which answers the shapes `test/fixtures/openapi.yaml` documents. No marketplace account was touched. `test/fixtures/cli/gh71/README.md` lists them.
 
-1. `task submit --artifact=a --artifact=b` uploads each file in order (`POST /tasks/{id}/artifacts`, multipart, filename = the file's basename), then submits with exactly the returned `artifact_ids`. The content type comes from the extension: `.json` is `application/json`, `.csv` is `text/csv`, `.html` is `text/html`, `.md` and `.txt` are `text/plain`.
+1. `task submit --artifact=a --artifact=b` uploads each file in order (`POST /tasks/{id}/artifacts`, multipart, filename = the file's basename), then submits with exactly the returned `artifact_ids`. The content type comes from the extension: `.json` is `application/json`, `.csv` is `text/csv`, `.html` is `text/html`, `.xml` is `application/xml`, `.css` is `text/css`, `.js` is `application/javascript`, `.md` and `.txt` are `text/plain`. Each is on the server's documented upload list.
 2. The trap: when the second upload is refused, the first has already landed, yet the CLI prints `error.code = "validation"`. A 422 (criteria not met) and a 409 at the submit step print `validation` too, after every upload landed. `validation` is in `REFUSED`, so today's policy would record `failed` and permit a retry that uploads the same files again.
 3. A file that does not exist is refused as `usage` before any request.
-4. `artifact list` returns `data.artifacts[]` with `id`, `filename`, `size_bytes`, `uploaded_by_id` and `created_at`. `artifact delete` returns `data.deleted = true`.
+4. `artifact list` returns `data.artifacts[]` with `id`, `filename`, `size_bytes`, `uploaded_by_id` and `created_at`, and `[]` on a task with no uploads. `--limit=100`, the spec's maximum, reaches the server as `?limit=100`. `artifact delete` returns `data.deleted = true`.
 5. `task remedy` behaves like submit: uploads, then `POST /tasks/{id}/remedy` with the new `artifact_ids`; `max_remedies_reached` prints `validation`.
 
 From the spec, not the captures: a submit whose criteria fail leaves the task `in_progress` so the worker can fix and resubmit; criteria match artifacts by filename (`target_artifact_pattern`, `file_exists`); delete is refused once the task is under review.

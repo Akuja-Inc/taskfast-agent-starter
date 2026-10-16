@@ -17,7 +17,9 @@ uploads landed before a refusal.
 | `submit-not-eligible` | the same, submit answers 409 `task_not_eligible` | 7 | `validation` after the upload landed. |
 | `submit-missing-file` | `task submit ... --artifact=absent.json` | 2 | `usage` before any request: the request log is empty. |
 | `content-types` | `task submit ... --artifact=report.txt --artifact=notes.md --artifact=page.html` | 0 | The CLI picks the content type from the extension: `.txt` and `.md` are `text/plain`, `.html` is `text/html`. |
+| `content-types-code` | `task submit ... --artifact=data.xml --artifact=style.css --artifact=app.js` | 0 | `.xml` is `application/xml`, `.css` is `text/css`, `.js` is `application/javascript`: each on the server's documented list. |
 | `artifact-list` | `artifact list -- <task>`, one upload on the task | 0 | `data.artifacts[]` with `id`, `filename`, `size_bytes`, `uploaded_by_id`, `created_at`. |
+| `artifact-list-empty` | `artifact list --limit=100 -- <task>`, no uploads | 0 | `data.artifacts` is `[]`, not missing; the request carries `?limit=100`, the spec's maximum. |
 | `artifact-delete` | `artifact delete -- <task> <artifact>` | 0 | `data.deleted = true` after a 204. |
 | `remedy-artifacts` | `task remedy --summary=Revised --artifact=results.json` | 0 | Uploads, then `POST /tasks/{id}/remedy` with the new `artifact_ids`. |
 | `remedy-not-eligible` | the same, remedy answers 409 `max_remedies_reached` | 7 | `validation` after the upload landed. |
@@ -47,6 +49,6 @@ taskfast --env local --allow-custom-endpoints --api-base=http://127.0.0.1:4124 \
 ```
 
 No keystore is needed: none of these commands signs. `test/cli-captures.test.ts` reads
-`artifact-list.json` and `submit-second-upload-refused.json`, so a change in either shape
-fails there first. Never
+`artifact-list.json`, `artifact-list-empty.json` and `submit-second-upload-refused.json`,
+so a change in any of those shapes fails there first. Never
 edit a capture to make a test pass: re-capture it.

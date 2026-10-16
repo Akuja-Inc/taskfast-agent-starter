@@ -34,6 +34,8 @@ describe("parsers against captured CLI output", () => {
 
   it("finds this agent's uploads in real `taskfast artifact list` output", () => {
     expect(ownUploads(capture("gh71/artifact-list").data, "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")).toEqual(["550e8400-e29b-41d4-a716-446655440001"]);
+    // A task with no uploads still prints the list, so a first submit is not refused.
+    expect(ownUploads(capture("gh71/artifact-list-empty").data, "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")).toEqual([]);
   });
 
   it("shows why a refused submit cannot mean nothing was uploaded", () => {
