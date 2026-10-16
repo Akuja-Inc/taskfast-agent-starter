@@ -7,8 +7,8 @@ import { initialOperator, MESSAGE_PREFIX } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { buildTimeline } from "../src/core/timeline.js";
 import { actionError, initialUi, messageAttempt, messageBody, press, setField, withdrawnSelection, type Effect, type Ui } from "../src/tui/keys.js";
-import { parseLink } from "../src/tui/link.js";
-import { clean, screen } from "../src/tui/screen.js";
+import { roster, sameAgent, startupAllowed, parseLink } from "../src/tui/link.js";
+import { clean, screen, startupScreen } from "../src/tui/screen.js";
 import { example } from "./example.js";
 
 const token = "c".repeat(64);
@@ -315,6 +315,44 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
   discarding.run("escape");
   expect(discarding.ui.draft).toBeUndefined();
   expect(discarding.run("1", "q")).toEqual([{ kind: "quit" }]);
+});
+
+it("switches agents without a view and routes startup actions by state and generation", () => {
+  const starting = { id: "slow", generation: 3, state: "starting", phase: "opening" } as const;
+  const stopped = { id: "slow", generation: 3, state: "stopped", reason: "MCP failed\x1b[2J" } as const;
+  expect(press(initialUi(), ">", undefined, 2, starting)).toMatchObject({ ui: { agent: 1 }, effect: { kind: "agent", index: 1 } });
+  expect(press(initialUi(), "<", undefined, 2, stopped).effect).toEqual({ kind: "agent", index: 1 });
+  expect(press(initialUi(), ">", undefined, 0).effect).toBeUndefined();
+  expect(press(initialUi(), "x", undefined, 2, starting).effect).toEqual({ kind: "startup", intent: { id: "slow", generation: 3, action: "cancel" } });
+  expect(press(initialUi(), "R", undefined, 2, stopped).effect).toEqual({ kind: "startup", intent: { id: "slow", generation: 3, action: "retry" } });
+  for (const entry of [starting, { ...starting, phase: "waiting-for-close" } as const]) {
+    expect(press(initialUi(), "R", undefined, 2, entry).effect).toBeUndefined();
+  }
+  const waiting = { ...starting, phase: "waiting-for-close" } as const;
+  expect(press(initialUi(), "x", undefined, 2, waiting).effect).toEqual({ kind: "startup", intent: { id: "slow", generation: 3, action: "cancel" } });
+  expect(press(initialUi(), "x", undefined, 2, waiting, true).effect).toBeUndefined();
+  expect(startupScreen(waiting).action).toBe("x cancel startup");
+  expect(startupAllowed({ id: "slow", generation: 3, action: "cancel" }, waiting)).toBe(true);
+  expect(startupAllowed({ id: "slow", generation: 2, action: "cancel" }, waiting)).toBe(false);
+  expect(press(initialUi(), "R", undefined, 2, stopped, true).effect).toBeUndefined();
+  expect(press(initialUi(), "x", undefined, 2, starting, true).effect).toBeUndefined();
+  expect(press(initialUi(), "x", fixtureView(), 2, { id: "slow", generation: 3, state: "ready" }).effect).toBeUndefined();
+  const draft: Ui = { ...initialUi(), editing: "message", messageText: "Keep me" };
+  expect(press(draft, "enter", undefined, 2, starting)).toEqual({ ui: draft, effect: { kind: "notice", text: "Not queued: the agent is not ready. Your draft is kept." } });
+  expect(startupScreen(stopped)).toMatchObject({ title: "Agent stopped", detail: "MCP failed", action: "R retry startup" });
+  expect(startupScreen({ ...starting, phase: "waiting-for-close" }).detail).toContain("previous attempt to close");
+});
+
+it("validates roster state, supports legacy fixtures, and refuses stale startup intents", () => {
+  expect(roster({ env: "local", agents: [{ id: "old", role: "worker" }] }).agents).toEqual([{ id: "old", role: "worker", state: "ready", generation: 0 }]);
+  expect(() => roster({ env: "prod", agents: [{ id: "bad", state: "mystery", generation: 1 }] })).toThrow();
+  const entry = { id: "a", generation: 5, state: "stopped", reason: "Failed" } as const;
+  expect(roster({ env: "staging", agents: [entry] }).agents[0]).toMatchObject(entry);
+  expect(startupAllowed({ id: "a", generation: 5, action: "retry" }, entry)).toBe(true);
+  expect(startupAllowed({ id: "a", generation: 4, action: "retry" }, entry)).toBe(false);
+  expect(startupAllowed({ id: "b", generation: 5, action: "retry" }, entry)).toBe(false);
+  expect(startupAllowed({ id: "a", generation: 5, action: "cancel" }, entry)).toBe(false);
+  expect(sameAgent(entry, { id: "a", generation: 6 })).toBe(false);
 });
 
 it("offers retry and quit when the console can't be reached", () => {

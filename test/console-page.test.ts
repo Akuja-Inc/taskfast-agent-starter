@@ -71,15 +71,15 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   };
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
-    "addEventListener", "ResizeObserver", "fetch", "matchMedia",
-    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, render, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop'; following.up = true; } };`,
+    "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval",
+    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, render, refresh, selectAgent, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
-    fetch, () => ({ matches: false }),
-  ) as { header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
+    fetch, () => ({ matches: false }), () => 0,
+  ) as { refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
@@ -87,6 +87,144 @@ const demoView = () => ({
   operator: { paused: true, frozen: false, messages: [], orders: [] }, queuedMessages: [],
   events: {}, attention: [], timeline: [], actions: {}, spend: {}, notes: [],
   spec: { model: 'faux:test', instructions: 'You are Demo.', limits: { dailyUsd: 50 } },
+});
+
+it("renders starting and stopped agents without fetching details or admitting a draft", async () => {
+  const paths: string[] = [];
+  const page = bootPage((path) => { paths.push(String(path)); return new Promise<never>(() => {}); });
+  page.setRoster([{ id: 'slow', generation: 1, state: 'starting', phase: 'opening' }]);
+  expect(page.app.textContent).toContain('Starting agent');
+  expect(page.app.textContent).toContain('agents/slow/');
+  expect(page.app.children[0]).toBeInstanceOf(FakeNode);
+  expect((page.app.children[0] as FakeNode).getAttribute('class')).toBe('banner local');
+  page.ui.draft = 'Retain this';
+  await page.submitMessage('steer');
+  expect(paths).toEqual([]);
+  page.document.activeElement = page.app.querySelector('textarea');
+  page.setRoster([{ id: 'slow', generation: 1, state: 'stopped', reason: '<img src=x> refused' }]);
+  expect(page.app.textContent).toContain('Agent stopped');
+  expect(page.app.textContent).toContain('<img src=x> refused');
+  expect(page.app.querySelector('img')).toBeNull();
+  expect(page.ui.draft).toBe('Retain this');
+  expect(page.app.querySelector('.send')?.getAttribute('aria-disabled')).toBe('true');
+});
+
+it("acknowledges retry and cancel immediately and pins each request to its generation", async () => {
+  for (const action of ['retry', 'cancel']) {
+    const requests: { path: string; body: unknown }[] = [];
+    let finish!: (response: Response) => void;
+    const page = bootPage((path, init) => {
+      if ((init as RequestInit).method === 'POST') {
+        requests.push({ path: String(path), body: JSON.parse(String((init as RequestInit).body)) });
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return new Promise<never>(() => {});
+    });
+    page.setRoster([{ id: 'slow', generation: 7, ...(action === 'retry' ? { state: 'stopped', reason: 'Cannot connect' } : { state: 'starting', phase: 'opening' }) }]);
+    const button = page.app.querySelector('.startup-action')!;
+    page.document.activeElement = button;
+    const pending = page.startupAction(action);
+    await page.startupAction(action);
+    expect(requests).toEqual([{ path: '/api/agents/slow/startup/' + action, body: { generation: 7 } }]);
+    expect(page.app.querySelector('.startup-action')).toBe(button);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.disabled).toBe(false);
+    expect(page.app.querySelector('.startup-feedback')!.textContent).toContain('Requesting');
+    finish(new Response(JSON.stringify({ error: 'stale generation' }), { status: 409 }));
+    await pending;
+    expect(button.getAttribute('aria-disabled')).toBe('false');
+    expect(page.app.querySelector('.startup-feedback')!.textContent).toContain('stale generation');
+  }
+});
+
+it("switches away from a ready view immediately and keeps drafts separate by folder", () => {
+  const page = bootPage();
+  page.setView(demoView()); page.render(); page.ui.draft = 'Shop draft';
+  page.setRoster([{ id: 'shop', state: 'ready', generation: 0 }, { id: 'slow', state: 'starting', phase: 'opening', generation: 2 }]);
+  const selector = nodes(page.app).find((node) => node.getAttribute('aria-label') === 'Agent')!;
+  page.document.activeElement = selector;
+  page.selectAgent('slow');
+  expect(page.app.textContent).not.toContain('Budget');
+  expect(page.app.textContent).toContain('agents/slow/');
+  expect(page.ui.draft).toBe('');
+  page.ui.draft = 'Slow draft';
+  page.selectAgent('shop');
+  expect(page.ui.draft).toBe('Shop draft');
+  page.selectAgent('slow');
+  expect(page.ui.draft).toBe('Slow draft');
+});
+
+it("clears an admitted draft in its original folder after switching away", async () => {
+  const roster = [{ id: 'shop', state: 'ready', generation: 0 }, { id: 'slow', state: 'starting', phase: 'opening', generation: 1 }];
+  let finish!: (response: Response) => void;
+  const page = bootPage((path, init) => {
+    if ((init as RequestInit)?.method === 'POST') return new Promise<Response>((resolve) => { finish = resolve; });
+    if (path === '/api/agents') return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: roster })));
+    return new Promise<never>(() => {});
+  });
+  page.setView(demoView()); page.setRoster(roster); page.ui.draft = 'Send this once';
+  const pending = page.submitMessage('followUp');
+  page.selectAgent('slow'); page.ui.draft = 'Keep this other draft';
+  finish(new Response(null, { status: 204 }));
+  await pending;
+  expect(page.ui.draft).toBe('Keep this other draft');
+  page.selectAgent('shop');
+  expect(page.ui.draft).toBe('');
+});
+
+it("polls the roster while a selected detail is hung and ignores its late response after cancellation", async () => {
+  let roster: { id: string; state: string; generation: number; reason?: string }[] = [{ id: 'shop', state: 'ready', generation: 3 }];
+  let finish!: (response: Response) => void;
+  let signal: AbortSignal | null | undefined;
+  const paths: string[] = [];
+  const page = bootPage((path, init) => {
+    paths.push(String(path));
+    if (path === '/api/agents') return Promise.resolve(new Response(JSON.stringify({ env: 'local', agents: roster })));
+    if (path === '/api/agents/shop') { signal = (init as RequestInit).signal; return new Promise<Response>((resolve) => { finish = resolve; }); }
+    return new Promise<never>(() => {});
+  });
+  page.setRoster(roster);
+  await page.refresh();
+  roster = [{ id: 'shop', state: 'stopped', generation: 4, reason: 'Cancelled' }];
+  await page.refresh();
+  expect(paths.filter((path) => path === '/api/agents')).toHaveLength(2);
+  expect(signal?.aborted).toBe(true);
+  finish(new Response(JSON.stringify(demoView())));
+  await settle();
+  expect(page.app.textContent).toContain('Agent stopped');
+  expect(page.app.textContent).not.toContain('Budget');
+});
+
+it("refreshes roster labels without replacing a focused ready draft", () => {
+  const page = bootPage(); page.setView(demoView()); page.render();
+  const textarea = page.app.querySelector('textarea')!;
+  page.document.activeElement = textarea; textarea.value = page.ui.draft = 'Keep typing';
+  textarea.selectionStart = 2; textarea.selectionEnd = 6;
+  page.setRoster([{ id: 'shop', state: 'ready', generation: 0 }, { id: 'other', state: 'stopped', generation: 2, reason: 'Failed' }]);
+  expect(page.app.querySelector('textarea')).toBe(textarea);
+  expect([textarea.value, textarea.selectionStart, textarea.selectionEnd]).toEqual(['Keep typing', 2, 6]);
+  expect(page.app.textContent).toContain('other · stopped');
+});
+
+it("keeps a missing selected folder instead of silently showing another agent", () => {
+  const page = bootPage(); page.setView(demoView()); page.render(); page.ui.draft = 'Shop only';
+  page.setRoster([{ id: 'other', state: 'ready', generation: 1 }]);
+  expect(page.app.textContent).toContain('agents/shop/');
+  expect(page.app.textContent).toContain('Agent unavailable');
+  expect(page.app.textContent).not.toContain('Budget');
+  expect(page.ui.draft).toBe('Shop only');
+});
+
+it("ignores a late SSE view from an older generation", async () => {
+  let push!: (chunk: string) => void;
+  const page = bootPage((path) => String(path).endsWith('/stream') ? Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(controller) { push = (chunk) => controller.enqueue(new TextEncoder().encode(chunk)); } }))) : new Promise<never>(() => {}));
+  page.setRoster([{ id: 'shop', state: 'ready', generation: 1 }]);
+  await settle();
+  page.setRoster([{ id: 'shop', state: 'stopped', generation: 2, reason: 'Cancelled' }]);
+  push('event: view\ndata: ' + JSON.stringify(demoView()) + '\n\n');
+  await settle();
+  expect(page.app.textContent).toContain('Agent stopped');
+  expect(page.app.textContent).not.toContain('Budget');
 });
 
 it("Ctrl+S admits a steer and prevents Save Page rather than sending a follow-up", () => {

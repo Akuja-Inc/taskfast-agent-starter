@@ -1,0 +1,28 @@
+ DEVELOPMENT · local TaskFast server · no real money
+
+ ┌─ Agent starting ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                                                                                                              │
+ │ failed-worker (worker)                                                                                                       │
+ │ Waiting for the previous attempt to close. The store stays protected.                                                        │
+ │                                                                                                                              │
+ │ Messages are not queued until this agent is ready.                                                                           │
+ │ < / > switch agent · ? help                                                                                                  │
+ │ r retry · q quit                                                                                                             │
+ │ Startup request accepted. Watching for the new state.                                                                        │
+ │                                                                                                                              │
+ └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

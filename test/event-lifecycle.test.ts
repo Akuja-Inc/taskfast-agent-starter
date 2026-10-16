@@ -425,23 +425,30 @@ it("the host passes its unlock path into agent runtime options", async () => {
   finally { stop.abort(); await host; }
 });
 
-it("a partial host startup failure closes previously opened stores and event children", async () => {
+it("a failed sibling opening preserves the healthy store and event child until shutdown", async () => {
   const root = directory();
   const first = hostAgent({ root, id: "a-worker" });
   const second = hostAgent({ root, id: "b-worker" });
   process.env.TASKFAST_BIN = first.fixture.bin;
   const held = await open({ dir: second.storeDir, selected: selectedModels() });
   const stop = stopSignal();
-  const selected = selectedModels();
+  const selected = selectedModels(Array.from({ length: 20 }, () => fauxAssistantMessage("Still healthy")));
+  const logs: string[] = [];
   const host = runAgents({
-    agentsDir: join(root, "agents"), env: "staging", signal: stop.signal, log: () => {},
+    agentsDir: join(root, "agents"), env: "staging", signal: stop.signal, log: (line) => logs.push(line), pingEveryMs: 30,
     openAgent: async ({ id, runtime, storePath }) => {
       if (id === "b-worker") await waitForRecord({ path: first.fixture.journal, kind: "start" });
       return open({ dir: dirname(storePath), selected, runtime, command: runCli });
     },
   });
   runs.push(host);
-  await expect(host).rejects.toThrow("agent store is already owned");
+  await expect.poll(() => logs.some((line) => line.includes("b-worker: stopped: agent store is already owned"))).toBe(true);
+  await expect.poll(() => selected.faux.state.callCount).toBeGreaterThanOrEqual(2);
+  const child = records(first.fixture.journal).find((record) => record.kind === "start");
+  expect(child).toBeDefined();
+  expect(() => process.kill(child!.pid, 0)).not.toThrow();
+  stop.abort();
+  await host;
   expectChildrenStopped(first.fixture.journal);
   expect(records(first.fixture.journal).filter((item) => item.kind === "start").map((item) => item.configPath)).toEqual([first.fixture.runtime.configPath]);
   const reopened = await open({ dir: first.storeDir, selected: selectedModels(), runtime: first.fixture.runtime });

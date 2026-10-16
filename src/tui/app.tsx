@@ -8,7 +8,8 @@ import type { ConsoleView } from "../console.js";
 import { follow } from "../console-live.js";
 import { markdown, type Block, type List, type Run } from "../console-markdown.js";
 import { actionError, FIELDS, fieldValue, initialUi, messageAttempt, messageBody, press, setField, withdrawnSelection, type Effect, type Field, type MessageAttempt, type MessageMode, type Ui } from "./keys.js";
-import { clean, screen, type Screen } from "./screen.js";
+import { clean, environmentBanner, screen, startupScreen, type Screen } from "./screen.js";
+import { roster, sameAgent, startupAllowed, type Listing } from "./link.js";
 
 const TONE = { development: "#1d4ed8", staging: "#b45309", production: "#b91c1c" };
 const OUTCOME = { ok: "#22c55e", failed: "#f59e0b", uncertain: "#f59e0b", pending: "#9ca3af" };
@@ -25,7 +26,7 @@ export const HELP: [string, string][] = [
   ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
   ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
   ["r", "raw event"], ["o", "open the task"], ["m", "write a message: Enter follow-up / Ctrl+S steer after this tool round"], ["s", "steer the selected queued follow-up (Tab to focus the queue)"], ["w", "withdraw the selected queued follow-up or steer"], ["p", "pause / resume"],
-  ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "run an abandoned event again"],
+  ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "ready: run an abandoned event again; stopped: retry startup"], ["x", "starting: cancel startup (not a running agent)"],
   ["a", "show alerts (Briefing: add a standing order)"], ["d", "Briefing: delete the standing order"],
   ["ctrl+s", "Timeline composer: steer; Briefing: save and reopen (asks y/n)"], ["esc", "discard the draft, close a line"],
   ["i", "show the sidebar"], ["?", "this help"], ["q", "quit the TUI; the agents keep running"],
@@ -72,7 +73,6 @@ class ApiError extends Error {
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const time = (ms: number) => (ms ? new Date(ms).toTimeString().slice(0, 5) : "");
 const toggle = (list: string[], key: string) => (list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
-type Listing = { env: string; agents: { id: string; name: string; role: string }[] };
 
 export interface AppProps { origin: string; token: string; open(url: string): void; quit(): void }
 export function App(p: AppProps) {
@@ -92,7 +92,12 @@ export function App(p: AppProps) {
   // Retry and agent switches fire unawaited connects; each is numbered so a stale one
   // can't assign its follow later or overwrite the newer agent's view.
   let gen = 0;
-  onCleanup(() => stop());
+  let closed = false;
+  let polling = false;
+  const [selectedId, setSelectedId] = createSignal<string>();
+  const [startupBusy, setStartupBusy] = createSignal(new Set<string>());
+  const drafts = new Map<string, Pick<Ui, "messageText" | "draft">>();
+  onCleanup(() => { closed = true; gen++; stop(); clearInterval(rosterTimer); });
 
   async function api(method: string, path: string, body?: unknown): Promise<unknown> {
     const res = await fetch(p.origin + path, { method, headers: { authorization: `Bearer ${p.token}`, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -105,42 +110,78 @@ export function App(p: AppProps) {
     return res.status === 204 ? null : res.json();
   }
   const agentPath = (id: string) => `/api/agents/${encodeURIComponent(id)}`;
-  const agentId = () => list()?.agents[ui().agent]?.id;
-  async function connect() {
+  const agent = () => list()?.agents.find((entry) => entry.id === selectedId());
+  const agentId = () => agent()?.id;
+  const current = (entry: Pick<NonNullable<ReturnType<typeof agent>>, "id" | "generation"> | undefined, epoch: number) => !closed && gen === epoch && sameAgent(entry, agent());
+  const busy = () => startupBusy().has(`${agent()?.id}/${agent()?.generation}`);
+  function connect() {
     const g = ++gen;
     stop();
+    setView(undefined);
     setDown(undefined);
-    try {
-      const listing = await api("GET", "/api/agents") as Listing;
-      if (g !== gen) return;
-      setList(listing);
-      const id = listing.agents[Math.min(ui().agent, listing.agents.length - 1)]?.id;
-      if (!id) throw new Error("the host shows no agents");
-      setView(await api("GET", agentPath(id)) as ConsoleView);
-      if (g !== gen) return;
-      const end = follow(p.origin + agentPath(id) + "/stream", p.token, (next) => { setView(next as ConsoleView); setDown(undefined); }, () => {
-        // The host stopped or no longer takes the token: show that, not a stale view.
-        api("GET", agentPath(id)).then((next) => { setView(next as ConsoleView); setDown(undefined); }, (error: unknown) => { setView(undefined); setDown(message(error)); });
+    setUi({ ...ui(), confirm: undefined, editing: undefined });
+    const entry = agent();
+    if (entry?.state !== "ready") return;
+    const accept = (next: unknown) => { if (current(entry, g)) { setView(next as ConsoleView); setDown(undefined); } };
+    const fail = (error: unknown) => { if (current(entry, g)) { setView(undefined); setDown(message(error)); } };
+    void api("GET", agentPath(entry.id)).then((next) => {
+      if (!current(entry, g)) return;
+      accept(next);
+      stop = follow(p.origin + agentPath(entry.id) + "/stream", p.token, accept, () => {
+        if (current(entry, g)) void api("GET", agentPath(entry.id)).then(accept, fail);
       });
-      // Superseded while connecting: stop the follower now so it can't hold a stream slot.
-      if (g !== gen) { end(); return; }
-      stop = end;
-    } catch (error) {
-      if (g !== gen) return;
-      setView(undefined);
-      setDown(message(error));
-    }
+    }, fail);
   }
-  void connect();
+  // Roster polling never waits for a selected agent's view or stream to open.
+  async function pollRoster() {
+    if (polling || closed) return;
+    polling = true;
+    try {
+      const listing = roster(await api("GET", "/api/agents"));
+      if (closed) return;
+      const before = agent();
+      const next = listing.agents.find((entry) => entry.id === selectedId()) ?? listing.agents[0];
+      if (before && before.id !== next?.id) drafts.set(before.id, { messageText: ui().messageText, draft: ui().draft });
+      setList(listing);
+      setSelectedId(next?.id);
+      const index = Math.max(0, listing.agents.findIndex((entry) => entry.id === next?.id));
+      setUi(before?.id !== next?.id ? { ...initialUi(index), ...drafts.get(next?.id ?? "") } : { ...ui(), agent: index });
+      if (!sameAgent(before, next) || before?.state !== next?.state) connect();
+      if (!next) setDown("the host shows no agents");
+      else if (next.state !== "ready") setDown(undefined);
+    } catch (error) { if (!closed) setDown(message(error)); }
+    finally { polling = false; }
+  }
+  const rosterTimer = setInterval(() => { void pollRoster(); }, 1000);
+  void pollRoster();
 
   async function run(effect: Effect) {
     if (effect.kind === "notice") return setNotice(effect.text);
     if (effect.kind === "message") return sendMessage(effect.text, effect.mode);
     if (effect.kind === "quit") { stop(); renderer.destroy(); return p.quit(); }
     if (effect.kind === "open") return p.open(effect.url);
-    if (effect.kind === "retry" || effect.kind === "agent") return connect();
-    const id = agentId();
-    if (!id) return;
+    if (effect.kind === "retry") { connect(); return pollRoster(); }
+    if (effect.kind === "agent") {
+      setSelectedId(list()?.agents[effect.index]?.id);
+      setUi({ ...ui(), ...drafts.get(agentId() ?? "") });
+      setNotice("");
+      return connect();
+    }
+    if (effect.kind === "startup") {
+      const { intent } = effect;
+      if (!startupAllowed(intent, agent()) || busy()) return;
+      const key = `${intent.id}/${intent.generation}`, epoch = gen;
+      setStartupBusy(new Set([...startupBusy(), key]));
+      try {
+        await api("POST", `${agentPath(intent.id)}/startup/${intent.action}`, { generation: intent.generation });
+        if (current(intent, epoch)) setNotice("Startup request accepted. Watching for the new state.");
+      } catch (error) { if (current(intent, epoch)) setNotice(message(error)); }
+      finally { setStartupBusy(new Set([...startupBusy()].filter((item) => item !== key))); void pollRoster(); }
+      return;
+    }
+    const entry = agent(), epoch = gen;
+    const id = entry?.id;
+    if (!id || entry?.state !== "ready" || !view()) return setNotice("Not sent: the agent is not ready.");
     const actionKey = `${id}/${effect.method}/${effect.action}`;
     if (pending.has(actionKey)) return;
     pending.add(actionKey);
@@ -151,7 +192,7 @@ export function App(p: AppProps) {
     try {
       setNotice("");
       await api(effect.method, `${agentPath(id)}/${effect.action}`, effect.body);
-      if (agentId() !== id) return;
+      if (!current(entry, epoch)) return;
       if (withdrawal) {
         // The stream may remove the row before the response, or arrive just after it.
         // Remove it locally on ACK too, so the next selected ID is already visible.
@@ -167,49 +208,60 @@ export function App(p: AppProps) {
         setNotice("Saved. Only this agent reopened.");
       }
     } catch (error) {
-      if (agentId() === id) setNotice(actionError(effect.action, error instanceof ApiError ? error.status : undefined, message(error)));
+      if (current(entry, epoch)) setNotice(actionError(effect.action, error instanceof ApiError ? error.status : undefined, message(error)));
     } finally { pending.delete(actionKey); }
   }
   async function sendMessage(text: string, mode: MessageMode) {
-    const id = agentId();
-    if (!id || !text.trim() || pending.has(`${id}/message`)) return;
+    const entry = agent(), epoch = gen;
+    const id = entry?.id;
+    if (!id || entry?.state !== "ready" || !view()) return setNotice("Not queued: the agent is not ready. Your draft is kept.");
+    if (!text.trim() || pending.has(`${id}/message`)) return;
     const attempt = messageAttempt(attempts.get(id), text, mode, crypto.randomUUID());
     attempts.set(id, attempt);
     pending.add(`${id}/message`);
     try {
       await api("POST", `${agentPath(id)}/messages`, messageBody(attempt));
       attempts.delete(id);
-      if (agentId() !== id) return;
-      // A user may keep typing during admission. Clear only the accepted draft.
-      if (ui().messageText.trim() === attempt.text) setUi({ ...ui(), editing: undefined, messageText: "" });
+      // Admission belongs to this agent even if selection changed while awaiting ACK.
+      // Keep the Briefing draft, other agents' drafts and any newer message text.
+      const saved = drafts.get(id);
+      if (saved?.messageText.trim() === attempt.text) drafts.set(id, { ...saved, messageText: "" });
+      if (!closed && agentId() === id && ui().messageText.trim() === attempt.text) setUi({ ...ui(), editing: undefined, messageText: "" });
+      if (!current(entry, epoch)) return;
       setNotice(attempt.mode === "steer" ? "Steer queued; read after the current tool round, or on resume." : "Follow-up queued; read on the next run, or on resume.");
-    } catch (error) { if (agentId() === id) setNotice(message(error)); }
+    } catch (error) { if (current(entry, epoch)) setNotice(message(error)); }
     finally { pending.delete(`${id}/message`); }
   }
   async function sendOrder(text: string) {
-    const id = agentId();
-    if (!id || !text.trim()) return;
+    const entry = agent(), epoch = gen;
+    const id = entry?.id;
+    if (!id || entry?.state !== "ready" || !view() || !text.trim()) return;
     try { await api("POST", `${agentPath(id)}/orders`, { text: text.trim() }); }
-    catch (error) { setNotice(message(error)); }
+    catch (error) { if (current(entry, epoch)) setNotice(message(error)); }
   }
   // Leaves the line after this key event, so its enter isn't also read as a command.
   const done = () => setTimeout(() => setUi({ ...ui(), editing: undefined }), 0);
 
   useKeyboard((event) => {
     const key = keyName(event);
+    const id = agentId();
+    if (id) drafts.set(id, { messageText: ui().messageText, draft: ui().draft });
     if (ui().editing) {
       if (ui().editing === "message" && ui().tab === "timeline" && (key === "ctrl+s" || key === "enter")) {
         // Global listeners run before focused renderables. Consume the shortcut so
         // OpenTUI neither swallows Ctrl+S nor inserts its control byte into the draft.
         event.preventDefault();
-        const next = press(ui(), key, view(), list()?.agents.length ?? 0);
+        const next = press(ui(), key, view(), list()?.agents.length ?? 0, agent(), busy());
         if (next.effect) void run(next.effect);
       } else if (key === "escape") { event.preventDefault(); setUi({ ...ui(), editing: undefined }); }
       return;
     }
-    const next = press(ui(), key, view(), list()?.agents.length ?? 0);
+    const next = press(ui(), key, view(), list()?.agents.length ?? 0, agent(), busy());
     // A line opened by this key gets the keyboard after it, so the key isn't typed into it.
-    if (next.ui.editing) setTimeout(() => setUi(next.ui), 0);
+    if (next.ui.editing) {
+      const entry = agent(), epoch = gen;
+      setTimeout(() => { if (current(entry, epoch)) setUi(next.ui); }, 0);
+    }
     else setUi(next.ui);
     if (next.effect) void run(next.effect);
   });
@@ -226,7 +278,8 @@ export function App(p: AppProps) {
     const present = drawn()?.sidebar.queued.some((row) => row.requestId === id);
     if (ui().panel === "queue" && present && sidebarScroll) sidebarScroll.scrollChildIntoView(`queue-${id}`);
   });
-  const agent = () => list()?.agents[ui().agent];
+  const startup = () => { const entry = agent(); return entry && startupScreen(entry); };
+  const banner = () => { const listing = list(); return listing && environmentBanner(listing.env); };
   const draft = () => ui().draft ?? view()?.spec;
   // A stream can confirm removal before DELETE replies, or after its reply is
   // lost. Leave a vanished withdrawal target on a visible, non-destructive panel.
@@ -242,10 +295,25 @@ export function App(p: AppProps) {
   return (
     <box flexDirection="column" width="100%" height="100%">
       <Show when={drawn()} fallback={
-        <box flexDirection="column" border borderColor={down() ? BAD : MUTED} title={down() ? " Can't reach the console " : " Connecting "} padding={1} margin={2}>
-          <text>{down() ? clean(down()!) : `Connecting to ${p.origin}…`}</text>
-          <text fg={MUTED}>{`Console: ${p.origin}. Is pnpm agents --console still running? A restarted host prints a new link with a new token.`}</text>
-          <text><b>r</b> retry · <b>q</b> quit</text>
+        <box flexDirection="column" flexGrow={1}>
+          <Show when={banner()}>{(b: () => NonNullable<ReturnType<typeof banner>>) => <box flexShrink={0} backgroundColor={TONE[b().tone]} paddingX={1}><text fg="#ffffff"><b>{b().text}</b></text></box>}</Show>
+          <box flexDirection="column" border borderColor={down() || agent()?.state === "stopped" ? BAD : MUTED} title={` ${down() ? "Can't reach the console" : startup()?.title ?? "Connecting"} `} padding={1} margin={1}>
+            <text><b>{clean(agentId() ?? "Console")}</b>{agent()?.role ? ` (${clean(agent()?.role ?? "")})` : ""}</text>
+            <text>{startup()?.detail ?? `Connecting to ${p.origin}…`}</text>
+            <Show when={down()}><text fg={BAD}>{clean(down() ?? "")}</text></Show>
+            <Show when={!agent()}><text fg={MUTED}>{`Console: ${p.origin}. Is pnpm agents --console still running? A restarted host prints a new link with a new token.`}</text></Show>
+            <text>{busy() ? "Sending startup request…" : startup()?.action}</text>
+            <text fg={MUTED}>Messages are not queued until this agent is ready.</text>
+            <Show when={ui().messageText || ui().draft}><text fg={WARN}>Your unsent draft is kept in memory.</text></Show>
+            <text><b>&lt; / &gt;</b> switch agent · <b>?</b> help</text>
+            <text><b>r</b> retry · <b>q</b> quit</text>
+            <Show when={notice()}><text fg={WARN}>{notice()}</text></Show>
+          </box>
+          <Show when={ui().help}><box flexDirection="column" paddingX={2}>
+            <text>Starting: x cancels startup. Stopped: R retries startup.</text>
+            <text>Ready: R retries an abandoned event. Other controls require a ready view.</text>
+            <text>&lt; / &gt; switches agents even while this agent waits. ? or esc closes help.</text>
+          </box></Show>
         </box>
       }>
         {(s: () => Screen) => (
@@ -253,7 +321,7 @@ export function App(p: AppProps) {
             <box height={1} flexShrink={0} backgroundColor={TONE[s().banner.tone]} paddingX={1}><text fg="#ffffff"><b>{s().banner.text}</b></text></box>
             <box height={1} paddingX={1}>
               <text>
-                <Span fg={MUTED}>‹ </Span><b>{clean(agent()?.id ?? "")}</b>{` · ${clean(agent()?.name ?? "")} (${clean(agent()?.role ?? "")})`}<Span fg={MUTED}> ›   </Span>
+                <Span fg={MUTED}>‹ </Span><b>{clean(agent()?.id ?? "")}</b>{` (${clean(agent()?.role ?? "")})`}<Span fg={MUTED}> ›   </Span>
                 <Span fg={ui().tab === "timeline" ? ACCENT : MUTED}>{ui().tab === "timeline" ? "[1 Timeline]" : " 1 Timeline "}</Span>
                 <Span fg={ui().tab === "briefing" ? ACCENT : MUTED}>{ui().tab === "briefing" ? "[2 Briefing]" : " 2 Briefing "}</Span>
                 <Span fg={view()?.operator.paused ? WARN : OK}>{`   ● ${s().state}`}</Span>

@@ -1,0 +1,12 @@
+{
+  "commit": "c3c71394ad4323f88e297a118522fca141c95b09",
+  "dirty": true,
+  "sha256": {
+    "src/console-page.ts": "1d070781f87d0eb70410032294b1c32f49dbc69eb20cdbb6991c4c32a7bbd6d3",
+    "src/console-live.ts": "941fe42e17fc2831c51befac9a2d6a03e64e686917ee3e22aa38a9899f7b108f",
+    "src/console-markdown.ts": "831d3f7bff52b391363b55f61f277807927a4f53d749dbd55a6723623a1a4e18",
+    "docs/startup/browser-host.mjs": "2a5eb4c967f5f77eba13e5dce8478ade1ac78ce5e3fddaf2c995b7d50610f005"
+  },
+  "captureScriptSha256": "de42785168e499ec0dc262f59168232afec6771b9a64b78faba5eae763271d5d",
+  "capture": "Headless Chromium, desktop 1440x1000 and emulated phone 390x844, light and dark; synthetic loopback host only."
+}

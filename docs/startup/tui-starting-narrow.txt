@@ -1,0 +1,28 @@
+ DEVELOPMENT · local TaskFast server · no real money
+
+ ┌─ Agent starting ─────────────────────────────────────────────────────────────────────┐
+ │                                                                                      │
+ │ slow-worker (worker)                                                                 │
+ │ Opening the agent. Other agents can keep running.                                    │
+ │ x cancel startup                                                                     │
+ │ Messages are not queued until this agent is ready.                                   │
+ │ < / > switch agent · ? help                                                          │
+ │ r retry · q quit                                                                     │
+ │                                                                                      │
+ └──────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

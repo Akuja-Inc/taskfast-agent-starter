@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { providerSettings } from "../src/core/folder.js";
 import { describe, expect, it } from "vitest";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentHandle } from "../src/run.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { runAgents } from "../src/run.js";
@@ -56,6 +57,104 @@ describe("runAgents", () => {
     };
     await runAgents({ agentsDir: dir, env: "staging", openAgent: async ({ runtime: rt }) => { calls.push(["open", rt]); return agent; }, listen: () => ({ close: async () => {} }), signal: stop.signal, log: () => {} });
     expect(calls).toEqual([["open", { env: "staging", configPath: join(dir, "me", ".taskfast", "config.json") }], ["ping"], ["close"]]);
+  });
+
+  it("preserves a healthy nonconsole agent when another folder is malformed", async () => {
+    const dir = agents(true);
+    mkdirSync(join(dir, "broken"));
+    writeFileSync(join(dir, "broken", "agent.json"), "not JSON");
+    const stop = new AbortController();
+    const calls: string[] = [];
+    await runAgents({ agentsDir: dir, env: "staging", signal: stop.signal, log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async ({ id }) => {
+      calls.push(`open ${id}`);
+      return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => { calls.push(`ping ${id}`); stop.abort(); }, close: async () => { calls.push(`close ${id}`); } };
+    } });
+    expect(calls).toEqual(["open me", "ping me", "close me"]);
+  });
+
+  it("fails nonconsole startup only when all independent openings fail", async () => {
+    const dir = agents(true);
+    const logs: string[] = [];
+    await expect(runAgents({ agentsDir: dir, env: "staging", signal: new AbortController().signal, log: (line) => logs.push(line), openAgent: async () => { throw new Error("offline fixture"); } })).rejects.toThrow("no agents opened: me: offline fixture");
+    expect(logs).toContain("me: stopped: offline fixture");
+  });
+
+  it("aborts pending openings at shutdown and drains late handles before returning", async () => {
+    const dir = agents(true);
+    const stop = new AbortController();
+    let openingSignal: AbortSignal | undefined;
+    let releaseOpen = () => {};
+    let releaseClose = () => {};
+    const opening = new Promise<void>((resolve) => { releaseOpen = resolve; });
+    const closing = new Promise<void>((resolve) => { releaseClose = resolve; });
+    const calls: string[] = [];
+    let returned = false;
+    const run = runAgents({ agentsDir: dir, env: "staging", signal: stop.signal, log: () => {}, listen: () => { calls.push("listen"); return { close: async () => {} }; }, openAgent: async ({ signal }) => {
+      openingSignal = signal;
+      calls.push("opening");
+      await opening;
+      return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => { calls.push("ping"); }, close: async () => { calls.push("closing"); await closing; calls.push("closed"); } };
+    } }).then(() => { returned = true; });
+    try {
+      await expect.poll(() => calls).toEqual(["opening"]);
+      stop.abort();
+      expect(openingSignal?.aborted).toBe(true);
+      expect(returned).toBe(false);
+      releaseOpen();
+      await expect.poll(() => calls).toEqual(["opening", "closing"]);
+      expect(returned).toBe(false);
+      releaseClose();
+      await run;
+      expect(calls).toEqual(["opening", "closing", "closed"]);
+    } finally { stop.abort(); releaseOpen(); releaseClose(); await run; }
+  });
+
+  it("stops every ready event stream before draining a hung sibling at shutdown", async () => {
+    const dir = agents(true);
+    mkdirSync(join(dir, "two", ".taskfast"), { recursive: true });
+    copyExample("careful-worker", join(dir, "two"));
+    writeFileSync(join(dir, "two", ".taskfast", "config.json"), "{}");
+    const stop = new AbortController();
+    let release = () => {};
+    const opening = new Promise<void>((resolve) => { release = resolve; });
+    const calls: string[] = [];
+    const run = runAgents({ agentsDir: dir, env: "staging", signal: stop.signal, log: () => {},
+      listen: () => { calls.push("listen two"); return { close: async () => { calls.push("stop stream two"); } }; },
+      openAgent: async ({ id }) => {
+        if (id === "me") await opening;
+        return { closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, ping: async () => {}, close: async () => { calls.push(`close ${id}`); } };
+      },
+    });
+    try {
+      await expect.poll(() => calls).toEqual(["listen two"]);
+      stop.abort();
+      await expect.poll(() => calls).toEqual(["listen two", "stop stream two"]);
+      release();
+      await run;
+      expect(calls).toEqual(["listen two", "stop stream two", "close me", "close two"]);
+    } finally { stop.abort(); release(); await run; }
+  });
+
+  it("polls each ready agent independently without overlapping its own pings", async () => {
+    const dir = agents(true);
+    mkdirSync(join(dir, "two", ".taskfast"), { recursive: true });
+    copyExample("careful-worker", join(dir, "two"));
+    writeFileSync(join(dir, "two", ".taskfast", "config.json"), "{}");
+    const stop = new AbortController();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const counts = { me: 0, two: 0 };
+    const run = runAgents({ agentsDir: dir, env: "staging", signal: stop.signal, pingEveryMs: 5, log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async ({ id }) => ({
+      closed: Promise.resolve({ reason: "closed" }), deliver: async () => {}, close: async () => { release(); },
+      ping: async () => {
+        if (id === "me") { counts.me++; await held; }
+        else { counts.two++; await sleep(2); }
+      },
+    }) });
+    try {
+      await expect.poll(() => counts.two).toBeGreaterThanOrEqual(3);
+      expect(counts.me).toBe(1);
+    } finally { stop.abort(); release(); await run; }
   });
 
   it("keeps every agent's store and unlock path in its own folder", async () => {

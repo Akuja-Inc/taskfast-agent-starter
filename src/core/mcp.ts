@@ -1,6 +1,7 @@
 import { McpAbortError, McpClient, McpTimeoutError, StreamableHttpTransport, type McpTransport, type Tool } from "@earendil-works/pi-mcp";
 import { OwnedStdioTransport } from "./mcp-transport.js";
 import { mcpOutput } from "./mcp-output.js";
+import { CleanupError } from "./cleanup-error.js";
 import type { TSchema } from "@earendil-works/pi-ai";
 import { defineTool, ROOT_CONVERSATION_ID, type ToolRegistration } from "@earendil-works/pi-durable";
 import { mcpToolName, redact, toolHash, type McpServer } from "./mcp-config.js";
@@ -154,7 +155,7 @@ export async function connectMcp(servers: readonly McpServer[], o: { log: (line:
     // A disconnect the agent causes is not news, so stop reporting first.
     listeners.splice(0).forEach((stop) => stop());
     const results = await Promise.allSettled(clients.map(closeClient));
-    for (const result of results) if (result.status === "rejected") throw result.reason;
+    for (const result of results) if (result.status === "rejected") throw new CleanupError(result.reason);
   };
   const secrets = servers.flatMap((server) => Object.values(server.credentials));
   const log = (line: string) => o.log(redact(line, secrets));

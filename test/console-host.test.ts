@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, expect, it, vi } from "vitest";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { PING_MS } from "../src/console.js";
 import { openMarketplaceAgent, type EventWork } from "../src/core/agent.js";
 import type { CliResult } from "../src/core/cli.js";
+import { CleanupError } from "../src/core/cleanup-error.js";
+import { openAgentStorage } from "../src/core/storage.js";
 import { initialOperator } from "../src/core/operator.js";
 import type { Action } from "../src/core/policy.js";
 import type { MarketEvent } from "../src/core/types.js";
@@ -16,6 +19,7 @@ import { copyExample, example } from "./example.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const dirs: string[] = [];
+const releases: (() => void)[] = [];
 afterEach(() => { dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })); });
 
 // Agent folders with a valid agent file and an (empty) TaskFast config each.
@@ -76,9 +80,9 @@ function balanceRead(delayMs = 0, before = () => {}) {
   };
   return { command, counts };
 }
-const shown = (view: unknown) => (view as { host: { wallet: { balance: { available_balance: string } } } }).host.wallet.balance.available_balance;
+const shown = (view: unknown) => (view as { host: { wallet?: { balance: { available_balance: string } } } }).host?.wallet?.balance.available_balance;
 // Runs the host until `body` finishes, then stops it.
-async function host(options: Partial<RunOptions> & { agentsDir: string }, body: (link: URL | undefined, calls: string[]) => Promise<void>) {
+async function host(options: Partial<RunOptions> & { agentsDir: string }, body: (link: URL | undefined, calls: string[], lines: string[]) => Promise<void>) {
   const stop = new AbortController();
   const lines: string[] = [];
   const calls: string[] = [];
@@ -86,15 +90,16 @@ async function host(options: Partial<RunOptions> & { agentsDir: string }, body: 
   const started = new Promise<void>((resolve) => { ready = resolve; });
   const running = runAgents({
     env: "local", signal: stop.signal, pingEveryMs: 60_000,
+    command: async () => ({ outcome: "failed", error: "synthetic offline host" }),
     openAgent: async ({ id }) => (calls.push(`open ${id}`), handle(id, calls)),
     listen: () => ({ close: async () => {} }),
     log: (line) => { lines.push(line); if (line.startsWith("running ")) ready(); },
     ...options,
   });
-  await started;
+  await Promise.race([started, running]);
   const printed = lines.find((line) => line.startsWith("console: "));
-  try { await body(printed ? new URL(printed.slice("console: ".length)) : undefined, calls); }
-  finally { stop.abort(); await running; }
+  try { await body(printed ? new URL(printed.slice("console: ".length)) : undefined, calls, lines); }
+  finally { stop.abort(); releases.splice(0).forEach((release) => release()); await running; }
 }
 const put = (link: URL, path: string, body: unknown) => fetch(new URL(path, link), {
   method: "PUT", body: JSON.stringify(body),
@@ -102,6 +107,279 @@ const put = (link: URL, path: string, body: unknown) => fetch(new URL(path, link
 });
 const get = (link: URL, path: string) => fetch(new URL(path, link), { headers: { authorization: `Bearer ${link.hash.slice("#token=".length)}` } });
 const balance = async (link: URL) => shown(await (await get(link, "/api/agents/me")).json());
+const startup = (link: URL, id: string, action: "retry" | "cancel", generation: number) => fetch(new URL(`/api/agents/${id}/startup/${action}`, link), {
+  method: "POST", body: JSON.stringify({ generation }),
+  headers: { authorization: `Bearer ${link.hash.slice(7)}`, "content-type": "application/json" },
+});
+type RosterRow = { id: string; generation: number; state: string; phase?: string; reason?: string };
+const roster = async (link: URL): Promise<RosterRow[]> => ((await (await get(link, "/api/agents")).json()) as { agents: RosterRow[] }).agents;
+function gate() {
+  let release = () => {};
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  releases.push(release);
+  return { promise, release };
+}
+
+it("serves the console and pings a healthy sibling while another opening is hung", async () => {
+  const opening = gate();
+  const calls: string[] = [];
+  let signal: AbortSignal | undefined;
+  try {
+    await host({
+      agentsDir: folders("a", "b"), console: { port: 0 },
+      openAgent: async (options) => {
+        if (options.id === "a") { signal = options.signal; await opening.promise; }
+        return { ...handle(options.id, calls), ping: async () => { calls.push(`ping ${options.id}`); } };
+      },
+    }, async (link) => {
+      expect(await roster(link!)).toMatchObject([{ id: "a", state: "starting", phase: "opening" }, { id: "b", state: "ready" }]);
+      expect(calls).toContain("ping b");
+      expect((await get(link!, "/api/agents/b")).status).toBe(200);
+      expect((await startup(link!, "a", "cancel", 1)).status).toBe(202);
+      expect(signal?.aborted).toBe(true);
+      expect(await roster(link!)).toMatchObject([{ id: "a", state: "stopped" }, { id: "b", state: "ready" }]);
+      opening.release();
+      await expect.poll(() => calls).toContain("close a");
+      expect(calls).not.toContain("ping a");
+    });
+  } finally { opening.release(); }
+});
+
+it("keeps malformed agents visible and the console alive when all agents stop", async () => {
+  const dir = folders("a", "b");
+  writeFileSync(join(dir, "a", "agent.json"), "not JSON");
+  await host({ agentsDir: dir, console: { port: 0 } }, async (link) => {
+    expect(await roster(link!)).toMatchObject([{ id: "a", state: "stopped", reason: expect.any(String) }, { id: "b", state: "ready" }]);
+    expect((await get(link!, "/api/agents/b")).status).toBe(200);
+  });
+  await host({ agentsDir: dir, console: { port: 0 }, openAgent: async () => { throw new Error("offline"); } }, async (link) => {
+    expect((await roster(link!)).every((entry) => entry.state === "stopped")).toBe(true);
+  });
+});
+
+it("never publishes JSON parser snippets from a malformed private config", async () => {
+  const dir = folders("me");
+  const secret = "synthetic-private-token-not-for-display";
+  writeFileSync(join(dir, "me", ".taskfast", "config.json"), `not-json-${secret}`);
+  await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls, lines) => {
+    const rows = await roster(link!);
+    expect(rows).toMatchObject([{ id: "me", state: "stopped", reason: "me: cannot read .taskfast/config.json as JSON" }]);
+    expect(calls).toEqual([]);
+    expect(JSON.stringify(rows)).not.toContain(secret);
+    expect(lines.join("\n")).not.toContain(secret);
+    expect((await get(link!, "/")).status).toBe(200);
+  });
+});
+
+it("scopes retry to a generation, waits for late-result cleanup, and re-reads files", async () => {
+  const dir = folders("me");
+  const opening = gate();
+  const closing = gate();
+  const calls: string[] = [];
+  let opens = 0;
+  try {
+    await host({ agentsDir: dir, console: { port: 0 }, openAgent: async ({ id, spec }) => {
+      calls.push(`open ${spec.instructions}`);
+      if (++opens === 1) {
+        await opening.promise;
+        return { ...handle(id, calls), close: async () => { calls.push("closing"); await closing.promise; calls.push("closed"); } };
+      }
+      return handle(id, calls);
+    } }, async (link) => {
+      expect((await startup(link!, "me", "cancel", 1)).status).toBe(202);
+      expect((await startup(link!, "me", "cancel", 1)).status).toBe(409);
+      const cancelled = (await roster(link!))[0];
+      expect((await startup(link!, "me", "retry", cancelled.generation)).status).toBe(202);
+      expect((await startup(link!, "me", "retry", cancelled.generation)).status).toBe(409);
+      expect((await roster(link!))[0]).toMatchObject({ state: "starting", phase: "waiting-for-close" });
+      opening.release();
+      await expect.poll(() => calls).toContain("closing");
+      expect(opens).toBe(1);
+      writeFileSync(join(dir, "me", "INSTRUCTIONS.md"), "You are the fresh configuration.");
+      closing.release();
+      await expect.poll(async () => (await roster(link!))[0].state).toBe("ready");
+      expect(calls.slice(-2)).toEqual(["closed", "open You are the fresh configuration."]);
+      expect((await startup(link!, "me", "cancel", 1)).status).toBe(409);
+      expect((await startup(link!, "me", "retry", cancelled.generation)).status).toBe(409);
+      expect((await roster(link!))[0].state).toBe("ready");
+    });
+  } finally { opening.release(); closing.release(); }
+});
+
+it("blocks retries after a cancelled late result fails to close", async () => {
+  const opening = gate();
+  let opens = 0;
+  await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async ({ id }) => {
+    opens++;
+    await opening.promise;
+    return { ...handle(id, []), close: async () => { throw new Error("cleanup failed"); } };
+  } }, async (link) => {
+    expect((await startup(link!, "me", "cancel", 1)).status).toBe(202);
+    const cancelled = (await roster(link!))[0];
+    expect((await startup(link!, "me", "retry", cancelled.generation)).status).toBe(202);
+    opening.release();
+    await expect.poll(async () => (await roster(link!))[0].state).toBe("stopped");
+    const failed = (await roster(link!))[0];
+    expect(failed.reason).toContain("cleanup failed");
+    expect((await startup(link!, "me", "retry", failed.generation)).status).toBe(409);
+    expect(opens).toBe(1);
+  });
+});
+
+it("blocks future retries when opening rejects with a cleanup failure", async () => {
+  const failure = new CleanupError(new Error("synthetic cleanup failure"));
+  let opens = 0;
+  await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => {
+    opens++;
+    throw failure;
+  } }, async (link) => {
+    await expect.poll(async () => (await roster(link!))[0].state).toBe("stopped");
+    const failed = (await roster(link!))[0];
+    expect(failed.reason).toBe(failure.message);
+    expect((await startup(link!, "me", "retry", failed.generation)).status).toBe(409);
+    expect(opens).toBe(1);
+  });
+});
+
+it.each([false, true])("preserves an opening cleanup failure after cancellation (queued retry: %s)", async (queuedRetry) => {
+  const opening = gate();
+  const dir = folders("me");
+  const storePath = join(dir, "me", ".pi-state", "local", "state.sqlite");
+  const storage = await openAgentStorage(storePath);
+  const models = createModels();
+  models.setProvider(fauxProvider({ models: [{ id: "test" }] }).provider);
+  const close = vi.fn(async () => { throw new Error("synthetic private cleanup detail"); });
+  let opens = 0;
+  let storageRequested = false;
+  try {
+    await host({ agentsDir: dir, console: { port: 0 }, openAgent: async (options) => {
+      opens++;
+      return openMarketplaceAgent({
+        ...options, spec: { ...options.spec, model: "faux:test" }, models,
+        command: async () => { throw new Error("cancelled opening must not contact the marketplace"); },
+        openStorage: async () => {
+          storageRequested = true;
+          await opening.promise;
+          return new Proxy(storage, { get(target, key) {
+            if (key === "close") return close;
+            const value: unknown = Reflect.get(target, key);
+            return typeof value === "function" ? value.bind(target) : value;
+          } });
+        },
+      });
+    } }, async (link, _calls, lines) => {
+      await expect.poll(() => storageRequested).toBe(true);
+      expect(opens).toBe(1);
+      expect((await startup(link!, "me", "cancel", 1)).status).toBe(202);
+      const cancelled = (await roster(link!))[0];
+      if (queuedRetry) expect((await startup(link!, "me", "retry", cancelled.generation)).status).toBe(202);
+      opening.release();
+      await expect.poll(async () => (await roster(link!))[0].reason).toContain("cleanup failed");
+      const failed = (await roster(link!))[0];
+      expect(failed.state).toBe("stopped");
+      expect((await startup(link!, "me", "retry", failed.generation)).status).toBe(409);
+      expect(opens).toBe(1);
+      expect(close).toHaveBeenCalledOnce();
+      await expect(openAgentStorage(storePath)).rejects.toThrow("already owned");
+      expect(lines.join("\n")).not.toContain("synthetic private cleanup detail");
+    });
+  } finally {
+    opening.release();
+    await storage.close(BACKGROUND_CONTEXT);
+  }
+  // Test cleanup releases the retained real ownership lock, not the failed opener.
+  const reopened = await openAgentStorage(storePath);
+  await reopened.close(BACKGROUND_CONTEXT);
+});
+
+it("restores both Briefing files when shutdown interrupts old-owner cleanup", async () => {
+  const closing = gate();
+  const stop = new AbortController();
+  const dir = folders("me");
+  const file = join(dir, "me", "agent.json");
+  const instructions = join(dir, "me", "INSTRUCTIONS.md");
+  const before = { file: readFileSync(file, "utf8"), instructions: readFileSync(instructions, "utf8") };
+  let opens = 0;
+  try {
+    await host({ agentsDir: dir, console: { port: 0 }, signal: stop.signal, openAgent: async ({ id }) => {
+      opens++;
+      return { ...handle(id, []), close: async () => { await closing.promise; } };
+    } }, async (link) => {
+      try {
+        const saving = put(link!, "/api/agents/me/spec", {
+          ...example("brisk-poster"), instructions: "You are a replacement that never opens.", limits: { perJobUsd: 1, dailyUsd: 2 },
+        }).then((response) => response.status, () => "disconnected");
+        await expect.poll(async () => (await roster(link!))[0].phase).toBe("waiting-for-close");
+        expect(readFileSync(file, "utf8")).not.toBe(before.file);
+        expect(readFileSync(instructions, "utf8")).not.toBe(before.instructions);
+        stop.abort();
+        closing.release();
+        expect(await saving).not.toBe(204);
+      } finally { stop.abort(); closing.release(); }
+    });
+  } finally { stop.abort(); closing.release(); }
+  expect(readFileSync(file, "utf8")).toBe(before.file);
+  expect(readFileSync(instructions, "utf8")).toBe(before.instructions);
+  expect(opens).toBe(1);
+});
+
+it("serializes duplicate Briefing saves and startup intents through cleanup and rollback", async () => {
+  const closing = gate();
+  const dir = folders("me");
+  let opens = 0;
+  await host({ agentsDir: dir, console: { port: 0 }, openAgent: async ({ id }) => {
+    opens++;
+    return { ...handle(id, []), close: async () => { await closing.promise; } };
+  } }, async (link) => {
+    const first = put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), instructions: "You are the first save." });
+    await expect.poll(async () => (await roster(link!))[0].phase).toBe("waiting-for-close");
+    const starting = (await roster(link!))[0];
+    expect((await startup(link!, "me", "cancel", starting.generation)).status).toBe(409);
+    expect((await startup(link!, "me", "retry", starting.generation)).status).toBe(409);
+    expect((await put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), instructions: "You are a conflicting save." })).status).not.toBe(204);
+    closing.release();
+    expect((await first).status).toBe(204);
+    expect(opens).toBe(2);
+    expect(readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8")).toBe("You are the first save.");
+  });
+});
+
+it("does not reuse an old generation's enrichment after reopening", async () => {
+  const reading = gate();
+  let reads = 0;
+  await host({ agentsDir: folders("me"), console: { port: 0 }, command: async () => {
+    const read = ++reads;
+    if (read === 1) await reading.promise;
+    return { outcome: "ok", data: { balance: { available_balance: String(read) } } };
+  } }, async (link) => {
+    expect(await balance(link!)).toBeUndefined();
+    const saving = put(link!, "/api/agents/me/spec", example("brisk-poster"));
+    await expect.poll(async () => (await roster(link!))[0].phase).toBe("waiting-for-close");
+    reading.release();
+    expect((await saving).status).toBe(204);
+    expect(await balance(link!)).toBeUndefined();
+    await expect.poll(() => balance(link!)).toBe("2");
+    expect(reads).toBe(2);
+  });
+});
+
+it("returns local facts while remote enrichment is hung", async () => {
+  const reading = gate();
+  try {
+    await host({ agentsDir: folders("me"), console: { port: 0 }, command: async () => {
+      await reading.promise;
+      return { outcome: "ok", data: { balance: { available_balance: "7" } } };
+    } }, async (link) => {
+      const response = await get(link!, "/api/agents/me");
+      expect(response.status).toBe(200);
+      const view = await response.json() as { host: { wallet?: unknown; tasks: unknown; unlockFile: boolean } };
+      expect(view.host).toMatchObject({ tasks: {}, unlockFile: false });
+      expect(view.host.wallet).toBeUndefined();
+      reading.release();
+      await expect.poll(() => balance(link!)).toBe("7");
+    });
+  } finally { reading.release(); }
+});
 
 it("opens a console only when asked, and prints its one link", async () => {
   await host({ agentsDir: folders("me") }, async (link) => { expect(link).toBeUndefined(); });
@@ -159,6 +437,7 @@ it("adds what only the host knows: unlock file, stream, wallet, dead letters and
       { role: "toolResult", toolCallId: "c1", toolName: "message_send", content: [{ type: "text", text: "{}" }], isError: false, timestamp: 3 },
     ] }),
   }, async (link) => {
+    await expect.poll(() => balance(link!)).toBe("0x0");
     const view = await (await get(link!, "/api/agents/me")).json() as { host: Record<string, unknown>; attention: unknown[] };
     expect(view.host).toMatchObject({
       unlockFile: true, stream: "connected",
@@ -194,6 +473,13 @@ async function views(link: URL, path: string) {
   };
 }
 
+async function nextBalance(stream: Awaited<ReturnType<typeof views>>, wanted: string) {
+  for (;;) {
+    const view = await stream.next();
+    if (view === "ended" || shown(view) === wanted) return view === "ended" ? view : shown(view);
+  }
+}
+
 it("streams a real store's commits, and closes its streams before the store at reopen and shutdown", async () => {
   const dir = folders("me");
   const faux = fauxProvider({ models: [{ id: "test" }] });
@@ -220,6 +506,7 @@ it("streams a real store's commits, and closes its streams before the store at r
       };
     },
   }, async (link) => {
+    await expect.poll(async () => (await roster(link!))[0].state).toBe("ready");
     const live = await views(link!, "/api/agents/me/stream");
     expect(await live.next()).toMatchObject({ operator: { paused: false } });
     const paused = await fetch(new URL("/api/agents/me/paused", link), { method: "POST", body: JSON.stringify({ value: true }), headers: { authorization: `Bearer ${link!.hash.slice(7)}`, "content-type": "application/json" } });
@@ -261,8 +548,7 @@ it("keeps the host running when an agent cannot reopen", async () => {
     expect(readFileSync(join(dir, "me", "agent.json"), "utf8")).toBe(before.file);
     expect(readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8")).toBe(before.instructions);
     expect(await failed.json()).toMatchObject({ error: expect.stringContaining("store is already owned") });
-    const listed = await (await get(link!, "/api/agents")).json() as { agents: { id: string }[] };
-    expect(listed.agents.map((agent) => agent.id)).toEqual(["you"]);
+    expect(await roster(link!)).toMatchObject([{ id: "me", state: "stopped", reason: "store is already owned" }, { id: "you", state: "ready" }]);
   });
 });
 
@@ -323,7 +609,7 @@ it("re-reads the wallet once a money tool settles ok or uncertain, never after a
   const me = moving("me");
   const wallet = balanceRead();
   await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => me.agent, command: wallet.command }, async (link) => {
-    expect(await balance(link!)).toBe("1");
+    await expect.poll(() => balance(link!)).toBe("1");
     me.actions["escrow:b1"] = action("reserved", 40);
     expect(await balance(link!)).toBe("1");
     me.actions["escrow:b1"] = action("failed", 40);
@@ -331,10 +617,10 @@ it("re-reads the wallet once a money tool settles ok or uncertain, never after a
     me.actions["accept:b1"] = action("done", 0);
     expect(await balance(link!)).toBe("1");
     me.actions["escrow:b1"] = action("done", 40);
-    expect(await balance(link!)).toBe("2");
+    await expect.poll(() => balance(link!)).toBe("2");
     expect(await balance(link!)).toBe("2");
     me.actions["post:p1"] = action("uncertain", 1);
-    expect(await balance(link!)).toBe("3");
+    await expect.poll(() => balance(link!)).toBe("3");
     expect(wallet.counts.reads).toBe(3);
   });
 });
@@ -344,14 +630,14 @@ it("shares one wallet read among open streams and folds a burst of payment event
   const wallet = balanceRead(30);
   await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => me.agent, command: wallet.command }, async (link) => {
     const streams = await Promise.all([1, 2, 3].map(() => views(link!, "/api/agents/me/stream")));
-    expect((await Promise.all(streams.map((stream) => stream.next()))).map(shown)).toEqual(["1", "1", "1"]);
+    expect(await Promise.all(streams.map((stream) => nextBalance(stream, "1")))).toEqual(["1", "1", "1"]);
     expect(wallet.counts.reads).toBe(1);
 
     for (let n = 1; n <= 5; n++) {
       me.events[`event:pay-${n}`] = admitted(`pay-${n}`, n % 2 ? "payment_released" : "payment_disbursed");
       me.commit();
     }
-    expect((await Promise.all(streams.map((stream) => stream.next()))).map(shown)).toEqual(["2", "2", "2"]);
+    expect(await Promise.all(streams.map((stream) => nextBalance(stream, "2")))).toEqual(["2", "2", "2"]);
     expect(wallet.counts.reads).toBe(2);
 
     // Asking for a signature moves nothing.
@@ -373,8 +659,9 @@ it("reads the wallet once more after an in-flight read when money moves during i
   });
   await host({ agentsDir: folders("me"), console: { port: 0 }, openAgent: async () => me.agent, command: wallet.command }, async (given) => {
     link = given;
-    expect(await balance(link!)).toBe("1");
-    expect(await during).toBe("2");
+    expect(await balance(link!)).toBeUndefined();
+    expect(await during).toBeUndefined();
+    await expect.poll(() => balance(link!)).toBe("2");
     expect(wallet.counts).toMatchObject({ reads: 2, most: 1 });
   });
 });
@@ -418,8 +705,8 @@ it("does not keep a wallet read that threw", async () => {
       return { outcome: "ok", data: { balance: { available_balance: "0x5" } } };
     },
   }, async (link) => {
-    expect((await get(link!, "/api/agents/me")).status).toBe(500);
-    expect(await balance(link!)).toBe("0x5");
+    expect((await get(link!, "/api/agents/me")).status).toBe(200);
+    await expect.poll(() => balance(link!)).toBe("0x5");
     expect(reads).toBe(2);
   });
 });
@@ -438,6 +725,7 @@ it("waits out a wallet read before closing the agent, and sends no view after it
     },
   }, async (link) => {
     const live = await views(link!, "/api/agents/me/stream");
+    expect(shown(await live.next())).toBeUndefined();
     await expect.poll(() => order).toEqual(["read"]);
     const saving = put(link!, "/api/agents/me/spec", example("brisk-poster"));
     await sleep(50);

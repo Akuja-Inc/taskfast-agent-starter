@@ -14,6 +14,7 @@ import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
+import { CleanupError } from "./cleanup-error.js";
 import { example } from "../../test/example.js";
 
 const context = BACKGROUND_CONTEXT;
@@ -59,6 +60,26 @@ function hold() {
   const held = new Promise<void>((resolve) => { release = resolve; });
   return { held, release };
 }
+
+it("distinguishes failed opening cleanup while the real store remains owned", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "marketplace-cleanup-"));
+  dirs.push(dir);
+  const signal = new AbortController();
+  let release: (() => Promise<void>) | undefined;
+  try {
+    await expect(open({ dir, signal: signal.signal, openStorage: async (path) => {
+      const storage = await openAgentStorage(path);
+      release = () => storage.close(context);
+      signal.abort();
+      return new Proxy(storage, { get(target, key) {
+        if (key === "close") return async () => { throw new Error("injected cleanup failure"); };
+        const value: unknown = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      } });
+    } })).rejects.toBeInstanceOf(CleanupError);
+    await expect(openAgentStorage(join(dir, "state.sqlite"))).rejects.toThrow("already owned");
+  } finally { await release?.(); }
+});
 
 it("moves a stopped agent folder without losing notes, spend or completed business keys", async () => {
   const root = mkdtempSync(join(tmpdir(), "marketplace-move-"));

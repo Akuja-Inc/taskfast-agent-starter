@@ -1,0 +1,12 @@
+{
+  "commit": "0acaff560704aa91ee70f237df5721ede8dc4c23",
+  "dirty": true,
+  "sha256": {
+    "src/tui/app.tsx": "f4bcb1d2381c82507d753b4c8482f0441b041f7dcb670a499c86ff4c1f9bc08c",
+    "src/tui/keys.ts": "8535887b4c5b16bb3c7799e045f4964ba6cd5bf8276b4a0d19e4b02e3be0751c",
+    "src/tui/link.ts": "9c06be88e3ba03a4e2847428cb6b2a53da2c6c3104b0ab91b37accc8393075af",
+    "src/tui/screen.ts": "fc046873617c9cba593dc1e8e779f77844f6690862d91f1871d545546adaeb86",
+    "docs/startup/browser-host.mjs": "2a5eb4c967f5f77eba13e5dce8478ade1ac78ce5e3fddaf2c995b7d50610f005"
+  },
+  "capture": "Unmodified X11 window pixels: Zutty, tmux, Bun/OpenTUI, ImageMagick import. Synthetic loopback fixture; normal 130x28, narrow 90x28."
+}

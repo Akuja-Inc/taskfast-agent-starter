@@ -1,6 +1,7 @@
 // The terminal UI against a throwaway host (test/fixtures/tui-host.mjs: temporary agent
 // folders, real stores, scripted model, fake CLI). Run with `pnpm tui:test`.
 import { afterAll, expect, spyOn, test } from "bun:test";
+import type { AgentRosterEntry } from "../console-lifecycle.js";
 import type { ConsoleView } from "../console.js";
 import { spawn } from "node:child_process";
 import { testRender } from "@opentui/solid";
@@ -44,6 +45,144 @@ async function draw(width: number, height: number, origin = link.origin, key = t
   }
   return { setup, until, opened, quits: () => quits, keys: setup.mockInput };
 }
+
+test("keeps startup independent, switches without a view, and ignores a late view from another generation", async () => {
+  const base = await (await fetch(link.origin + "/api/agents/shop", { headers: { authorization: `Bearer ${token}` } })).json() as ConsoleView;
+  let slow: AgentRosterEntry = { id: "slow", role: "worker", generation: 1, state: "starting", phase: "opening" };
+  const healthy: AgentRosterEntry = { id: "healthy", role: "worker", generation: 1, state: "ready" };
+  const calls: { path: string; body: unknown }[] = [];
+  let releaseCancel = () => {}, releaseView = () => {};
+  const cancelGate = new Promise<void>((resolve) => { releaseCancel = resolve; });
+  const viewGate = new Promise<void>((resolve) => { releaseView = resolve; });
+  let slowReads = 0, reversed = false;
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+    const path = new URL(req.url).pathname;
+    if (path === "/api/agents") return Response.json({ env: "local", agents: reversed ? [healthy, slow] : [slow, healthy] });
+    if (path.includes("/startup/")) {
+      calls.push({ path, body: await req.json() });
+      if (path.endsWith("/cancel")) {
+        await cancelGate;
+        slow = { id: "slow", generation: 1, state: "stopped", reason: "MCP handshake failed. Fix the server and retry." };
+      } else slow = { id: "slow", generation: 2, state: "ready" };
+      return Response.json({}, { status: 202 });
+    }
+    if (path === "/api/agents/slow") { slowReads++; await viewGate; return Response.json({ ...base, id: "OLD VIEW MUST NOT APPEAR" }); }
+    if (path.endsWith("/stream")) return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(": connected\n\n")); } }), { headers: { "content-type": "text/event-stream" } });
+    if (path === "/api/agents/healthy") return Response.json({ ...base, id: "healthy" });
+    return Response.json({ error: "Not ready" }, { status: 409 });
+  } });
+  const { setup, until, keys } = await draw(90, 32, server.url.origin);
+  try {
+    await until((frame) => frame.includes("Agent starting") && frame.includes("x cancel startup"));
+    expect(slowReads).toBe(0);
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Not queued"));
+    keys.pressKey("x");
+    await until((frame) => frame.includes("Sending startup request"));
+    keys.pressKey("x");
+    keys.pressKey(">");
+    await until((frame) => frame.includes("healthy") && frame.includes("Timeline"));
+    expect(calls).toEqual([{ path: "/api/agents/slow/startup/cancel", body: { generation: 1 } }]);
+    releaseCancel();
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("Keep this local draft.");
+    keys.pressEscape();
+    await until(() => setup.renderer.currentFocusedEditor === null);
+    keys.pressKey("<");
+    await until((frame) => frame.includes("Agent stopped") && frame.includes("MCP handshake failed"));
+    keys.pressKey("?");
+    await until((frame) => frame.includes("Stopped: R retries startup"));
+    keys.pressKey("?");
+    keys.pressKey("R");
+    await until(() => slowReads === 1);
+    keys.pressKey(">");
+    await until((frame) => frame.includes("healthy") && frame.includes("Timeline"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Keep this local draft."));
+    keys.pressEscape();
+    await until(() => setup.renderer.currentFocusedEditor === null);
+    // An old HTTP completion must not install its follower or redraw the other agent.
+    slow = { id: "slow", generation: 3, state: "stopped", reason: "New generation stopped" };
+    releaseView();
+    reversed = true;
+    await Bun.sleep(1200);
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("healthy");
+    expect(setup.captureCharFrame()).not.toContain("OLD VIEW MUST NOT APPEAR");
+    keys.pressKey(">");
+    await until((frame) => frame.includes("New generation stopped"));
+    expect(calls[1]).toEqual({ path: "/api/agents/slow/startup/retry", body: { generation: 1 } });
+  } finally { releaseCancel(); releaseView(); setup.renderer.destroy(); server.stop(true); }
+}, 30_000);
+
+test("clears only the accepted agent draft on a late send ACK and keeps newer text", async () => {
+  const other = await startHost();
+  const key = other.link.hash.slice("#token=".length);
+  const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+  const path = other.link.origin + "/api/agents/shop";
+  await fetch(path + "/paused", { method: "POST", headers, body: JSON.stringify({ value: true }) });
+  const fetchReal = globalThis.fetch;
+  const sent: { requestId: string }[] = [];
+  let release = () => {};
+  let admitted = 0, returned = 0;
+  const requests = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    if (String(input) !== path + "/messages" || init?.method !== "POST") return fetchReal(input, init);
+    sent.push(JSON.parse(String(init.body)));
+    const response = await fetchReal(input, init);
+    expect(response.ok).toBe(true);
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    admitted++;
+    await gate;
+    returned++;
+    return response;
+  }, { preconnect: fetchReal.preconnect }));
+  const { setup, until, keys } = await draw(130, 48, other.link.origin, key);
+  try {
+    await until((frame) => frame.includes("shop") && frame.includes("Timeline"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("Accepted text.");
+    keys.pressEnter();
+    await until(() => admitted === 1);
+    keys.pressEscape();
+    await until(() => setup.renderer.currentFocusedEditor === null);
+    keys.pressKey(">");
+    await until((frame) => frame.includes("worker") && frame.includes("Timeline"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent"));
+    await keys.typeText("Other agent draft.");
+    release();
+    await until(() => returned === 1);
+    expect(setup.captureCharFrame()).toContain("Other agent draft.");
+    keys.pressEscape();
+    await until(() => setup.renderer.currentFocusedEditor === null);
+    keys.pressKey("<");
+    await until((frame) => frame.includes("shop") && frame.includes("Timeline"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Your message to the agent")); // Accepted draft is gone.
+    await keys.typeText("Accepted text.");
+    keys.pressEnter();
+    await until(() => admitted === 2);
+    expect(sent[1].requestId).not.toBe(sent[0].requestId); // The acknowledged attempt is gone too.
+    await keys.typeText(" Newer unsent text.");
+    keys.pressEscape();
+    await until(() => setup.renderer.currentFocusedEditor === null);
+    keys.pressKey(">");
+    await until((frame) => frame.includes("worker") && frame.includes("Timeline"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Other agent draft."));
+    release();
+    await until(() => returned === 2);
+    expect(setup.captureCharFrame()).toContain("Other agent draft.");
+    keys.pressEscape();
+    await until(() => setup.renderer.currentFocusedEditor === null);
+    keys.pressKey("<");
+    await until((frame) => frame.includes("shop") && frame.includes("Timeline"));
+    keys.pressKey("m");
+    await until((frame) => frame.includes("Accepted text. Newer unsent text."));
+  } finally { release(); requests.mockRestore(); setup.renderer.destroy(); other.host.kill("SIGTERM"); }
+}, 30_000);
 
 test("draws a live agent and steers it through the console API", async () => {
   // Tall enough that the whole timeline, markdown reply included, stays in view.

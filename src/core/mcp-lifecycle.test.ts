@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import { McpClient } from "@earendil-works/pi-mcp";
+import { CleanupError } from "./cleanup-error.js";
 import { afterEach, expect, it, vi } from "vitest";
 import { connectMcp, type McpTools } from "./mcp.js";
 import { toolHash, type McpServer } from "./mcp-config.js";
@@ -67,6 +69,20 @@ it("redacts credential-bearing discovery names before logging or rejecting them"
   const logs: string[] = [];
   await expect(connectMcp([fixture.config], { log: (line) => logs.push(line), reserved: [] })).rejects.toThrow(/credential/);
   expect(logs.join("\n")).not.toContain(fixture.secret);
+});
+
+it("marks failed MCP opening cleanup without exposing its diagnostic", async () => {
+  const fixture = await httpFixture("metadata");
+  const close = McpClient.prototype.close;
+  const spy = vi.spyOn(McpClient.prototype, "close").mockImplementation(async function (this: McpClient) {
+    await close.call(this);
+    throw new Error(fixture.secret);
+  });
+  try {
+    const result = connectMcp([fixture.config], { log: () => {}, reserved: [] });
+    await expect(result).rejects.toBeInstanceOf(CleanupError);
+    await expect(result).rejects.not.toThrow(fixture.secret);
+  } finally { spy.mockRestore(); }
 });
 
 it("cancels a connection attempt while its HTTP handshake is pending", async () => {
