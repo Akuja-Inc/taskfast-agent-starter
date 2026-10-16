@@ -1,0 +1,2 @@
+- Run interrupted-publication recovery only on the host's initial open, not an intentional capability reopen, because the new registry must open against the still-uncommitted journal before activation can commit it. (GH #64, `docs/capabilities/runtime.md`)
+- Open a replacement with its own initial scheduling hold and release it only after the publication journal commits; holding the old agent does not prevent the replacement from dispatching recovered writes. (GH #64, `src/core/agent-quiesce.test.ts`)

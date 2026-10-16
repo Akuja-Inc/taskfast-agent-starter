@@ -35,6 +35,16 @@ it("loads the CLI's real taskfast-agent bundle with its folded description and e
   expect(found!.files.get("reference/WORKER.md")).toBe(readFileSync(join(BUNDLE, "reference/WORKER.md"), "utf8"));
 });
 
+it("filters disabled skills only after validating every installed skill", () => {
+  const dir = withBundle(); writeFileSync(join(dir, ".agents/disabled-skills.json"), '["taskfast-agent"]');
+  expect(loadSkills(dir)).toEqual([]); expect(loadSkills(dir, { includeDisabled: true })[0]?.name).toBe("taskfast-agent");
+  writeFileSync(join(dir, SKILLS_PATH, "taskfast-agent/SKILL.md"), "invalid");
+  expect(() => loadSkills(dir)).toThrow(/frontmatter/);
+});
+it.each(['{}', '["missing"]', '["taskfast-agent","taskfast-agent"]', '["../escape"]'])("rejects malformed disabled skill configuration: %s", (config) => {
+  const dir = withBundle(); writeFileSync(join(dir, ".agents/disabled-skills.json"), config);
+  expect(() => loadSkills(dir)).toThrow(/disabled-skills/);
+});
 it("finds nothing in a folder without skills, and ignores the CLI's .claude copy", () => {
   const dir = agentDir();
   expect(loadSkills(dir)).toEqual([]);

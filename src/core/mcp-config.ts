@@ -45,6 +45,7 @@ function strings(value: unknown, where: string, key: RegExp, what: string): Reco
 function secrets(agentDir: string): Map<string, string> {
   const path = folderFile({ agentDir, path: MCP_SECRETS, resource: MCP_SECRETS });
   if (!existsSync(path)) return new Map();
+  if (!lstatSync(path).isFile() || lstatSync(path).size > 64 * 1024) bad(`${MCP_SECRETS} must be a small regular file`);
   if ((lstatSync(path).mode & 0o077) !== 0) bad(`${MCP_SECRETS} must be readable by you only; run chmod 600 on it`);
   return new Map(Object.entries(parseEnv(readFileSync(path, "utf8"))).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== ""));
 }
@@ -54,20 +55,27 @@ function secrets(agentDir: string): Map<string, string> {
 export function loadMcpConfig(agentDir: string): McpServer[] {
   const path = folderFile({ agentDir, path: MCP_CONFIG, resource: MCP_CONFIG });
   if (!existsSync(path)) return [];
+  if (!lstatSync(path).isFile() || lstatSync(path).size > 128 * 1024) bad(`${MCP_CONFIG} must be a small regular file`);
   let raw: unknown;
   try { raw = JSON.parse(readFileSync(path, "utf8")); }
   catch { bad(`${MCP_CONFIG} is not valid JSON`); }
+  return parseMcpConfig(agentDir, raw, secrets(agentDir));
+}
+
+// Also used by the console's staging validator; parsing never connects a server.
+export function parseMcpConfig(agentDir: string, raw: unknown, vault: ReadonlyMap<string, string>): McpServer[] {
   const root = fields(raw, MCP_CONFIG, ["servers"]);
   if (!isRecord(root.servers)) bad(`${MCP_CONFIG}: servers must be an object`);
   const entries = Object.entries(root.servers as object);
   if (entries.length > MAX_SERVERS) bad(`${MCP_CONFIG} has more than ${MAX_SERVERS} servers`);
-  const vault = secrets(agentDir);
-  return entries.map(([name, value]): McpServer => {
+  return entries.flatMap(([name, value]): McpServer[] => {
     const where = `servers.${name}`;
     if (!SERVER.test(name)) bad(`${where}: a server name is 1-32 lowercase letters, digits and dashes`);
     const local = isRecord(value) && "command" in value;
     if (local === (isRecord(value) && "url" in value)) bad(`${where} needs exactly one of command or url`);
-    const server = fields(value, where, local ? ["command", "args", "cwd", "env", "tools"] : ["url", "headers", "tools"]);
+    const server = fields(value, where, local ? ["command", "args", "cwd", "env", "tools", "enabled"] : ["url", "headers", "tools", "enabled"]);
+    if (server.enabled !== undefined && typeof server.enabled !== "boolean") bad(`${where}.enabled must be boolean`);
+    const enabled = server.enabled !== false;
     const tools = strings(server.tools, `${where}.tools`, /^.{1,128}$/s, "a tool name is 1-128 characters");
     for (const [tool, hash] of Object.entries(tools)) if (!HASH.test(hash)) bad(`${where}.tools.${tool} must be the 64-character sha256 fingerprint the host logs for it`);
     // A local server's credentials are environment variables; a remote server's are headers.
@@ -80,23 +88,28 @@ export function loadMcpConfig(agentDir: string): McpServer[] {
       const at = `${where}.${kind}.${target}`;
       if (local && (target === "PATH" || target === "HOME")) bad(`${at}: PATH and HOME are set by the host`);
       if (!SETTING.test(secret)) bad(`${at} must name a setting in ${MCP_SECRETS}, such as DOCS_TOKEN`);
-      credentials[target] = vault.get(secret) ?? bad(`${at}: ${secret} is not set in ${MCP_SECRETS}`);
+      credentials[target] = vault.get(secret) ?? (enabled ? bad(`${at}: ${secret} is not set in ${MCP_SECRETS}`) : "");
     }
     if (!local) {
       let url: URL;
       try { url = new URL(String(server.url)); }
       catch { return bad(`${where}.url must be a URL`); }
       if (url.username || url.password) bad(`${where}.url must not contain a user name or password`);
+      if (url.search || url.hash) bad(`${where}.url must not contain a query or fragment`);
+      let decoded: string;
+      try { decoded = decodeURIComponent(url.href); } catch { return bad(`${where}.url contains invalid escaping`); }
+      if (Object.values(credentials).some((secret) => secret && (url.href.includes(secret) || decoded.includes(secret)))) bad(`${where}.url contains a configured credential`);
       if (url.protocol !== "https:" && !(url.protocol === "http:" && LOOPBACK.has(url.hostname))) bad(`${where}.url must use https, or http to 127.0.0.1, localhost or [::1]`);
-      return { name, transport: "http", url: url.href, credentials, tools };
+      return enabled ? [{ name, transport: "http", url: url.href, credentials, tools }] : [];
     }
     const command = server.command;
     if (typeof command !== "string" || !isAbsolute(command) || !statSync(command, { throwIfNoEntry: false })?.isFile()) bad(`${where}.command must be an absolute path to an existing file`);
     const args = server.args ?? [];
-    if (!Array.isArray(args) || !args.every((arg) => typeof arg === "string")) bad(`${where}.args must be a list of strings`);
+    if (!Array.isArray(args) || args.length > 64 || !args.every((arg) => typeof arg === "string" && arg.length <= 4096 && !arg.includes("\0"))) bad(`${where}.args must be a list of strings within the size limits`);
+    if (Object.values(credentials).some((secret) => secret && JSON.stringify([command, args, server.cwd]).includes(JSON.stringify(secret).slice(1, -1)))) bad(`${where}: credentials cannot appear in command, args or cwd`);
     const cwd = folderFile({ agentDir, path: typeof server.cwd === "string" ? server.cwd : ".", resource: `${where}.cwd` });
     if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) bad(`${where}.cwd must be a folder inside the agent folder`);
-    return { name, transport: "stdio", command: command as string, args: args as string[], cwd, credentials, tools };
+    return enabled ? [{ name, transport: "stdio", command: command as string, args: args as string[], cwd, credentials, tools }] : [];
   });
 }
 

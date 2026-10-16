@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { afterEach, expect, it, vi } from "vitest";
 import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
-import { connectMcp, type McpTools } from "./mcp.js";
+import { connectMcp, discoverMcp, type McpTools } from "./mcp.js";
 import { loadMcpConfig } from "./mcp-config.js";
 
 const dirs: string[] = [];
@@ -34,10 +34,44 @@ async function call(mcp: McpTools, name: string, args: Record<string, unknown>, 
 }
 const text = (result: Awaited<ReturnType<typeof call>>) => (result.output ?? []).map((part) => (part.type === "text" ? part.text : "")).join("");
 
+it("discovers bounded review metadata without calling any tool and closes its process tree", async () => {
+  const dir = agentDir(); const pidfile = join(dir, "discovery.pid");
+  writeMcp(dir, { docs: local({}, { env: { FIXTURE_PIDFILE: "PIDFILE" } }) }, { PIDFILE: pidfile });
+  const metadata = await discoverMcp(loadMcpConfig(dir)[0]!);
+  expect(metadata.find((tool) => tool.name === "search")).toMatchObject({ hash: approve("search"), blocked: false, description: "Search the docs." });
+  expect(metadata.find((tool) => tool.name === "delete")?.blocked).toBe(true);
+  await expectGone(Number(readFileSync(pidfile, "utf8")));
+});
+it("rejects credential-bearing discovered definitions including JSON-escaped values", async () => {
+  const { createServer } = await import("node:http");
+  const token = 'sec"ret'; const methods: string[] = [];
+  const http = createServer(async (request, response) => {
+    const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk as Buffer);
+    const message = JSON.parse(Buffer.concat(chunks).toString("utf8")); methods.push(message.method);
+    if (message.id === undefined) { response.writeHead(202).end(); return; }
+    const result = message.method === "initialize"
+      ? { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } }
+      : { tools: [{ name: "search", description: `leaked ${token}`, inputSchema: { type: "object" } }] };
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+  });
+  await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+  servers.push({ close: () => new Promise((resolve) => { http.closeAllConnections(); http.close(() => resolve()); }) });
+  const error = await discoverMcp({ name: "docs", transport: "http", url: `http://127.0.0.1:${(http.address() as { port: number }).port}/mcp`, credentials: { Authorization: token }, tools: {} }).catch((error: unknown) => error);
+  expect(String(error)).toContain("credential"); expect(String(error)).not.toContain(token); expect(methods).not.toContain("tools/call");
+});
+it("bounds a stalled review handshake and closes its HTTP connection", async () => {
+  const { createServer } = await import("node:http");
+  const http = createServer(() => {});
+  await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+  servers.push({ close: () => new Promise((resolve) => { http.closeAllConnections(); http.close(() => resolve()); }) });
+  const dir = agentDir();
+  writeMcp(dir, { docs: { url: `http://127.0.0.1:${(http.address() as { port: number }).port}/mcp`, tools: {} } });
+  await expect(discoverMcp(loadMcpConfig(dir)[0]!, { connectTimeoutMs: 40 })).rejects.toThrow(/timed out/);
+});
 it("has no tools and starts nothing without servers", async () => {
   const mcp = await connect(agentDir());
   expect(mcp.tools).toEqual([]);
-  expect(mcp.prompt).toBe("");
+  expect(mcp.prompt).toBe(""); expect(mcp.status()).toEqual([]);
 });
 
 it("exposes only approved tools over stdio, logs the others with their fingerprints and calls the server", async () => {
@@ -46,6 +80,7 @@ it("exposes only approved tools over stdio, logs the others with their fingerpri
   const logs: string[] = [];
   const mcp = await connect(dir, logs);
   expect(mcp.tools.map((tool) => tool.name)).toEqual(["mcp_docs_search"]);
+  expect(mcp.status()).toEqual([{ name: "docs", state: "connected" }]);
   expect(mcp.tools[0]).toMatchObject({ replay: "unsafe", executionMode: "sequential" });
   expect(mcp.tools[0]!.description).toBe("From MCP server docs, approved by your operator as a read: Search the docs.");
   expect(logs).toContain("mcp docs: tools mcp_docs_search");
@@ -133,6 +168,7 @@ it("fails a call after the server goes away, and never reconnects", async () => 
   const mcp = await connect(dir, logs);
   await call(mcp, "mcp_docs_exit", {});
   await vi.waitFor(() => expect(logs).toContain("mcp docs: disconnected; restart the agent to reconnect"), { timeout: 1000, interval: 20 });
+  expect(mcp.status()).toEqual([{ name: "docs", state: "disconnected" }]);
   await expect(call(mcp, "mcp_docs_search", { query: "x" })).rejects.toThrow(/mcp docs: the server disconnected; restart the agent to reconnect/);
 });
 
