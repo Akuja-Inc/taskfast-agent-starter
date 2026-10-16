@@ -117,5 +117,8 @@ export function mcpToolName(server: string, tool: string): string {
 }
 
 export function redact(text: string, values: readonly string[]): string {
-  return values.filter(Boolean).reduce((out, value) => out.split(value).join("[redacted]"), text);
+  // Remote diagnostics often contain JSON, not the raw credential bytes. Match
+  // both representations and replace longer secrets before their prefixes.
+  const patterns = [...new Set(values.filter(Boolean).flatMap((value) => [value, JSON.stringify(value).slice(1, -1)]))].sort((a, b) => b.length - a.length);
+  return patterns.reduce((out, value) => out.split(value).join("[redacted]"), text);
 }
