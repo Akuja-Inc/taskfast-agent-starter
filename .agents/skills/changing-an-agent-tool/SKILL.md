@@ -3,17 +3,21 @@ name: changing-an-agent-tool
 description: >-
   Add, change or remove a tool the starter kit's agent can call (the TOOLS table in
   src/core/tools.ts), such as a new taskfast command, a new filter on a read, or a new
-  write or money action, without breaking the once-only and money rules. Use when asked
-  to let the agent do something new on TaskFast, change what a tool sends to the CLI,
-  or fix how a tool's command is built.
+  write or money action, without breaking the once-only and money rules. Also use for
+  other changes to the starter kit's code that change what the agent can do or how it
+  behaves, such as policy checks, event delivery, or the console and terminal UI.
+  Use when asked to let the agent do something new on TaskFast, change what a tool
+  sends to the CLI, fix how a tool's command is built, or change kit code that alters
+  agent behavior.
   NOT for setting up or configuring an agent (use setting-up-an-agent).
   NOT for starting or fixing a running agent (use running-an-agent).
+  NOT for a behavior-preserving cleanup (use simplify).
   NOT for changing the agent's prompt or personality only (edit src/core/prompt.ts).
 ---
 
 # Changing an agent tool
 
-Each entry in `TOOLS` (`src/core/tools.ts`) maps a marketplace tool to a CLI command or a notes operation. `agent.ts` registers entries with Pi for every role; Pi owns model/tool tasks, while session-scoped `policy.ts` owns marketplace safety. Read `AGENTS.md` ("Rules the code depends on") first; this skill gives the order to apply them in.
+Each entry in `TOOLS` (`src/core/tools.ts`) maps a marketplace tool to a CLI command or a notes operation. `agent.ts` registers entries with Pi for every role; Pi owns model/tool tasks, while session-scoped `policy.ts` owns marketplace safety. Read `AGENTS.md` ("Rules the code depends on") first; this skill gives the order to apply them in. Steps 1 to 6 are the tools-table procedure. Changes to other kit code that alter what the agent can do land here too; the last section maps each surface to its owning rule.
 
 ## 1. Check the command exists
 
@@ -67,3 +71,18 @@ No Bun or generation step is needed. If policy dispatch changes, cover persisten
 ## 6. Tell TaskFast
 
 TaskFast's downstream tooling pins this repository by commit, and its `tools-contract.test.ts` checks tool enum values against TaskFast's OpenAPI spec. In the PR description, list tools and enums you added or changed. Consumers must use the new `agent`, `policy` and `storage` lifecycle; `actors`, `self` and `turn` exports are removed without legacy adapters.
+
+## Kit code beyond the tools table
+
+`running-an-agent` routes every "change the agent's code" request here, and most land outside `tools.ts`. For each surface the owning rule lives in `AGENTS.md` under "Rules the code depends on", and `.agents/lessons/` may pin a trap for it. Read both before editing.
+
+| Surface | Owning rule |
+|---|---|
+| `policy.ts` reservations, limits, ledger | Reserve before dispatch. Only a known refusal retries. The ledger and daily spend stay permanent and unbounded. |
+| `agent.ts` registration, recovery, event retries | Pi owns model and tool tasks. Writes register unsafe to replay. Recovery never repeats an uncertain write. |
+| `skills.ts` and the agent-folder skills | Skills are guidance, never permission. `skill_read` takes a name and a listed file, never a path. |
+| `mcp.ts` tool approvals | The owner's fingerprint approves a tool. MCP tools never pass through marketplace policy. |
+| `run.ts`, `listener.ts`, `pump.ts` | Console readiness is not agent readiness. ACK means durable admission. The host closes streams before stores. |
+| `console-page.ts`, `console-*.ts`, `src/tui/` | The console reads through the running host. The TUI is a separate client of the same API. |
+
+Whatever the surface: write the failing test first where the change allows, keep the change scoped to what the request needs, and run `pnpm check` before committing. Policy and storage changes also need real persistent-store restart and ownership checks, not only mocked model calls. A behavior-preserving cleanup is `simplify`, and the finished change reaches main through `ship-pr`.

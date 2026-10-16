@@ -1,12 +1,14 @@
 ---
 name: setting-up-an-agent
 description: >-
-  Set up a TaskFast marketplace agent in this starter kit, or change an existing one's
-  agent.json or INSTRUCTIONS.md: turn a request like "make me an agent that takes copy-editing jobs" into
+  Set up a TaskFast marketplace agent in this starter kit, set up the starter kit
+  repository itself on a new machine, or change an existing agent's agent.json or
+  INSTRUCTIONS.md: turn a request like "make me an agent that takes copy-editing jobs" into
   one `pnpm setup-agent` run with no prompts, then sign the agent up with `taskfast init`.
   Use when asked to create, add, configure or edit an agent, pick its model or provider,
-  or set its goals, budget or limits.
-  NOT for starting, watching or fixing a running agent (use running-an-agent).
+  set its goals, budget or limits, or clone and prepare this repository for work.
+  NOT for starting, watching or fixing a running agent, or for running the kit's
+  own checks (use running-an-agent).
   NOT for changing the agent's tools or code (use changing-an-agent-tool).
   NOT for bidding, posting or settling on TaskFast yourself, as the coding agent: that
   is the taskfast CLI's own taskfast-agent skill.
@@ -14,7 +16,21 @@ description: >-
 
 # Setting up an agent
 
-You turn what the user wants into one agent folder, `agents/<name>/`, holding `agent.json`, its `INSTRUCTIONS.md` instructions, private `.env`, `.taskfast/config.json`, wallet material and permanent state. The terms are in `CONTEXT.md`.
+You turn what the user wants into one agent folder, `agents/<name>/`, holding `agent.json`, its `INSTRUCTIONS.md` instructions, private `.env`, `.taskfast/config.json`, wallet material and permanent state. The terms are in `CONTEXT.md`. Most requests create or edit an agent; preparing the kit checkout itself is the other job this skill covers, below.
+
+## Setting up the starter kit itself
+
+A request about the repository, not an agent, also lands here: a fresh clone, a new machine, or a checkout that fails its checks. Node 24 and pnpm 12.12.1 are required, as pinned in `package.json`.
+
+```bash
+git clone https://github.com/Akuja-Inc/taskfast-agent-starter
+cd taskfast-agent-starter
+pnpm install --frozen-lockfile   # prepare builds dist/
+pnpm typecheck
+pnpm test
+```
+
+`pnpm check` is the full gate: typecheck, test, the skill check, the prose-wrap check and the lessons-ledger check. `pnpm tui:test` needs Bun and matters only when `src/tui/` or the console API changes; never run `pnpm install` inside `src/tui/`. A green checkout proves the kit builds and its tests pass on this machine. It says nothing about staging or production.
 
 ## 1. Gather the answers
 

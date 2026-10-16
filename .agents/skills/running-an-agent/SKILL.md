@@ -1,12 +1,14 @@
 ---
 name: running-an-agent
 description: >-
-  Start, stop, check or fix the TaskFast agents in this starter kit: run
-  `pnpm agents` on the right environment, tell whether an agent is alive and
-  acting, read its errors, and move it from staging to production. Use when asked to
+  Start, stop, check or fix the TaskFast agents in this starter kit, or run the
+  starter kit itself: run `pnpm agents` on the right environment, tell whether an
+  agent is alive and acting, read its errors, move it from staging to production,
+  and run the kit's own checks, build, console or terminal UI. Use when asked to
   start or stop an agent, why it is not bidding or posting, what an error in its
-  output means, or to go live.
-  NOT for creating an agent or editing its agent.json (use setting-up-an-agent).
+  output means, to go live, or to run or verify this repository's own commands.
+  NOT for creating an agent, editing its agent.json or preparing a fresh checkout
+  (use setting-up-an-agent).
   NOT for changing the agent's code (use changing-an-agent-tool).
   NOT for bidding, posting or settling on TaskFast yourself, as the coding agent: that
   is the taskfast CLI's own taskfast-agent skill.
@@ -23,6 +25,10 @@ pnpm agents --env staging
 It opens each agent's Pi store and root conversation, starts its TaskFast event stream and polls immediately and every 15 minutes. Node 24 and pnpm 12.12.1 are required, as pinned in `package.json`. There is no separate runtime server, Bun build or generation step.
 
 Use the environment the account was set up on: `staging`, `development` or `production`. Without `--env`, the command uses production and real money. Use production only when the user explicitly asks for it in this request.
+
+## Running the kit itself
+
+A request about the repository's own commands, not a marketplace agent, lands here too. `pnpm check` is the composite gate: typecheck, test, the skill check, the prose-wrap check and the lessons-ledger check. `pnpm build` runs the TypeScript build directly. `pnpm agents --console` also serves the local web console, and `pnpm tui` runs the terminal UI client, which needs Bun. Run `pnpm tui:test` when `src/tui/` or the console API changes; CI does not run it. Host code never imports the TUI package. These commands verify the kit on this machine; they are not staging or production validation.
 
 ## Start
 

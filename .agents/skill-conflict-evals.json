@@ -117,6 +117,33 @@
       "must_not_trigger": [
         "ship-pr"
       ]
+    },
+    {
+      "id": "fresh-checkout-setup",
+      "prompt": "I just cloned the starter kit on a new machine. Get it set up for work.",
+      "expected_skill": "setting-up-an-agent",
+      "must_not_trigger": [
+        "running-an-agent",
+        "ship-pr"
+      ]
+    },
+    {
+      "id": "run-kit-check-gate",
+      "prompt": "Run this kit's full check gate on my branch.",
+      "expected_skill": "running-an-agent",
+      "must_not_trigger": [
+        "ship-pr",
+        "landing-a-pr"
+      ]
+    },
+    {
+      "id": "console-behavior-change",
+      "prompt": "Let me freeze an agent's spending from the console.",
+      "expected_skill": "changing-an-agent-tool",
+      "must_not_trigger": [
+        "running-an-agent",
+        "setting-up-an-agent"
+      ]
     }
   ]
 }
