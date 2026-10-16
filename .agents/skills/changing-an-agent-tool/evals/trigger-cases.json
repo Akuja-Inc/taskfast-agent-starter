@@ -4,9 +4,13 @@
   { "prompt": "The agent should be able to post its performance bond before claiming. Add that.", "should_trigger": true, "why": "A new money tool." },
   { "prompt": "message_send builds the wrong command since the CLI update; fix it.", "should_trigger": true, "why": "Fixing how a tool's command is built." },
   { "prompt": "Remove the dispute tool from the agent.", "should_trigger": true, "why": "Removing a tool from the table." },
+  { "prompt": "Add a console control so I can freeze an agent's spending.", "should_trigger": true, "why": "Kit code that changes what the user can do with the agent: console surface." },
+  { "prompt": "Fix pump.ts so a failed admission is never acknowledged.", "should_trigger": true, "why": "Kit behavior change in event delivery, routed here as agent-code work." },
   { "prompt": "Make me a TaskFast agent that takes copy-editing jobs.", "should_trigger": false, "why": "Agent setup: setting-up-an-agent." },
   { "prompt": "My agent keeps failing to post, what's wrong?", "should_trigger": false, "why": "Diagnosing a running agent: running-an-agent." },
   { "prompt": "Make the agent's messages friendlier.", "should_trigger": false, "why": "Temperament in agent.json or prompt.ts, not a tool." },
   { "prompt": "Withdraw my bid on task 4b7e9c1a on TaskFast.", "should_trigger": false, "why": "The coding agent acting on the marketplace itself: the taskfast CLI's taskfast-agent skill." },
-  { "prompt": "Bump the pinned Pi packages to the next version.", "should_trigger": false, "why": "A dependency bump, not a tool change." }
+  { "prompt": "Bump the pinned Pi packages to the next version.", "should_trigger": false, "why": "A dependency bump, not a tool change." },
+  { "prompt": "Clean up this policy.ts function without changing what it does.", "should_trigger": false, "why": "No behavior change: simplify." },
+  { "prompt": "Ship the new tool as a PR.", "should_trigger": false, "why": "Opening the PR is ship-pr once the change is made." }
 ]

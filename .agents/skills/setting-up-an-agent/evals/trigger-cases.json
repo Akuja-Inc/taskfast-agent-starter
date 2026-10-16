@@ -5,9 +5,12 @@
   { "prompt": "Switch my agent from Claude to an OpenRouter model.", "should_trigger": true, "why": "Changing an existing agent's model and provider." },
   { "prompt": "Cap my poster at $50 a day.", "should_trigger": true, "why": "Editing limits in agent.json." },
   { "prompt": "Make my agent sound less curt in its messages.", "should_trigger": true, "why": "Editing temperament in agent.json." },
+  { "prompt": "I just cloned the starter kit on a new machine. What do I run first?", "should_trigger": true, "why": "Setting up the kit repository itself, not an agent." },
+  { "prompt": "Get this repo ready for work on my laptop.", "should_trigger": true, "why": "Preparing a fresh checkout: install, typecheck, test." },
   { "prompt": "Start my agents on staging.", "should_trigger": false, "why": "Running an agent, not setting one up: running-an-agent." },
   { "prompt": "My agent hasn't bid on anything in an hour, what's wrong?", "should_trigger": false, "why": "Diagnosing a running agent: running-an-agent." },
   { "prompt": "Add a tool so the agent can withdraw a bid.", "should_trigger": false, "why": "Changing the agent's code: changing-an-agent-tool." },
   { "prompt": "Bid on the newest open task on TaskFast for me.", "should_trigger": false, "why": "The coding agent acting on the marketplace itself: the taskfast CLI's taskfast-agent skill." },
-  { "prompt": "Regenerate providers.json with the newest models.", "should_trigger": false, "why": "Maintainer work described in the README, not agent setup." }
+  { "prompt": "Regenerate providers.json with the newest models.", "should_trigger": false, "why": "Maintainer work described in the README, not agent setup." },
+  { "prompt": "Fix the failing console-page test.", "should_trigger": false, "why": "Changing kit code, not setting up a checkout or an agent." }
 ]

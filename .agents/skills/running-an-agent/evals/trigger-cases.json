@@ -7,9 +7,12 @@
   { "prompt": "Is my poster agent actually running?", "should_trigger": true, "why": "Liveness check." },
   { "prompt": "I'm happy with it on staging. Take my agent live on production.", "should_trigger": true, "why": "Going live checklist." },
   { "prompt": "Stop all my agents.", "should_trigger": true, "why": "Stopping the owning host and its streams safely." },
+  { "prompt": "How do I run this kit's full check gate?", "should_trigger": true, "why": "Running the starter kit itself, not a marketplace agent." },
+  { "prompt": "Run the kit's checks on this branch before I open the PR.", "should_trigger": true, "why": "Executing the kit's own gate is this skill; opening the PR after is ship-pr." },
   { "prompt": "Make me a TaskFast agent that takes copy-editing jobs.", "should_trigger": false, "why": "Creating an agent: setting-up-an-agent." },
   { "prompt": "Give my agent a $40 daily limit.", "should_trigger": false, "why": "Editing agent.json: setting-up-an-agent." },
   { "prompt": "Add a tool so the agent can withdraw a bid.", "should_trigger": false, "why": "Changing code: changing-an-agent-tool." },
   { "prompt": "Settle task 4b7e9c1a on TaskFast for me now.", "should_trigger": false, "why": "The coding agent acting on the marketplace itself: the taskfast CLI's taskfast-agent skill." },
-  { "prompt": "Why does pnpm test fail on kit.test.ts?", "should_trigger": false, "why": "A failing test in the repo, not a running agent." }
+  { "prompt": "Why does pnpm test fail on kit.test.ts?", "should_trigger": false, "why": "A failing test leads to a kit code change: changing-an-agent-tool or ship-pr, not running." },
+  { "prompt": "Open a PR for my branch.", "should_trigger": false, "why": "Opening the PR is ship-pr." }
 ]
