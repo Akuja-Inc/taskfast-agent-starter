@@ -95,12 +95,7 @@ export function markdown(text: string): Block[] {
     list = null;
   };
   // One table row's cells: the outer pipes drop, `\|` keeps its pipe, the rest split on pipes.
-  const cells = (row: string) => {
-    let line = row.trim();
-    if (line.startsWith("|")) line = line.slice(1);
-    if (line.endsWith("|") && !line.endsWith("\\|")) line = line.slice(0, -1);
-    return line.split(/(?<!\\)\|/).map((cell) => cell.trim());
-  };
+  const cells = (row: string) => row.trim().replace(/^\||(?<!\\)\|$/g, "").split(/(?<!\\)\|/).map((cell) => cell.trim());
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
@@ -125,14 +120,13 @@ export function markdown(text: string): Block[] {
     if (line.includes("|") && i + 1 < lines.length) {
       const head = cells(line);
       const rule = cells(lines[i + 1]);
-      if (head.length && rule.length === head.length && rule.every((cell) => /^:?-+:?$/.test(cell))) {
+      if (rule.length === head.length && rule.every((cell) => /^:?-+:?$/.test(cell))) {
         end();
         const rows: Run[][][] = [];
         let j = i + 2;
-        for (; j < lines.length && lines[j].trim() && lines[j].includes("|"); j++) {
+        for (; j < lines.length && lines[j].includes("|"); j++) {
           const row = cells(lines[j]);
-          while (row.length < head.length) row.push("");
-          rows.push(row.slice(0, head.length).map((cell) => inline(cell, false)));
+          rows.push(head.map((_, c) => inline(row[c] ?? "", false)));
         }
         blocks.push({ kind: "table", head: head.map((cell) => inline(cell, false)), rows });
         i = j - 1;

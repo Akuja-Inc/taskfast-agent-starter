@@ -362,10 +362,13 @@ const mdList = (list) => el(list.start === undefined ? "ul" : "ol", { start: lis
 const mdTable = (t) => el("table", {},
   el("thead", {}, el("tr", {}, t.head.map((runs) => el("th", {}, mdRuns(runs))))),
   el("tbody", {}, t.rows.map((row) => el("tr", {}, row.map((runs) => el("td", {}, mdRuns(runs)))))));
-const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text }) : block.kind === "list" ? mdList(block) : block.kind === "table" ? mdTable(block) : el("p", {}, mdRuns(block.runs));
+const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text })
+  : block.kind === "list" ? mdList(block)
+  : block.kind === "table" ? mdTable(block)
+  : el("p", {}, mdRuns(block.runs));
 // The same words with the markers gone, for the rail's peek.
 const plain = (node) => node.text !== undefined ? node.text
-  : node.head ? [node.head, ...node.rows].map((row) => row.map((cell) => cell.map(plain).join("")).join(" ")).join(" ")
+  : node.head ? [node.head, ...node.rows].flat().map((cell) => cell.map(plain).join("")).join(" ")
   : node.runs ? node.runs.map(plain).join("") + (node.list ? " " + plain(node.list) : "") : node.items.map(plain).join(" ");
 // The stream being followed: which agent with which token, whether it is delivering,
 // and how to stop it.

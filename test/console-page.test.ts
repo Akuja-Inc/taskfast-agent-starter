@@ -809,10 +809,11 @@ it("names each dark-chrome colour exactly once", () => {
 const html = (node: unknown): string => node instanceof FakeNode
   ? `<${node.tagName.toLowerCase()}${Object.entries(node.attributes).map(([k, v]) => ` ${k}="${v}"`).join("")}>${node.children.map(html).join("")}</${node.tagName.toLowerCase()}>`
   : String(node).replace(/</g, "&lt;");
+// A reply's rendered markdown, without its div.md wrapper.
+const mdOf = ({ replyBlock }: ReturnType<typeof bootPage>) => (text: string) => html(replyBlock({ text, calls: [], tasks: [] }, "k", false).querySelector("div.md")).replace(/^<div class="md">|<\/div>$/g, "");
 
 it("renders a reply's markdown subset node by node and leaves raw HTML and unsafe links as text", () => {
-  const { replyBlock, lastSaid } = bootPage();
-  const md = (text: string) => html(replyBlock({ text, calls: [], tasks: [] }, "k", false).querySelector("div.md")).replace(/^<div class="md">|<\/div>$/g, "");
+  const page = bootPage(), { lastSaid } = page, md = mdOf(page);
   const link = 'href="https://example.com/a?b=1" title="https://example.com/a?b=1" target="_blank" rel="noopener noreferrer"';
   expect(md("Hello **bold**, *it* and `id_1` in [docs](https://example.com/a?b=1).\nnext line")).toBe(`<p>Hello <strong>bold</strong>, <em>it</em> and <code>id_1</code> in <a ${link}>docs</a>.\nnext line</p>`);
   expect(md("### Plan\n- one\n  - nested\n- two\n\n3. three\n4. four")).toBe('<p><strong>Plan</strong></p><ul><li>one<ul><li>nested</li></ul></li><li>two</li></ul><ol start="3"><li>three</li><li>four</li></ol>');
@@ -838,8 +839,7 @@ it("renders a reply's markdown subset node by node and leaves raw HTML and unsaf
 });
 
 it("renders a reply's markdown table node by node and keeps near-tables as text", () => {
-  const { replyBlock, lastSaid } = bootPage();
-  const md = (text: string) => html(replyBlock({ text, calls: [], tasks: [] }, "k", false).querySelector("div.md")).replace(/^<div class="md">|<\/div>$/g, "");
+  const page = bootPage(), { lastSaid } = page, md = mdOf(page);
   const th = (...cells: string[]) => `<tr>${cells.map((cell) => `<th>${cell}</th>`).join("")}</tr>`;
   const tr = (...cells: string[]) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
   const table = (head: string, ...rows: string[]) => `<table><thead>${head}</thead><tbody>${rows.join("")}</tbody></table>`;

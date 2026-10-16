@@ -58,7 +58,7 @@ function Items(p: { list: List; depth: number }) {
 // keep their runs, so markup inside them still styles.
 function Table(p: { head: Run[][]; rows: Run[][][] }) {
   const width = (runs: Run[]) => runs.reduce((n, run) => n + run.text.length, 0);
-  const cols = p.head.map((_, c) => Math.max(width(p.head[c]), ...p.rows.map((row) => width(row[c] ?? []))));
+  const cols = p.head.map((cell, c) => Math.max(width(cell), ...p.rows.map((row) => width(row[c]))));
   const line = (cells: Run[][], head: boolean) => <text>{cells.map((cell, c) => <>
     {head ? <b><Runs runs={cell} /></b> : <Runs runs={cell} />}
     {c < cells.length - 1 ? " ".repeat(cols[c] - width(cell) + 2) : ""}
