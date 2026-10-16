@@ -203,6 +203,10 @@ it.skipIf(!browserPath)("exercises real browser consent, read approvals, apply s
   expect(await page.evaluate("document.body.innerText.includes('/usr/bin/fixture-reader') && document.body.innerText.includes('notes with spaces') && document.body.innerText.includes('/fixture/agents/alpha/references')")).toBe(true);
   expect(await page.evaluate("[...document.querySelectorAll('button')].find(n=>n.textContent==='Test connection').disabled")).toBe(true);
   expect(await page.evaluate("document.documentElement.scrollWidth<=window.innerWidth")).toBe(true);
+  // Real revisions are SHA-256 tokens, not the short fixture labels above.
+  views.alpha!.activeRevision = "a".repeat(64); views.alpha!.revision = "b".repeat(64);
+  await page.until("document.querySelector('.cap-pending').textContent.includes('a'.repeat(64))");
+  expect(await page.evaluate("document.documentElement.scrollWidth<=window.innerWidth")).toBe(true);
 }, 60_000);
 
 it.skipIf(!browserPath)("previews exact CLI bundles, reviews item and credential deltas, discards individual changes and disables without testing", async () => {

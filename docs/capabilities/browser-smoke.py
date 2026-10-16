@@ -29,7 +29,7 @@ async def main():
             await page.goto(url)
             await page.get_by_role("link", name="Capabilities", exact=True).click()
             await page.get_by_role("button", name="Import folder", exact=True).click()
-            with tempfile.TemporaryDirectory(prefix="capability-browser-upload-") as upload:
+            with tempfile.TemporaryDirectory(prefix=".capability-browser-upload-", dir=ROOT) as upload:
                 folder = Path(upload) / "research"
                 folder.mkdir()
                 (folder / "SKILL.md").write_text("---\nname: research\ndescription: Read editorial task references carefully.\n---\nUse approved tools. Never override marketplace policy.\n")
@@ -39,7 +39,7 @@ async def main():
             await expect(page.locator('[data-cap-name="research"]')).to_be_visible()
             await page.get_by_role("button", name="Add MCP server", exact=True).click()
             await page.get_by_label("Server name", exact=True).fill("sources")
-            await page.get_by_label("Connection type", exact=True).select_option("local")
+            await page.locator(".cap-detail select").select_option("local")
             executable = subprocess.check_output(["node", "-p", "process.execPath"], text=True).strip()
             await page.get_by_label("Installed executable (absolute path)", exact=True).fill(executable)
             await page.get_by_role("button", name="Add argument", exact=True).click()
@@ -76,7 +76,7 @@ async def main():
             await page.screenshot(path=str(OUT / "after-review-desktop-light.png"), full_page=True)
             await page.locator('.cap-detail .cap-check input').check()
             await page.get_by_role("button", name="Apply when idle", exact=True).click()
-            await expect(page.get_by_text(re.compile("^Applied\\. Active revision:"))).to_be_visible(timeout=15_000)
+            await expect(page.get_by_text(re.compile("^Applied\\. Active revision:")).first).to_be_visible(timeout=15_000)
             await page.get_by_role("button", name="Back to capabilities", exact=True).click()
             await expect(page.get_by_text("Connection: Connected", exact=True)).to_be_visible()
             for _ in range(100):

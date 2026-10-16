@@ -78,7 +78,7 @@ header nav { flex-wrap:wrap; max-width:100%; }
 .cap-page fieldset { margin:0; padding:16px; border:1px solid var(--hairline); min-width:0; }
 .cap-page legend { padding:0 6px; font-weight:600; }
 .cap-preview { max-height:400px; overflow:auto; }
-.cap-pending { margin-top:24px; border:1px solid var(--hairline); background:var(--panel); padding:18px; display:flex; flex-direction:column; gap:12px; }
+.cap-pending { margin-top:24px; border:1px solid var(--hairline); background:var(--panel); padding:18px; display:flex; flex-direction:column; gap:12px; min-width:0; overflow-wrap:anywhere; }
 .cap-status { white-space:pre-wrap; overflow-wrap:anywhere; }
 .cap-status:empty, .cap-error:empty { display:none; }
 .cap-error { white-space:pre-wrap; overflow-wrap:anywhere; }
