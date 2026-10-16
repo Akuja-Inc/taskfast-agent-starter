@@ -1,12 +1,13 @@
 {
-  "commit": "0acaff560704aa91ee70f237df5721ede8dc4c23",
-  "dirty": true,
+  "commit": "89ff0ce735be3a5faa41487f60deface4d6cc866",
+  "dirty": false,
   "sha256": {
-    "src/tui/app.tsx": "f4bcb1d2381c82507d753b4c8482f0441b041f7dcb670a499c86ff4c1f9bc08c",
-    "src/tui/keys.ts": "8535887b4c5b16bb3c7799e045f4964ba6cd5bf8276b4a0d19e4b02e3be0751c",
-    "src/tui/link.ts": "9c06be88e3ba03a4e2847428cb6b2a53da2c6c3104b0ab91b37accc8393075af",
-    "src/tui/screen.ts": "fc046873617c9cba593dc1e8e779f77844f6690862d91f1871d545546adaeb86",
-    "docs/startup/browser-host.mjs": "2a5eb4c967f5f77eba13e5dce8478ade1ac78ce5e3fddaf2c995b7d50610f005"
+    "src/tui/app.tsx": "8b0c7e784c305aee6fb3e7beb397e3e17020104ae6424a0fd89d54607fc829d9",
+    "src/tui/keys.ts": "8fb0ab3d53244d4719b2d95dadc21b3d039d28e311c3ebad61b293554abaee52",
+    "src/tui/link.ts": "68fb7f3183962e0ae65d42e18313aba6ae60a8534e38f46e45aff13f7e26dd1b",
+    "src/tui/screen.ts": "3bed796f2fabd9c8331b4c588a2f48c6f39e67e2c57f9f1a34c2c87777442d7c",
+    "docs/startup/browser-host.mjs": "2a5eb4c967f5f77eba13e5dce8478ade1ac78ce5e3fddaf2c995b7d50610f005",
+    "docs/startup/tui-capture.py": "31463ed9650cd7432d8f5b51b23a1a07845897c37d8f379297c5ebed2d81a643"
   },
   "capture": "Unmodified X11 window pixels: Zutty, tmux, Bun/OpenTUI, ImageMagick import. Synthetic loopback fixture; normal 130x28, narrow 90x28."
 }

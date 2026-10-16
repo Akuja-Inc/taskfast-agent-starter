@@ -4,7 +4,7 @@
  │                                                                                      │
  │ failed-worker (worker)                                                               │
  │ Waiting for the previous attempt to close. The store stays protected.                │
- │                                                                                      │
+ │ x cancel startup                                                                     │
  │ Messages are not queued until this agent is ready.                                   │
  │ < / > switch agent · ? help                                                          │
  │ r retry · q quit                                                                     │

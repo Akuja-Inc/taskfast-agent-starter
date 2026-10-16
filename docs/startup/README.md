@@ -1,4 +1,4 @@
-# Browser startup evidence
+# Startup behavior and evidence
 
 The console keeps its existing yellow bands, black header, environment banner and two themes. Starting and stopped folders have an explicit status, a folder identifier and Cancel startup or Retry startup. Their drafts stay in memory and cannot be sent. A one-second roster poll runs independently of the selected ready agent's detail request and stream.
 
@@ -16,7 +16,7 @@ The browser checks draft retention across polling and folder switches, blocked E
 
 ## Before
 
-`web-before-desktop-light.png`, `web-before-desktop-dark.png` and `web-before-phone-light.png` copy the committed ready-state captures from `docs/withdraw/web-after-*.png`. `before-source.json` preserves their original provenance, source commit `ab49780716b1808bf511918763d5c68dfb8e5304`. The page source hash in that record matches this change's base page at `c3c71394ad4323f88e297a118522fca141c95b09`. These show the incumbent visual language, not a simulated old startup screen.
+`web-before-desktop-light.png`, `web-before-desktop-dark.png` and `web-before-phone-light.png` copy the committed ready-state captures from `docs/withdraw/web-after-*.png`. `before-source.json` preserves their original provenance, source commit `ab49780716b1808bf511918763d5c68dfb8e5304`. The page source hash in that record matches this change's base page at `a5bdbe7ab408eb1874c62760e4e3d86b80691fd7`. These show the incumbent visual language, not a simulated old startup screen.
 
 ## After
 
@@ -25,7 +25,7 @@ The browser checks draft retention across polling and folder switches, blocked E
 | Starting | [Image](web-starting-desktop-light.png) | [Image](web-starting-desktop-dark.png) | [Image](web-starting-phone-light.png) | [Image](web-starting-phone-dark.png) |
 | Stopped | [Image](web-stopped-desktop-light.png) | [Image](web-stopped-desktop-dark.png) | [Image](web-stopped-phone-light.png) | [Image](web-stopped-phone-dark.png) |
 
-`browser-source.json` records the exact source hashes and whether the capture used uncommitted changes. Rerun the capture after the implementation commit to pin the final source SHA. Initial visual review inspected desktop and phone captures in both themes in one batch. The layout retained the incumbent style, readable status and usable controls without horizontal overflow; no visual correction was required.
+`browser-source.json` pins the exact source hashes to clean implementation commit `89ff0ce735be3a5faa41487f60deface4d6cc866`. Initial visual review inspected desktop and phone captures in both themes in one batch. The layout retained the incumbent style, readable status and usable controls without horizontal overflow; no visual correction was required.
 
 These captures exercise the browser against the synthetic API contract. Host startup, MCP cleanup, persistent ownership, live staging and production are not established by this fixture.
 
@@ -48,6 +48,8 @@ The host owns these transient states. They never replace the permanent store or 
 The console remains available with all slots stopped. Without `--console`, the host returns an error if no initial attempt opened an agent. Cancel does not erase state or cancel a marketplace action that was already dispatched. Retry startup never retries an interrupted MCP or marketplace tool call.
 
 ## Regression commands
+
+At `89ff0ce735be3a5faa41487f60deface4d6cc866`, `pnpm check` passed 31 files and 521 tests plus every repository gate. `pnpm tui:test` passed the TUI typecheck and 11 smoke tests. [Terminal evidence](tui-evidence.md) records its capture method and limits.
 
 ```sh
 pnpm vitest run test/console-host.test.ts test/console-startup.test.ts test/kit.test.ts test/event-lifecycle.test.ts
