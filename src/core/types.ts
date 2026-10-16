@@ -31,8 +31,10 @@ export interface AgentSpec extends AgentFile {
 }
 
 export interface Limits {
-  // Most one money action may commit: a bid's price when escrow_sign funds it, or the
-  // submission fee when post_task posts. A task's budget is not committed at post.
+  // Most one money action may commit: a bid's price when escrow_sign funds it, the
+  // submission fee when post_task posts, or a task's stake when bond_post posts its
+  // performance bond. A bond is spend while it is at risk; a later refund does not
+  // credit the day back. A task's budget is not committed at post.
   perJobUsd?: number;
   // Most committed across money actions in one UTC day.
   dailyUsd?: number;
