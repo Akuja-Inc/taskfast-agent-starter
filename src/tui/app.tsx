@@ -54,10 +54,23 @@ function Items(p: { list: List; depth: number }) {
     {item.list ? <Items list={item.list} depth={p.depth + 1} /> : null}
   </>}</For>;
 }
+// A table draws as padded columns: a bold head, a muted rule under it, then the rows. Cells
+// keep their runs, so markup inside them still styles.
+function Table(p: { head: Run[][]; rows: Run[][][] }) {
+  const width = (runs: Run[]) => runs.reduce((n, run) => n + run.text.length, 0);
+  const cols = p.head.map((cell, c) => Math.max(width(cell), ...p.rows.map((row) => width(row[c]))));
+  const line = (cells: Run[][], head: boolean) => <text>{cells.map((cell, c) => <>
+    {head ? <b><Runs runs={cell} /></b> : <Runs runs={cell} />}
+    {c < cells.length - 1 ? " ".repeat(cols[c] - width(cell) + 2) : ""}
+  </>)}</text>;
+  return <>{line(p.head, true)}<text fg={MUTED}>{"─".repeat(Math.max(cols.reduce((n, w) => n + w, 0) + 2 * (cols.length - 1), 1))}</text>{p.rows.map((row) => line(row, false))}</>;
+}
 function Blocks(p: { blocks: Block[] }) {
   return <For each={p.blocks}>{(block) => block.kind === "code"
     ? <box backgroundColor={CODE.bg} paddingX={1}><text fg={CODE.fg} wrapMode="char">{block.text}</text></box>
-    : block.kind === "list" ? <Items list={block} depth={0} /> : <text><Runs runs={block.runs} /></text>}</For>;
+    : block.kind === "list" ? <Items list={block} depth={0} />
+    : block.kind === "table" ? <Table head={block.head} rows={block.rows} />
+    : <text><Runs runs={block.runs} /></text>}</For>;
 }
 
 // Printable keys by what they type (so shift+r is "R"), the rest by name.

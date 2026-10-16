@@ -204,6 +204,10 @@ test("draws a live agent and steers it through the console API", async () => {
   expect(timeline).toContain("<script>alert(1)</script>");
   expect(timeline).toContain("[x](javascript:alert(1))");
   for (const marker of ["**", "```", "###", "`44444444`"]) expect(timeline).not.toContain(marker);
+  // The table draws as padded columns; its pipes and delimiter row never show.
+  expect(timeline).toContain("Field");
+  expect(timeline).toContain("0.25 USDC");
+  for (const pipe of ["| Field |", "| fee |", "| ----- |"]) expect(timeline).not.toContain(pipe);
 
   // The first reply holds the tool calls: show them, then open its task.
   keys.pressKey("g");
