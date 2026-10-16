@@ -91,4 +91,6 @@ it("names a server's tool for the model, refusing names a provider would reject"
 it("redacts every credential value", () => {
   expect(redact("token abc123 then Bearer xyz and abc123", ["abc123", "Bearer xyz"])).toBe("token [redacted] then [redacted] and [redacted]");
   expect(redact("nothing secret", [])).toBe("nothing secret");
+  expect(redact(JSON.stringify({ error: 'token sec"ret' }), ['sec"ret'])).toBe('{"error":"token [redacted]"}');
+  expect(redact("abc123", ["abc", "abc123"])).toBe("[redacted]");
 });

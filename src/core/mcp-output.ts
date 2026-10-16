@@ -11,8 +11,7 @@ export function mcpOutput(result: CallToolResult, secrets: readonly string[]): s
   );
   if (result.structuredContent !== undefined) parts.push(JSON.stringify(result.structuredContent, null, 2));
   // Redact before cutting so even a credential that crosses the boundary is removed.
-  const escaped = secrets.map((secret) => JSON.stringify(secret).slice(1, -1));
-  const text = redact(parts.join("\n"), [...secrets, ...escaped]);
+  const text = redact(parts.join("\n"), secrets);
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length <= MAX_BYTES) return text;
   let end = MAX_BYTES - Buffer.byteLength(TRUNCATED, "utf8");
