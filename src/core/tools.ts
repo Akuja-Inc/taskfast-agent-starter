@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { MEDIA_PATH } from "./media.js";
 
 // The tools an agent's model can call. Each one maps to a taskfast command (or, for
 // memory, to the agent's own notes). The model only fills in values: every value is
@@ -20,9 +21,10 @@ interface ToolBase {
   schema: Schema;
   args(input: Record<string, unknown>): string[];
   // Files policy writes inside the agent folder before dispatch: folder-relative paths
-  // code builds, with the model's text as content.
-  files?(input: Record<string, unknown>): { path: string; content: string }[];
+  // code builds, with the model's text or the bytes of a media file code saved.
+  files?(input: Record<string, unknown>): ArtifactFile[];
 }
+export type ArtifactFile = { path: string; content: string } | { path: string; media: string; digest: string };
 export type ToolSpec =
   | (ToolBase & { kind: "read" | "memory"; amount?: never; key?: never })
   | (ToolBase & { kind: "write"; amount?: never; key(input: Record<string, unknown>): string })
@@ -54,23 +56,40 @@ const digest = (s: string) => createHash("sha256").update(s).digest("hex").slice
 const s = (description: string) => ({ type: "string", description });
 const obj = (properties: Schema["properties"], required: string[] = []): Schema => ({ type: "object", properties, required, additionalProperties: false });
 
-// Artifacts are text the model writes. Code stores each one under a folder it builds
-// from the task and the content's digest, and passes that path. The model names the
-// file, because a task's criteria can require one such as results.json; the name is one
-// basename with an extension the server accepts as text, so it cannot leave its folder.
+// Artifacts are files the kit writes: text the model writes, or an image an approved MCP
+// tool returned, which code saved under .pi-state/media and named by a media: handle.
+// Code stores each one under a folder it builds from the task and the bytes' digest, and
+// passes that path. The model names the file, because a task's criteria can require one
+// such as results.json; the name is one basename with an extension the server accepts,
+// so it cannot leave its folder. The CLI picks the upload's type from that extension, so
+// a media name must end in its handle's own image type.
 export const ARTIFACTS_PATH = ".pi-state/artifacts";
-const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.(txt|md|csv|json|xml|html|css|js)$/;
+const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.([a-z]+)$/;
+const TEXT_NAMES = ["txt", "md", "csv", "json", "xml", "html", "css", "js", "svg"];
+// Each image extension a name may end in, by the extension of its media file.
+const IMAGE_NAMES: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jpg", gif: "gif", webp: "webp" };
+const MEDIA_HANDLE = /^media:([0-9a-f]{16})\.(png|jpg|gif|webp)$/;
+const NAMES = [...TEXT_NAMES, ...Object.keys(IMAGE_NAMES)].map((ext) => `.${ext}`).join(", ");
 const MAX_ARTIFACTS = 5;
 const MAX_ARTIFACT_BYTES = 256 * 1024;
-function artifacts(v: unknown, task: string): { path: string; content: string }[] {
+function artifacts(v: unknown, task: string): ArtifactFile[] {
   if (v === undefined) return [];
   if (!Array.isArray(v) || v.length < 1 || v.length > MAX_ARTIFACTS) bad(`artifacts must be a list of 1 to ${MAX_ARTIFACTS} files`);
   const names = new Set<string>();
-  return (v as unknown[]).map((a) => {
-    if (a === null || typeof a !== "object" || Object.keys(a).some((k) => k !== "name" && k !== "content")) bad("each artifact is { name, content }");
-    const { name, content } = a as Record<string, unknown>;
-    if (typeof name !== "string" || !ARTIFACT_NAME.test(name) || names.has(name)) bad("artifact name must be a unique file name like results.json, ending in .txt, .md, .csv, .json, .xml, .html, .css or .js");
+  return (v as unknown[]).map((a): ArtifactFile => {
+    if (a === null || typeof a !== "object" || Object.keys(a).some((k) => k !== "name" && k !== "content" && k !== "media") || ("content" in a) === ("media" in a)) bad("each artifact is { name, content } or { name, media }");
+    const { name, content, media } = a as Record<string, unknown>;
+    const ext = typeof name === "string" ? ARTIFACT_NAME.exec(name)?.[1] : undefined;
+    if (!ext || !(TEXT_NAMES.includes(ext) || Object.hasOwn(IMAGE_NAMES, ext)) || names.has(name as string)) bad(`artifact name must be a unique file name like results.json or chart.png, ending in ${NAMES}`);
     names.add(name as string);
+    if (media !== undefined) {
+      const handle = typeof media === "string" ? MEDIA_HANDLE.exec(media) : null;
+      if (!handle) bad(`artifact ${name as string} media must be a handle a tool result gave you, like media:0123456789abcdef.png`);
+      const [, hash, type] = handle!;
+      if (IMAGE_NAMES[ext!] !== type) bad(`artifact ${name as string} must end in .${type}${type === "jpg" ? " or .jpeg" : ""} to match its media`);
+      return { path: `${ARTIFACTS_PATH}/${task}/${hash}/${name as string}`, media: `${MEDIA_PATH}/${hash}.${type}`, digest: hash! };
+    }
+    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is an image: deliver it as { name, media } with a handle a tool result gave you`);
     const bytes = typeof content === "string" ? Buffer.byteLength(content) : 0;
     if (bytes < 1 || bytes > MAX_ARTIFACT_BYTES) bad(`artifact ${name as string} content must be 1 to ${MAX_ARTIFACT_BYTES} bytes of text`);
     return { path: `${ARTIFACTS_PATH}/${task}/${digest(content as string)}/${name as string}`, content: content as string };
@@ -79,8 +98,12 @@ function artifacts(v: unknown, task: string): { path: string; content: string }[
 const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
 const artifactList = {
   type: "array",
-  description: `optional files to deliver, each as the whole text you write: at most ${MAX_ARTIFACTS}, each up to 256 KiB`,
-  items: obj({ name: s("file name a criterion may require, e.g. results.json; ends in .txt, .md, .csv, .json, .xml, .html, .css or .js"), content: s("the file's full text") }, ["name", "content"]),
+  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or an image a tool result saved as media:<file> as { name, media }. You cannot make PNG, JPEG, GIF or WebP bytes yourself; deliver one only by its handle`,
+  items: obj({
+    name: s(`file name a criterion may require, e.g. results.json or chart.png; ends in ${NAMES}`),
+    content: s("the file's full text, for a text file"),
+    media: s("for an image, the handle a tool result gave you, e.g. media:0123456789abcdef.png"),
+  }, ["name"]),
 };
 // The CLI uploads each file, then submits exactly those uploads.
 const deliver = (command: string) => (i: Record<string, unknown>) =>
@@ -241,7 +264,7 @@ export const TOOLS: Record<string, ToolSpec> = {
 
 // Validates a tool call from the model. Returns the command args and action key, or
 // throws with a message the model can read and correct.
-export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: string[]; key: string | null; files: { path: string; content: string }[]; input: Record<string, unknown> } {
+export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: string[]; key: string | null; files: ArtifactFile[]; input: Record<string, unknown> } {
   const spec = Object.hasOwn(TOOLS, tool) ? TOOLS[tool]! : bad(`no tool named ${tool}`);
   if (input === null || typeof input !== "object" || Array.isArray(input)) bad("tool input must be an object");
   const i = { ...(input as Record<string, unknown>) };

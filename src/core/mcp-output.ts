@@ -4,10 +4,11 @@ import { redact } from "./mcp-config.js";
 const MAX_BYTES = 32 * 1024;
 const TRUNCATED = "\n[truncated]";
 
-export function mcpOutput(result: CallToolResult, secrets: readonly string[]): string {
+// image turns an image block (direct or an embedded blob) into the line the model reads.
+export function mcpOutput(result: CallToolResult, secrets: readonly string[], image = (mimeType: string, _data: string) => `[${mimeType} image omitted]`): string {
   // Convert only the blocks: append structured data ourselves, including when blocks are empty.
   const parts = toLlmContent({ content: result.content }).map((part) =>
-    part.type === "text" ? part.text : `[${part.mimeType} image omitted]`,
+    part.type === "text" ? part.text : image(part.mimeType, part.data),
   );
   if (result.structuredContent !== undefined) parts.push(JSON.stringify(result.structuredContent, null, 2));
   // Redact before cutting so even a credential that crosses the boundary is removed.

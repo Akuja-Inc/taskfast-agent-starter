@@ -48,6 +48,16 @@ it("keeps normal text and omits direct and embedded image data", () => {
   ] }, [])).toBe("Preview:\n[image/png image omitted]\n[image/jpeg image omitted]");
 });
 
+it("hands direct and embedded images to the image callback and keeps its line", () => {
+  const seen: string[] = [];
+  expect(mcpOutput({ content: [
+    { type: "image", mimeType: "image/png", data: "aW1n" },
+    { type: "resource", resource: { uri: "file:///preview", mimeType: "image/jpeg", blob: "YmxvYg==" } },
+    { type: "resource", resource: { uri: "file:///report", mimeType: "application/pdf", blob: "cGRm" } },
+  ] }, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`))).toBe("[image/png saved]\n[image/jpeg saved]\n[binary resource file:///report (application/pdf) omitted]");
+  expect(seen).toEqual(["image/png aW1n", "image/jpeg YmxvYg=="]);
+});
+
 it("leaves an exact 32 KiB result intact and includes the marker within the cap", () => {
   const exact = "a".repeat(MAX_BYTES);
   expect(mcpOutput(textResult(exact), [])).toBe(exact);

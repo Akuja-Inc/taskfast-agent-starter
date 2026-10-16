@@ -169,7 +169,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   // Every MCP server is connected and its approved tools checked before the store opens;
   // any failure closes the servers already started and stops this agent. Pi lets a later
   // extension's tool replace an earlier one's of the same name, so every installed name is reserved.
-  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name), signal: o.signal });
+  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name), agentDir, signal: o.signal });
   let storage: Storage | undefined;
   let pi: PiEngine | undefined;
   try {

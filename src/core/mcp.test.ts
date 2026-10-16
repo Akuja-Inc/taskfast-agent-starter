@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { afterEach, expect, it, vi } from "vitest";
 import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
+import { PNG } from "../../test/fixtures/mcp/server.mjs";
 import { connectMcp, discoverMcp, type McpTools } from "./mcp.js";
 import { loadMcpConfig } from "./mcp-config.js";
 
@@ -87,6 +89,23 @@ it("exposes only approved tools over stdio, logs the others with their fingerpri
   expect(logs).toContain(`mcp docs: tool env is not approved; to approve it, add "env": "${approve("env")}" to servers.docs.tools in mcp.json`);
   expect(mcp.prompt).toContain("mcp_docs_search");
   expect(await call(mcp, "mcp_docs_search", { query: "bonds" })).toEqual({ output: [{ type: "text", text: "results for bonds" }], isError: false });
+});
+
+it("saves a tool result's images in the agent folder before the model reads their handles", async () => {
+  const dir = agentDir();
+  writeMcp(dir, { docs: local({ image: approve("image") }) });
+  const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
+  open.push(mcp);
+  const png = Buffer.from(PNG, "base64");
+  const handle = `${createHash("sha256").update(png).digest("hex").slice(0, 16)}.png`;
+  const line = `[image/png saved as media:${handle}, ${png.length} bytes]`;
+  expect(text(await call(mcp, "mcp_docs_image", {}))).toBe(`Rendered:\n${line}\n${line}`);
+  expect(readFileSync(join(dir, ".pi-state/media", handle)).equals(png)).toBe(true);
+  expect(mcp.prompt).toContain("artifact { name, media }");
+  // Without an agent folder the images stay omitted, as before.
+  const bare = await connect(dir);
+  expect(text(await call(bare, "mcp_docs_image", {}))).toBe("Rendered:\n[image/png image omitted]\n[image/png image omitted]");
+  expect(bare.prompt).not.toContain("media");
 });
 
 it("follows paged tool lists", async () => {
