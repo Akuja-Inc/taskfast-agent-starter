@@ -100,7 +100,7 @@ export interface OperatorControls {
 function parameters(schema: typeof TOOLS[string]["schema"]): TSchema {
   const fields: Record<string, TSchema> = {};
   for (const [name, property] of Object.entries(schema.properties)) {
-    const value = property.enum ? StringEnum(property.enum) : property.type === "number" ? Type.Number() : Type.String();
+    const value = property.items ? Type.Array(parameters(property.items)) : property.enum ? StringEnum(property.enum) : property.type === "number" ? Type.Number() : Type.String();
     fields[name] = schema.required.includes(name) ? value : Type.Optional(value);
   }
   return Type.Object(fields, { additionalProperties: false });

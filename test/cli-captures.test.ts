@@ -3,10 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CliResult } from "../src/core/cli.js";
 import { amountOf } from "../src/core/money.js";
+import { ownUploads } from "../src/core/tools.js";
 
 // The money parsers against what the real taskfast binary prints (see
 // test/fixtures/cli/README.md), not against output this package invented: 0.19.0 for the
-// bid list and platform config, 0.19.7 for the gh70 bond captures.
+// bid list and platform config, 0.19.7 for the gh70 bond and gh71 artifact captures.
 const capture = (name: string) => JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "cli", `${name}.json`), "utf8")) as { ok: boolean; data: unknown };
 const asRead = (name: string) => async (): Promise<CliResult> => ({ outcome: "ok", data: capture(name).data as never });
 
@@ -29,5 +30,16 @@ describe("parsers against captured CLI output", () => {
     expect(dry.data.action).toBe("would_post_bond");
     expect(decimals.data.decoded[0]).toBe("6");
     expect(await amountOf("bondStake", { task_id: "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b" }, read)).toBe(2.5);
+  });
+
+  it("finds this agent's uploads in real `taskfast artifact list` output", () => {
+    expect(ownUploads(capture("gh71/artifact-list").data, "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")).toEqual(["550e8400-e29b-41d4-a716-446655440001"]);
+  });
+
+  it("shows why a refused submit cannot mean nothing was uploaded", () => {
+    // The first file landed before the second was refused, yet the code is a refusal.
+    const refused = capture("gh71/submit-second-upload-refused") as unknown as { error: { code: string } };
+    expect(refused.error.code).toBe("validation");
+    expect(readFileSync(join(import.meta.dirname, "fixtures", "cli", "gh71", "submit-second-upload-refused.requests.log"), "utf8")).toContain('"filename": "results.json"');
   });
 });

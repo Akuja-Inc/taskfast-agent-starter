@@ -1,9 +1,12 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader, type Tx } from "@earendil-works/pi-durable";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { runCli, type CliResult, type Outcome } from "./cli.js";
+import { agentDirectory, folderFile } from "./folder.js";
 import { amountOf, overLimit, today } from "./money.js";
 import { FROZEN, Operator } from "./operator.js";
-import { prepare, UUID } from "./tools.js";
+import { ownUploads, prepare, UUID } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
 
 export type Action = {
@@ -86,6 +89,31 @@ export function marketplacePolicy(o: PolicyOptions) {
       }
     });
   }
+  // Paths are content-addressed, so writing one again is harmless.
+  function writeFiles(files: { path: string; content: string }[]): string | null {
+    try {
+      for (const file of files) {
+        const path = folderFile({ agentDir: agentDirectory(o.runtime), path: file.path, resource: "artifact" });
+        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+        writeFileSync(path, file.content, { mode: 0o600 });
+      }
+      return null;
+    } catch (error) {
+      return `could not write the artifact files: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  // Each delete is safe to repeat; anything short of ok refuses, and the next try lists again.
+  // ponytail: one page of 100 uploads; page with --cursor if a task ever holds more.
+  async function clearUploads(task: string, agentId: string): Promise<string | null> {
+    const list = await command(o.runtime, ["artifact", "list", "--limit=100", "--", task]);
+    const ids = list.outcome === "ok" ? ownUploads(list.data, agentId) : null;
+    if (!ids) return `could not list earlier uploads: ${list.error ?? "unreadable artifact list"}`;
+    for (const id of ids) {
+      const done = await command(o.runtime, ["artifact", "delete", "--", task, id]);
+      if (done.outcome !== "ok") return `could not delete earlier upload ${id}: ${done.error ?? done.outcome}`;
+    }
+    return null;
+  }
   async function execute(call: {
     tool: string;
     input: unknown;
@@ -96,7 +124,7 @@ export function marketplacePolicy(o: PolicyOptions) {
     return serialized(async () => {
       signal?.throwIfAborted();
       if (o.conversation.id !== ROOT_CONVERSATION_ID) throw new Error("only the root marketplace conversation may act");
-      const { spec, args, key, input } = prepare(tool, value);
+      const { spec, args, key, files, input } = prepare(tool, value);
       if (spec.kind === "memory") {
         return commit(async (tx): Promise<Json> => {
           const state = await tx.doc(Policy);
@@ -113,8 +141,20 @@ export function marketplacePolicy(o: PolicyOptions) {
         return result.outcome === "ok" ? result.data ?? null : { error: result.error ?? result.outcome };
       }
       if (!key) throw new Error(`write ${tool} has no action key`);
-      const prior = (await snapshot()).actions[key];
+      const state = await snapshot();
+      const prior = state.actions[key];
       if (prior && prior.status !== "failed") return skipped(prior);
+      if (files.length) {
+        const written = writeFiles(files);
+        if (written) return { refused: written };
+      }
+      // A submit can upload and then be refused (criteria unmet), and the CLI reports a
+      // refusal, so a resubmit would pile copies on the task. On a task still being
+      // submitted every upload of ours is such a leftover: delete them first.
+      if (tool === "task_submit" && files.length) {
+        const cleared = await clearUploads(input.task_id as string, state.identity!.agentId);
+        if (cleared) return { refused: cleared };
+      }
       const read = (args: string[]) => command(o.runtime, args);
       const amount = spec.kind === "money" ? await amountOf(spec.amount, input, read) : 0;
       if (typeof amount === "string") return { refused: amount };
