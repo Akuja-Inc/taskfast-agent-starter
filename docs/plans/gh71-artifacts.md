@@ -1,6 +1,6 @@
 # Plan: let a worker deliver file artifacts (#71)
 
-Status: the two open choices below went to the owner in the Plannotator Inbox; this PR implements the recommended answer to each and changes if the owner picks otherwise.
+Status: the owner settled both open choices in the Plannotator Inbox, picking the recommended answer to each; this PR implements them.
 Source: [issue #71](https://github.com/Akuja-Inc/taskfast-agent-starter/issues/71), `Refs #64`.
 
 ## Outcome
@@ -29,9 +29,9 @@ From the spec, not the captures: a submit whose criteria fail leaves the task `i
 
 **D4. A failed submit stays retryable.** Bond-style `uncertain` would block delivery after one failed evaluation, and the spec says the worker resubmits after a 422. Keep the CLI's `failed`.
 
-**D5. Code clears this agent's stale uploads before an artifact-bearing submit.** On an `in_progress` task the kit has no other upload path, so every artifact with `uploaded_by_id` equal to this agent came from an earlier submit that failed. Before dispatch, code runs `artifact list -- <task>` and `artifact delete -- <task> <id>` for each one. Any non-ok result refuses the submit before reservation, and the next attempt lists again. The duplicates are clutter rather than money (the submit names its own `artifact_ids`), but this keeps them from piling up across resubmits. Open choice Q1.
+**D5. Code clears this agent's stale uploads before an artifact-bearing submit.** On an `in_progress` task the kit has no other upload path, so every artifact with `uploaded_by_id` equal to this agent came from an earlier submit that failed. Before dispatch, code runs `artifact list -- <task>` and `artifact delete -- <task> <id>` for each one. Any non-ok result refuses the submit before reservation, and the next attempt lists again. The duplicates are clutter rather than money (the submit names its own `artifact_ids`), but this keeps them from piling up across resubmits. Settled as Q1.
 
-**D6. `task_remedy` is keyed by its content.** `remedy:<task_id>:<digest of summary and artifacts>`, like `message_send`. The server allows three remedies, so a changed remedy is a new action, an identical failed one may retry and an uncertain one never repeats. Remedy gets no stale-upload gate: on a disputed task the original deliverables are also this agent's uploads, likely share the criterion's filename, and may not be deletable. A refused remedy leaves its uploads behind, unevaluated. Open choice Q2.
+**D6. `task_remedy` is keyed by its content.** `remedy:<task_id>:<digest of summary and artifacts>`, like `message_send`. The server allows three remedies, so a changed remedy is a new action, an identical failed one may retry and an uncertain one never repeats. Remedy gets no stale-upload gate: on a disputed task the original deliverables are also this agent's uploads, likely share the criterion's filename, and may not be deletable. A refused remedy leaves its uploads behind, unevaluated. Settled as Q2.
 
 **D7. Uncertain uploads never repeat.** The existing rule covers them: an `uncertain` submit or remedy is never dispatched again.
 
@@ -39,10 +39,10 @@ From the spec, not the captures: a submit whose criteria fail leaves the task `i
 
 **D9. No standalone artifact tools.** `task submit --artifact` folds upload into submit, so `artifact upload|list|delete` stay unsupported as model tools. The list and delete in D5 run as code.
 
-## Open choices for the owner
+## Choices the owner settled
 
-- **Q1.** Who clears stale uploads before a resubmit? (a) Code lists and deletes them as part of the submit (recommended: fewest tools, no extra model turn). (b) Code refuses the submit and names them, and the model deletes each with a new `artifact_delete` write tool keyed per artifact.
-- **Q2.** Ship `task_remedy` now without a stale-upload gate (recommended; the ceiling is clutter, never evaluation), or hold remedy until the server marks which artifacts a submission used.
+- **Q1.** Who clears stale uploads before a resubmit? (a) Code lists and deletes them as part of the submit, with no new tool and no extra model turn. (b) Code refuses the submit and names them, and the model deletes each with a new `artifact_delete` write tool keyed per artifact. The owner chose (a).
+- **Q2.** Ship `task_remedy` now without a stale-upload gate, accepting unevaluated leftovers, or hold remedy until the server marks which artifacts a submission used. The owner chose to ship it now.
 
 ## Validation
 
