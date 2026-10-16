@@ -79,6 +79,37 @@ describe("amountOf", () => {
   it("refuses a money tool with no amount source", async () => {
     expect(await amountOf(undefined, {}, pages().read)).toMatch(/no amount source/);
   });
+
+  const DRY: CliResult = { outcome: "ok", data: { action: "would_post_bond", amount: 2500000, token: "0x20c0000000000000000000000000000000000000" } };
+  const DECIMALS: CliResult = { outcome: "ok", data: { decoded: ["6"] } };
+  // A fake `bond post --dry-run` and `cast call` pair; bondStake uses both reads.
+  function bondRead(dry: CliResult = DRY, decimals: CliResult = DECIMALS) {
+    const calls: string[][] = [];
+    const read = async (args: string[]) => { calls.push(args); return args[0] === "bond" ? dry : decimals; };
+    return { read, calls };
+  }
+
+  it("reads a bond's stake from the quote its dry run fetches, scaled by the token's decimals", async () => {
+    const f = bondRead();
+    expect(await amountOf("bondStake", { task_id: T }, f.read)).toBe(2.5);
+    expect(f.calls).toEqual([
+      ["bond", "post", "--dry-run", "--", T],
+      ["cast", "call", "0x20c0000000000000000000000000000000000000", "decimals()(uint8)"],
+    ]);
+  });
+
+  it.each([
+    ["the dry run fails", { outcome: "uncertain", error: "network: reset" } as CliResult, DECIMALS, /could not read the bond quote: network: reset/],
+    ["the dry run did not quote a stake", { outcome: "ok", data: { amount: 2500000 } } as CliResult, DECIMALS, /did not quote a stake/],
+    ["the quote has no usable amount", { outcome: "ok", data: { action: "would_post_bond", token: "0x20c0000000000000000000000000000000000000" } } as CliResult, DECIMALS, /no usable amount/],
+    ["the quote amount is not a whole number", { outcome: "ok", data: { action: "would_post_bond", amount: 2500000.5, token: "0x20c0000000000000000000000000000000000000" } } as CliResult, DECIMALS, /no usable amount/],
+    ["the quote has no usable token", { outcome: "ok", data: { action: "would_post_bond", amount: 2500000, token: "0x20c0" } } as CliResult, DECIMALS, /no usable token/],
+    ["the decimals read fails", DRY, { outcome: "uncertain", error: "rpc: unavailable" } as CliResult, /could not read the bond token decimals: rpc: unavailable/],
+    ["the decimals read is empty", DRY, { outcome: "ok", data: { decoded: [] } } as CliResult, /decimals are not usable/],
+    ["the decimals are out of range", DRY, { outcome: "ok", data: { decoded: ["99"] } } as CliResult, /decimals are not usable/],
+  ] as const)("gives a reason, not an amount, when %s", async (_n, dry, decimals, why) => {
+    expect(await amountOf("bondStake", { task_id: T }, bondRead(dry, decimals).read)).toMatch(why);
+  });
 });
 
 describe("the money rule", () => {

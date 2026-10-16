@@ -288,6 +288,67 @@ it("refunds a proven refusal and permits a fresh attempt, but charges uncertaint
   expect(Object.values((await kit.agent.status()).spend)).toEqual([3]);
 });
 
+it("lets a stake-tier claim run again once the bond lands", async () => {
+  const token = "0x20c0000000000000000000000000000000000000";
+  const commands: string[][] = [];
+  let claims = 0;
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    commands.push(args);
+    if (args[0] === "me") return me;
+    if (args[0] === "bond") return { outcome: "ok", data: { action: "would_post_bond", amount: 2500000, token } };
+    if (args[0] === "cast") return { outcome: "ok", data: { decoded: ["6"] } };
+    if (args[0] === "task" && args[1] === "claim") {
+      claims += 1;
+      return claims === 1 ? { outcome: "failed", error: "validation [bond_pending]: bond not posted" } : { outcome: "ok", data: { status: "in_progress" } };
+    }
+    return { outcome: "ok", data: { accepted: true } };
+  } });
+  kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("task_claim", { task_id: task })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("bond_post", { task_id: task })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("task_claim", { task_id: task }, { id: "claim-again" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Done"),
+  ]);
+  await run(kit.agent);
+  expect(claims).toBe(2);
+  // The dry run is the amount read; only one real post is dispatched.
+  expect(commands.filter((args) => args[0] === "bond")).toEqual([["bond", "post", "--dry-run", "--", task], ["bond", "post", "--", task]]);
+  const status = await kit.agent.status();
+  expect(status.actions[`claim:${task}`]!.status).toBe("done");
+  expect(status.actions[`bond:${task}`]!.status).toBe("done");
+  expect(Object.values(status.spend)).toEqual([2.5]);
+});
+
+it("counts a bond post that failed after its preflight as uncertain, and never repeats it", async () => {
+  const token = "0x20c0000000000000000000000000000000000000";
+  let posts = 0;
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => {
+    if (args[0] === "me") return me;
+    if (args[0] === "bond") {
+      if (args.includes("--dry-run")) return { outcome: "ok", data: { action: "would_post_bond", amount: 2500000, token } };
+      posts += 1;
+      // What the CLI prints when the report is refused after the on-chain post confirmed.
+      return { outcome: "failed", error: "validation [posting_disabled]: report refused" };
+    }
+    if (args[0] === "cast") return { outcome: "ok", data: { decoded: ["6"] } };
+    return { outcome: "ok", data: { accepted: true } };
+  } });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("bond_post", { task_id: task })], { stopReason: "toolUse" }), fauxAssistantMessage("Failed")]);
+  await run(kit.agent);
+  expect(posts).toBe(1);
+  const status = await kit.agent.status();
+  expect(Object.values(status.actions).map((action) => action.status)).toEqual(["uncertain"]);
+  expect(Object.values(status.spend)).toEqual([2.5]);
+  // The model reads uncertain, not refused, so it does not try a second post.
+  const messages = (await kit.agent.conversation.context(context)).messages;
+  const results = messages.filter((message) => message.role === "toolResult").flatMap((message) => message.content).filter((part) => part.type === "text").map((part) => part.text);
+  expect(results).toEqual(['{"uncertain":"validation [posting_disabled]: report refused"}']);
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("bond_post", { task_id: task }, { id: "post-again" })], { stopReason: "toolUse" }), fauxAssistantMessage("Skipped")]);
+  await run(kit.agent);
+  expect(posts).toBe(1);
+  expect(Object.values((await kit.agent.status()).spend)).toEqual([2.5]);
+});
+
 it("starts a new UTC spending day without clearing completed keys", async () => {
   let now = new Date("2026-06-20T23:59:00Z");
   const kit = await open({ now: () => now });

@@ -14,6 +14,10 @@ PlatformConfigController returns, with a subset of its keys):
 Tests read these files, so the client's parsing is checked against what the CLI
 actually prints. Re-capture them when the pinned CLI version changes.
 
+`gh70/` holds the bond captures for issue #70: what `taskfast bond post`, `taskfast task claim`
+and `taskfast cast call` print, with the stand-in server, its request logs and the exact
+commands. `gh70/README.md` says how to re-capture them.
+
 `skills/taskfast-agent/` is the bundle `taskfast` 0.19.7 writes with `taskfast --config=<empty
 dir>/absent.json --no-trace skills --yes`, run in an empty folder that was also its HOME, with
 only PATH set. The command wrote identical copies under `.agents/skills/` and

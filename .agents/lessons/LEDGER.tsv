@@ -11,3 +11,4 @@ hand:1cb60bca608b	hand	2026-10-15T02:24:36Z	lesson	.agents/lessons/taskfast-wall
 hand:e031a88813eb	hand	2026-10-15T06:08:56Z	lesson	.agents/lessons/tui-smoke-frames.md	A longer tui-host.mjs reply scrolled later smoke-test waits out of the visible TUI frame.
 hand:ee25cb281a5d	claude	2026-10-15T06:09:11Z	lesson	.agents/lessons/console-evidence-playwright-csp.md	a stream push keeps the reader's scroll position, so scroll to the page bottom before a console evidence capture
 hand:4eda324ea8ff	hand	2026-10-15T06:27:43Z	lesson	.agents/lessons/opentui-span-colours.md	The TUI Span helper passed fg and bg as props, which @opentui/solid drops on text nodes, so no span was ever coloured.
+hand:3af3947f6ad3	hand	2026-10-16T00:56:24Z	lesson	.agents/lessons/taskfast-cli-error-codes.md	CLI 4xx codes collapse to validation, so a refusal code can follow an on-chain post that already confirmed.
