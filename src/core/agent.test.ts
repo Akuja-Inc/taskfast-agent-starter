@@ -681,7 +681,7 @@ it("fails closed on a changed MCP tool before opening the store, and leaves no s
   const pidfile = join(dir, "grandchild.pid");
   writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], env: { FIXTURE_MODE: "MODE", FIXTURE_PIDFILE: "PIDFILE" }, tools: { search: approve("search") } } }, { MODE: "changed", PIDFILE: pidfile });
   const calls: string[][] = [];
-  await expect(open({ dir, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/mcp docs: tool search changed since you approved it/);
+  await expect(open({ dir, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/mcp docs: tool search \[redacted\] since you approved it/);
   expect(calls).toEqual([]);
   expect(existsSync(join(dir, "state.sqlite"))).toBe(false);
   await expectGone(Number(readFileSync(pidfile, "utf8")));

@@ -45,6 +45,8 @@ export interface AgentOptions {
   command?: Command;
   now?: () => Date;
   recoverEveryMs?: number;
+  // Cancels opening; the returned agent still has its explicit close() lifecycle.
+  signal?: AbortSignal;
   log?: (line: string) => void;
   // Tests substitute a wrapping opener to inject storage failures.
   openStorage?: (file: string) => Promise<Storage>;
@@ -112,6 +114,7 @@ const unplacedAbort = (record: { status: string; reason?: string; entry?: unknow
 // One store, root conversation and authoritative policy per marketplace agent.
 // No coding tools, child work or forks are installed or enabled.
 export async function openMarketplaceAgent(o: AgentOptions): Promise<MarketplaceAgent> {
+  o.signal?.throwIfAborted();
   const spec = parseAgentSpec(o.spec);
   const runtime = parseRuntime(o.runtime);
   const agentDir = agentDirectory(runtime);
@@ -157,13 +160,15 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   // Every MCP server is connected and its approved tools checked before the store opens;
   // any failure closes the servers already started and stops this agent. Pi lets a later
   // extension's tool replace an earlier one's of the same name, so every installed name is reserved.
-  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name) });
+  const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name), signal: o.signal });
   let storage: Storage | undefined;
   let pi: PiEngine | undefined;
   try {
+    o.signal?.throwIfAborted();
     // MCP tools run outside the marketplace policy: approved reads only, never a TaskFast write.
     if (mcp.tools.length) registry.install(defineExtension({ name: "mcp", tools: mcp.tools, sections: [section("mcp", () => mcp.prompt, { tag: false })] }));
     storage = await (o.openStorage ?? openAgentStorage)(o.storePath);
+    o.signal?.throwIfAborted();
     pi = await PiRuntime.open(storage, {
       models, registry, settings: { toolExecution: "sequential", retry: { maxRetries: 3 } },
       conversationCreated: (_tx, conversation) => {

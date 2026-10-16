@@ -100,8 +100,8 @@ it("reports a server's tool error as a tool error, and bounds a large answer", a
   const mcp = await connect(dir);
   expect(await call(mcp, "mcp_docs_fail", {})).toEqual({ output: [{ type: "text", text: "the index is offline" }], isError: true });
   const big = text(await call(mcp, "mcp_docs_big", { size: 100_000 }));
-  expect(big.length).toBeLessThan(33_000);
-  expect(big).toMatch(/\[truncated 67232 characters\]$/);
+  expect(Buffer.byteLength(big, "utf8")).toBeLessThanOrEqual(32 * 1024);
+  expect(big).toMatch(/\[truncated\]$/);
 });
 
 it("refuses a server's request for a model completion instead of hanging or answering it", async () => {
@@ -118,8 +118,10 @@ it("times out a slow call and stops it when the run is aborted", async () => {
   const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], callTimeoutMs: 200 });
   open.push(mcp);
   await expect(call(mcp, "mcp_docs_slow", { ms: 5_000 })).rejects.toThrow(/mcp docs: slow failed: .*time/i);
+  await expect(call(mcp, "mcp_docs_slow", { ms: 5_000 })).rejects.toThrow(/disconnected/);
+  const reopened = await connect(dir);
   const abort = new AbortController();
-  const pending = call(mcp, "mcp_docs_slow", { ms: 5_000 }, abort.signal);
+  const pending = call(reopened, "mcp_docs_slow", { ms: 5_000 }, abort.signal);
   abort.abort();
   await expect(pending).rejects.toThrow(/mcp docs: slow failed/);
 });
@@ -146,7 +148,7 @@ it("stops a local server's whole process tree on close", async () => {
 });
 
 const refusals: { name: string; servers: Record<string, unknown>; secrets?: Record<string, string>; reserved?: string[]; error: RegExp }[] = [
-  { name: "a changed tool", servers: { docs: local({ search: approve("search") }, { env: { FIXTURE_MODE: "MODE" } }) }, secrets: { MODE: "changed" }, error: new RegExp(`mcp docs: tool search changed since you approved it; review it, then approve its new fingerprint ${approve("search", { description: "Search the docs, now with more." })}`) },
+  { name: "a changed tool", servers: { docs: local({ search: approve("search") }, { env: { FIXTURE_MODE: "MODE" } }) }, secrets: { MODE: "changed" }, error: new RegExp(`mcp docs: tool search \\[redacted\\] since you approved it; review it, then approve its new fingerprint ${approve("search", { description: "Search the docs, now with more." })}`) },
   { name: "an approved tool the server no longer offers", servers: { docs: local({ gone: "b".repeat(64) }) }, error: /mcp docs: approved tool gone is not offered by the server/ },
   { name: "an approved tool the server marks as a write", servers: { docs: local({ delete: approve("delete") }) }, error: /mcp docs: tool delete is marked by its server as a write; only reads can be approved/ },
   { name: "a name taken by a kit tool", servers: { docs: local({ search: approve("search") }) }, reserved: ["mcp_docs_search"], error: /mcp docs: tool search would be named mcp_docs_search, which another tool already uses/ },
