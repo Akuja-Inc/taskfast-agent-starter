@@ -46,7 +46,7 @@ function parameters(tool: Tool, where: string): TSchema {
 }
 
 // Connecting and listing tools is a server's only network step, so every server runs it at once.
-async function connectServer(server: McpServer, client: McpClient, timeoutMs: number, signal?: AbortSignal): Promise<Tool[]> {
+async function connectServer(server: McpServer, client: McpClient, close: () => Promise<void>, timeoutMs: number, signal?: AbortSignal): Promise<Tool[]> {
   const deadline = new AbortController();
   const stop = () => deadline.abort(new Error("connection aborted"));
   signal?.addEventListener("abort", stop, { once: true });
@@ -67,7 +67,7 @@ async function connectServer(server: McpServer, client: McpClient, timeoutMs: nu
   try {
     return await Promise.race([opening, aborted]);
   } catch (error) {
-    await client.close();
+    await close();
     await opening.catch(() => {});
     throw new Error(`mcp ${server.name}: could not connect: ${redact(message(error), Object.values(server.credentials))}`);
   } finally {
@@ -78,7 +78,7 @@ async function connectServer(server: McpServer, client: McpClient, timeoutMs: nu
 }
 
 // One connected server's approved tools, checked against the owner's fingerprints.
-function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: { log: (line: string) => void; taken: Set<string>; callTimeoutMs: number }): ToolRegistration[] {
+function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: { log: (line: string) => void; taken: Set<string>; callTimeoutMs: number; close: () => Promise<void> }): ToolRegistration[] {
   const where = `mcp ${server.name}`;
   const secrets = Object.values(server.credentials);
   const { callTimeoutMs } = o;
@@ -124,7 +124,7 @@ function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: 
         } catch (error) {
           // Pi-mcp's timeout only rejects the RPC waiter. Close the sequential
           // server too, so HTTP readers and local work cannot outlive cancellation.
-          if (signal.aborted || error instanceof McpTimeoutError || error instanceof McpAbortError) await client.close();
+          if (signal.aborted || error instanceof McpTimeoutError || error instanceof McpAbortError) await o.close();
           const reason = timeout.aborted && !ctx.abortSignal?.aborted ? timeout.reason : error;
           throw new Error(redact(`${where}: ${remote} failed: ${message(reason)}`, secrets));
         }
@@ -141,11 +141,20 @@ function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: 
 // throws, so the agent stops before it opens its store; the error carries no credential.
 export async function connectMcp(servers: readonly McpServer[], o: { log: (line: string) => void; reserved: readonly string[]; callTimeoutMs?: number; connectTimeoutMs?: number; signal?: AbortSignal }): Promise<McpTools> {
   const clients = servers.map(() => new McpClient({ name: "taskfast-agent-starter", version: "0.0.1", requestTimeoutMs: CONNECT_TIMEOUT_MS }));
+  // Pi clears its transport before awaiting its close. Every caller must join
+  // this same promise rather than observe a second client.close returning early.
+  const closing = new Map<McpClient, Promise<void>>();
+  const closeClient = (client: McpClient): Promise<void> => {
+    let pending = closing.get(client);
+    if (!pending) { pending = Promise.resolve().then(() => client.close()); closing.set(client, pending); }
+    return pending;
+  };
   const listeners: (() => void)[] = [];
   const close = async () => {
     // A disconnect the agent causes is not news, so stop reporting first.
     listeners.splice(0).forEach((stop) => stop());
-    await Promise.all(clients.map((client) => client.close().catch(() => {})));
+    const results = await Promise.allSettled(clients.map(closeClient));
+    for (const result of results) if (result.status === "rejected") throw result.reason;
   };
   const secrets = servers.flatMap((server) => Object.values(server.credentials));
   const log = (line: string) => o.log(redact(line, secrets));
@@ -153,7 +162,7 @@ export async function connectMcp(servers: readonly McpServer[], o: { log: (line:
   const tools: ToolRegistration[] = [];
   try {
     // allSettled, not all: close() must not run while another server is still starting.
-    const listed = await Promise.allSettled(servers.map((server, at) => connectServer(server, clients[at]!, o.connectTimeoutMs ?? CONNECT_TIMEOUT_MS, o.signal)));
+    const listed = await Promise.allSettled(servers.map((server, at) => connectServer(server, clients[at]!, () => closeClient(clients[at]!), o.connectTimeoutMs ?? CONNECT_TIMEOUT_MS, o.signal)));
     for (const [at, server] of servers.entries()) {
       const result = listed[at]!;
       if (result.status === "rejected") throw result.reason;
@@ -162,7 +171,7 @@ export async function connectMcp(servers: readonly McpServer[], o: { log: (line:
         client.onClose(() => log(`mcp ${server.name}: disconnected; restart the agent to reconnect`)),
         client.onNotification("notifications/tools/list_changed", () => log(`mcp ${server.name}: the server changed its tools; they apply only after you review them and restart the agent`)),
       );
-      tools.push(...approvedTools(server, client, result.value, options));
+      tools.push(...approvedTools(server, client, result.value, { ...options, close: () => closeClient(client) }));
     }
   } catch (error) {
     await close();
