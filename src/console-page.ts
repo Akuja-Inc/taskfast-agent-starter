@@ -111,6 +111,9 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .md li::marker { color: var(--muted); }
 .md li > ul, .md li > ol { margin-top: 2px; }
 .md code { font-size: 13px; padding: 1px 5px; border-radius: 2px; background: var(--code-bg); color: var(--code-ink); }
+.md table { border-collapse: collapse; }
+.md th, .md td { padding: 3px 10px; border: 1px solid var(--hairline); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.md th { font-weight: 600; background: var(--ground); }
 .calls { display: flex; flex-direction: column; gap: 4px; font: 13px ui-monospace, monospace; }
 .call { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 6px 10px; border-radius: 2px; background: var(--ground); }
 .call.failed, .call.uncertain { background: var(--warn-bg); }
@@ -356,9 +359,14 @@ function mdRuns(runs) {
   });
 }
 const mdList = (list) => el(list.start === undefined ? "ul" : "ol", { start: list.start !== 1 ? list.start : null }, list.items.map((item) => el("li", {}, mdRuns(item.runs), item.list ? mdList(item.list) : null)));
-const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text }) : block.kind === "list" ? mdList(block) : el("p", {}, mdRuns(block.runs));
+const mdTable = (t) => el("table", {},
+  el("thead", {}, el("tr", {}, t.head.map((runs) => el("th", {}, mdRuns(runs))))),
+  el("tbody", {}, t.rows.map((row) => el("tr", {}, row.map((runs) => el("td", {}, mdRuns(runs)))))));
+const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text }) : block.kind === "list" ? mdList(block) : block.kind === "table" ? mdTable(block) : el("p", {}, mdRuns(block.runs));
 // The same words with the markers gone, for the rail's peek.
-const plain = (node) => node.text !== undefined ? node.text : node.runs ? node.runs.map(plain).join("") + (node.list ? " " + plain(node.list) : "") : node.items.map(plain).join(" ");
+const plain = (node) => node.text !== undefined ? node.text
+  : node.head ? [node.head, ...node.rows].map((row) => row.map((cell) => cell.map(plain).join("")).join(" ")).join(" ")
+  : node.runs ? node.runs.map(plain).join("") + (node.list ? " " + plain(node.list) : "") : node.items.map(plain).join(" ");
 // The stream being followed: which agent with which token, whether it is delivering,
 // and how to stop it.
 let following = { key: null, up: false, stop: () => {} };

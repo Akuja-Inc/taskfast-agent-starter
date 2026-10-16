@@ -836,3 +836,30 @@ it("renders a reply's markdown subset node by node and leaves raw HTML and unsaf
   // The peek row reads the words without the markers.
   expect(lastSaid({ replies: [{ text: "**Bid** on `t-1`:\n- [docs](https://example.com) ok" }] })).toBe("Bid on t-1: docs ok");
 });
+
+it("renders a reply's markdown table node by node and keeps near-tables as text", () => {
+  const { replyBlock, lastSaid } = bootPage();
+  const md = (text: string) => html(replyBlock({ text, calls: [], tasks: [] }, "k", false).querySelector("div.md")).replace(/^<div class="md">|<\/div>$/g, "");
+  const th = (...cells: string[]) => `<tr>${cells.map((cell) => `<th>${cell}</th>`).join("")}</tr>`;
+  const tr = (...cells: string[]) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+  const table = (head: string, ...rows: string[]) => `<table><thead>${head}</thead><tbody>${rows.join("")}</tbody></table>`;
+  // A table parses from a header line with a pipe and a delimiter row of the same cell count.
+  expect(md("| What | Value |\n| --- | --- |\n| bid | `44444444` |\n| fee | **0.25 USDC** |")).toBe(
+    table(th("What", "Value"), tr("bid", "<code>44444444</code>"), tr("fee", "<strong>0.25 USDC</strong>")),
+  );
+  // Outer pipes are optional, colons in the delimiter only mark alignment, and the table may interrupt a paragraph.
+  expect(md("Review:\na | b\n:-: | ---:\n1 | 2")).toBe(`<p>Review:</p>${table(th("a", "b"), tr("1", "2"))}`);
+  // Short rows pad and long rows trim to the header's cell count.
+  expect(md("| a | b | c |\n| --- | --- | --- |\n| 1 |\n| x | y | z | extra |")).toBe(table(th("a", "b", "c"), tr("1", "", ""), tr("x", "y", "z")));
+  // A blank line or a line without a pipe ends the rows; the table may end the text mid-stream.
+  expect(md("| a | b |\n| - | - |\n| 1 | 2 |\nplain")).toBe(`${table(th("a", "b"), tr("1", "2"))}<p>plain</p>`);
+  expect(md("| a | b |\n| --- | --- |")).toBe(table(th("a", "b")));
+  // An escaped pipe stays inside its cell.
+  expect(md("| a \\| b | c |\n| --- | --- |")).toBe(table(th("a | b", "c")));
+  // Near-tables stay prose: no pipe in the header line, a different cell count, or a stray delimiter row.
+  expect(md("Head\n---\ntext")).toBe("<p>Head</p><p>text</p>");
+  expect(md("| a | b |\n| --- | --- | --- |")).toBe("<p>| a | b |\n| --- | --- | --- |</p>");
+  expect(md("| --- | --- |")).toBe("<p>| --- | --- |</p>");
+  // The peek row reads the table's words without the pipes.
+  expect(lastSaid({ replies: [{ text: "| Bid | `t-1` |\n| --- | --- |" }] })).toBe("Bid t-1");
+});

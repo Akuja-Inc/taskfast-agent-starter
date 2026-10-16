@@ -1,6 +1,8 @@
 // The markdown subset the console and the terminal UI draw in agent replies: paragraphs,
 // bold, italic, inline and fenced code, `-` and `1.` lists one level deep, http(s) links,
-// and headings as bold paragraphs. Everything else, raw HTML and other link schemes
+// headings as bold paragraphs, and pipe tables: a header line holding a pipe, a delimiter
+// row of the same cell count whose colons only mark alignment, then rows while lines are
+// non-blank and hold a pipe. Everything else, raw HTML and other link schemes
 // included, stays text. Every newline inside a paragraph is a line break, as the model
 // wrote it. A reply still streaming ends mid-construct, so an open fence or code span
 // closes at the end of its block, and the block that ends the text closes an open `*`
@@ -8,7 +10,7 @@
 // function's source, so it closes over nothing.
 export type Run = { text: string; strong?: true; em?: true; code?: true; href?: string };
 export type List = { kind: "list"; start?: number; items: { runs: Run[]; list?: List }[] };
-export type Block = { kind: "p"; runs: Run[] } | { kind: "code"; text: string } | List;
+export type Block = { kind: "p"; runs: Run[] } | { kind: "code"; text: string } | { kind: "table"; head: Run[][]; rows: Run[][][] } | List;
 
 export function markdown(text: string): Block[] {
   type Style = Omit<Run, "text">;
@@ -92,6 +94,13 @@ export function markdown(text: string): Block[] {
     para = [];
     list = null;
   };
+  // One table row's cells: the outer pipes drop, `\|` keeps its pipe, the rest split on pipes.
+  const cells = (row: string) => {
+    let line = row.trim();
+    if (line.startsWith("|")) line = line.slice(1);
+    if (line.endsWith("|") && !line.endsWith("\\|")) line = line.slice(0, -1);
+    return line.split(/(?<!\\)\|/).map((cell) => cell.trim());
+  };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
@@ -109,6 +118,26 @@ export function markdown(text: string): Block[] {
       end();
       blocks.push({ kind: "p", runs: inline(heading[1], i === lines.length - 1).map((run) => ({ ...run, strong: true })) });
       continue;
+    }
+    // A table starts at a line with a pipe whose next line is a delimiter row of the same
+    // cell count. Rows run until a blank line or a line without a pipe; each row pads or
+    // trims to the header's cell count.
+    if (line.includes("|") && i + 1 < lines.length) {
+      const head = cells(line);
+      const rule = cells(lines[i + 1]);
+      if (head.length && rule.length === head.length && rule.every((cell) => /^:?-+:?$/.test(cell))) {
+        end();
+        const rows: Run[][][] = [];
+        let j = i + 2;
+        for (; j < lines.length && lines[j].trim() && lines[j].includes("|"); j++) {
+          const row = cells(lines[j]);
+          while (row.length < head.length) row.push("");
+          rows.push(row.slice(0, head.length).map((cell) => inline(cell, false)));
+        }
+        blocks.push({ kind: "table", head: head.map((cell) => inline(cell, false)), rows });
+        i = j - 1;
+        continue;
+      }
     }
     const item = /^(\s*)(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/.exec(line);
     // Only "1." starts a numbered list inside a paragraph, so "2024. was a year" stays prose.

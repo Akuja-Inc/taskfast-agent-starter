@@ -34,8 +34,8 @@ const scripts = {
       fauxToolCall("bid_accept", { task_id: OTHER, bid_id: BID }, { id: "c4" }),
     ], { stopReason: "toolUse" }),
     fauxAssistantMessage("Claimed the photo edit. The message was refused and the bid acceptance timed out, so it is uncertain: please check it before I do anything else on that task."),
-    // A reply in markdown, as models write it: the subset the console renders, raw HTML and a
-    // javascript: link that must stay text, and a 300-character line that must not widen a card.
+    // A reply in markdown, as models write it: the subset the console renders, a table included,
+    // raw HTML and a javascript: link that must stay text, and a 300-character line that must not widen a card.
     fauxAssistantMessage([
       "A new bid arrived on the **copywriting job**. I will wait for your check on the *uncertain* acceptance first.",
       "",
@@ -46,6 +46,11 @@ const scripts = {
       "",
       "1. Check the bid",
       "2. Reply here",
+      "",
+      "| Field | Value |",
+      "| ----- | ----- |",
+      "| bid | `44444444` |",
+      "| fee | **0.25 USDC** |",
       "",
       "```",
       `taskfast bid accept ${"x".repeat(300)}`,
