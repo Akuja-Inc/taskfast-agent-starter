@@ -1,0 +1,19 @@
+{
+  "source": "4a7d37f957e02fe804000c937eab8e3bfd973369",
+  "buildRoot": "working tree",
+  "fixtures": "temporary agent folders, real SQLite stores, faux model; no live marketplace",
+  "viewport": {
+    "desktop": [
+      1440,
+      1000
+    ],
+    "phone": [
+      390,
+      844
+    ]
+  },
+  "themes": [
+    "light",
+    "dark"
+  ]
+}

@@ -55,3 +55,5 @@ pnpm tui:test
 The tests use temporary agent folders, real SQLite stores, scripted model output and local MCP fixtures. They do not validate a live marketplace, model provider or third-party MCP service.
 
 `browser-host.mjs` serves the real console with temporary agents, real stores and a faux model. It never reads a real agent folder. After `pnpm build`, run `python3 docs/capabilities/capture.py after` to capture both themes at desktop and phone widths. The baseline captures use the same fixture with the built parent revision supplied as the last argument.
+
+See [capture provenance and proof](evidence.md) and the [independent design-review disposition](design-review.md) for source hashes, screenshots, exact local checks and evidence limits.

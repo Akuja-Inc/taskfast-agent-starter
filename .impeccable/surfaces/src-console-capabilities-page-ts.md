@@ -22,3 +22,7 @@ FIRST VIEWPORT: Agent identity and folder lead. Skills occupy the left column an
 FORM: Owner-selected Side by side, concept A from #64. Signature interaction: one shared active-now to after-apply review for skill, server, tool and credential changes. No new motion beyond existing console conventions.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
+
+## Finish record
+
+The independent finish review and documentation alignment pass returned ship for source `4a7d37f`. This ordinary extension preserves `DESIGN.md` and its sidecar. Captures, source manifests, evidence limits and the nonmaterial history-copy follow-up are recorded in `docs/capabilities/design-review.md` and `docs/capabilities/evidence.md`.

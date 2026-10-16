@@ -294,6 +294,8 @@ Compaction summarizes older model context; it does not erase stored history or t
 - `src/run.ts`: local host, stream lifecycle, recovery and periodic polling; starts the console with `--console` and reopens one agent after a saved agent file.
 - `src/console.ts`, `src/console-page.ts`, `src/console-lifecycle.ts`, `src/console-live.ts`, `src/console-markdown.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower and reply markdown subset the page and the TUI share.
 - `src/tui/`: the terminal UI, a Bun package of its own. `screen.ts` (what to draw from a view), `keys.ts` (what each key does) and `link.ts` are pure and tested under Node; `app.tsx` draws them with OpenTUI.
+- `src/capabilities.ts`, `src/capability-types.ts`: one agent folder's private staged batch, redacted management views, connection review and recoverable publication contract.
+- `src/console-capabilities-page.ts`: the Capabilities tab, folder import, server setup and shared review. It uses the existing console API protections and host lifecycle, not a second runtime.
 - `src/setup.ts`: fresh agent setup.
 - `examples/`: agent folders (`agent.json` and `INSTRUCTIONS.md`) to copy.
 
