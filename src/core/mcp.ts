@@ -1,4 +1,6 @@
-import { McpClient, StdioTransport, StreamableHttpTransport, toLlmContent, type McpTransport, type Tool } from "@earendil-works/pi-mcp";
+import { McpAbortError, McpClient, McpTimeoutError, StreamableHttpTransport, type McpTransport, type Tool } from "@earendil-works/pi-mcp";
+import { OwnedStdioTransport } from "./mcp-transport.js";
+import { mcpOutput } from "./mcp-output.js";
 import type { TSchema } from "@earendil-works/pi-ai";
 import { defineTool, ROOT_CONVERSATION_ID, type ToolRegistration } from "@earendil-works/pi-durable";
 import { mcpToolName, redact, toolHash, type McpServer } from "./mcp-config.js";
@@ -9,7 +11,6 @@ import { mcpToolName, redact, toolHash, type McpServer } from "./mcp-config.js";
 const MAX_TOOLS = 100;
 const MAX_SCHEMA = 16 * 1024;
 const MAX_DESCRIPTION = 1024;
-const MAX_OUTPUT = 32 * 1024;
 const CONNECT_TIMEOUT_MS = 10_000;
 const CALL_TIMEOUT_MS = 30_000;
 
@@ -25,7 +26,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 function transport(server: McpServer): McpTransport {
   if (server.transport === "stdio") {
     // Like a TaskFast child: no host environment, only what this server is given.
-    return new StdioTransport({
+    return new OwnedStdioTransport({
       command: server.command, args: server.args, cwd: server.cwd, inheritEnv: false,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...server.credentials },
       // Kept in a bounded buffer and never logged: a server may print its credentials.
@@ -45,12 +46,34 @@ function parameters(tool: Tool, where: string): TSchema {
 }
 
 // Connecting and listing tools is a server's only network step, so every server runs it at once.
-async function connectServer(server: McpServer, client: McpClient): Promise<Tool[]> {
-  try {
+async function connectServer(server: McpServer, client: McpClient, timeoutMs: number, signal?: AbortSignal): Promise<Tool[]> {
+  const deadline = new AbortController();
+  const stop = () => deadline.abort(new Error("connection aborted"));
+  signal?.addEventListener("abort", stop, { once: true });
+  if (signal?.aborted) stop();
+  const timer = setTimeout(() => deadline.abort(new Error(`connection timed out after ${timeoutMs}ms`)), timeoutMs);
+  let rejectAbort: (error: unknown) => void = () => {};
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  const onAbort = () => rejectAbort(deadline.signal.reason);
+  deadline.signal.addEventListener("abort", onAbort, { once: true });
+  // A timer on each JSON-RPC request does not cover notifications/initialized or
+  // the aggregate discovery pages. Closing the transport aborts their real I/O.
+  const opening = (async () => {
+    deadline.signal.throwIfAborted();
     await client.connect(transport(server));
-    return await client.listTools();
+    deadline.signal.throwIfAborted();
+    return client.listTools({ signal: deadline.signal });
+  })();
+  try {
+    return await Promise.race([opening, aborted]);
   } catch (error) {
+    await client.close();
+    await opening.catch(() => {});
     throw new Error(`mcp ${server.name}: could not connect: ${redact(message(error), Object.values(server.credentials))}`);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
+    deadline.signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -64,6 +87,12 @@ function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: 
   for (const name of Object.keys(server.tools)) if (!offered.has(name)) throw new Error(`${where}: approved tool ${name} is not offered by the server`);
   const registrations: ToolRegistration[] = [];
   for (const tool of listed) {
+    // Do not rewrite schemas/names to hide secrets: doing so could change the
+    // approved contract. Refuse the definition before any diagnostic or exposure.
+    const definition = JSON.stringify(tool);
+    if (secrets.some((secret) => secret && definition.includes(JSON.stringify(secret).slice(1, -1)))) {
+      throw new Error(`${where}: a tool definition contains a configured credential; remove it on the server`);
+    }
     const hash = toolHash(tool);
     const approved = server.tools[tool.name];
     if (approved === undefined) {
@@ -87,16 +116,19 @@ function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: 
       execute: async (args, api, ctx) => {
         if (api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("MCP tools are unavailable");
         if (client.connectionState === "closed") throw new Error(`${where}: the server disconnected; restart the agent to reconnect`);
+        const timeout = AbortSignal.timeout(callTimeoutMs);
+        const signal = ctx.abortSignal ? AbortSignal.any([ctx.abortSignal, timeout]) : timeout;
         let result;
         try {
-          result = await client.callTool(remote, args as Record<string, unknown>, { signal: ctx.abortSignal, timeoutMs: callTimeoutMs });
+          result = await client.callTool(remote, args as Record<string, unknown>, { signal, timeoutMs: callTimeoutMs });
         } catch (error) {
-          throw new Error(`${where}: ${remote} failed: ${redact(message(error), secrets)}`);
+          // Pi-mcp's timeout only rejects the RPC waiter. Close the sequential
+          // server too, so HTTP readers and local work cannot outlive cancellation.
+          if (signal.aborted || error instanceof McpTimeoutError || error instanceof McpAbortError) await client.close();
+          const reason = timeout.aborted && !ctx.abortSignal?.aborted ? timeout.reason : error;
+          throw new Error(redact(`${where}: ${remote} failed: ${message(reason)}`, secrets));
         }
-        // Redact before cutting, so a credential split by the cut is still found.
-        let text = redact(toLlmContent(result).map((part) => (part.type === "text" ? part.text : `[${part.mimeType} image omitted]`)).join("\n"), secrets);
-        if (text.length > MAX_OUTPUT) text = `${text.slice(0, MAX_OUTPUT)}\n[truncated ${text.length - MAX_OUTPUT} characters]`;
-        return { output: [{ type: "text", text }], isError: result.isError === true };
+        return { output: [{ type: "text", text: mcpOutput(result, secrets) }], isError: result.isError === true };
       },
     }));
   }
@@ -107,7 +139,7 @@ function approvedTools(server: McpServer, client: McpClient, listed: Tool[], o: 
 // Connects every configured server, then checks approvals in config order, so errors and
 // logs never depend on which server answered first. Any failure closes every client and
 // throws, so the agent stops before it opens its store; the error carries no credential.
-export async function connectMcp(servers: readonly McpServer[], o: { log: (line: string) => void; reserved: readonly string[]; callTimeoutMs?: number }): Promise<McpTools> {
+export async function connectMcp(servers: readonly McpServer[], o: { log: (line: string) => void; reserved: readonly string[]; callTimeoutMs?: number; connectTimeoutMs?: number; signal?: AbortSignal }): Promise<McpTools> {
   const clients = servers.map(() => new McpClient({ name: "taskfast-agent-starter", version: "0.0.1", requestTimeoutMs: CONNECT_TIMEOUT_MS }));
   const listeners: (() => void)[] = [];
   const close = async () => {
@@ -115,24 +147,26 @@ export async function connectMcp(servers: readonly McpServer[], o: { log: (line:
     listeners.splice(0).forEach((stop) => stop());
     await Promise.all(clients.map((client) => client.close().catch(() => {})));
   };
-  const options = { log: o.log, taken: new Set(o.reserved), callTimeoutMs: o.callTimeoutMs ?? CALL_TIMEOUT_MS };
+  const secrets = servers.flatMap((server) => Object.values(server.credentials));
+  const log = (line: string) => o.log(redact(line, secrets));
+  const options = { log, taken: new Set(o.reserved), callTimeoutMs: o.callTimeoutMs ?? CALL_TIMEOUT_MS };
   const tools: ToolRegistration[] = [];
   try {
     // allSettled, not all: close() must not run while another server is still starting.
-    const listed = await Promise.allSettled(servers.map((server, at) => connectServer(server, clients[at]!)));
+    const listed = await Promise.allSettled(servers.map((server, at) => connectServer(server, clients[at]!, o.connectTimeoutMs ?? CONNECT_TIMEOUT_MS, o.signal)));
     for (const [at, server] of servers.entries()) {
       const result = listed[at]!;
       if (result.status === "rejected") throw result.reason;
       const client = clients[at]!;
       listeners.push(
-        client.onClose(() => o.log(`mcp ${server.name}: disconnected; restart the agent to reconnect`)),
-        client.onNotification("notifications/tools/list_changed", () => o.log(`mcp ${server.name}: the server changed its tools; they apply only after you review them and restart the agent`)),
+        client.onClose(() => log(`mcp ${server.name}: disconnected; restart the agent to reconnect`)),
+        client.onNotification("notifications/tools/list_changed", () => log(`mcp ${server.name}: the server changed its tools; they apply only after you review them and restart the agent`)),
       );
       tools.push(...approvedTools(server, client, result.value, options));
     }
   } catch (error) {
     await close();
-    throw error;
+    throw new Error(redact(message(error), secrets));
   }
   return {
     tools, close,
