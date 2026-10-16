@@ -6,7 +6,7 @@ Open the local console and choose **Capabilities**. The agent selector still cho
 
 Use **Add TaskFast skill** to stage the embedded bundle from the installed CLI. This export runs in a temporary folder without your account configuration. It does not install software, initialize an account or update a running agent. Review the CLI version, hashes and file contents before applying.
 
-Use **Import skill folder** to select a folder from your device. It must contain a valid `SKILL.md`. Files stay under this agent's `.agents/skills/` tree. Invalid paths, private files, symlinks and oversized imports are refused. Previews are plain text. Scripts do not run, and imported instructions cannot add a shell or general filesystem tool.
+Use **Import folder** to select a folder from your device. It must contain a valid `SKILL.md`. Files stay under this agent's `.agents/skills/` tree. Invalid paths, private files, symlinks and oversized imports are refused. Previews are plain text. Scripts do not run, and imported instructions cannot add a shell or general filesystem tool.
 
 Inspect a skill to see its files and provenance, or stage enable, disable, replacement or removal. Replacement is explicit. Disable keeps the installed files but removes the skill from future discovery after apply. It cannot remove instructions the model has already read from its conversation history. Removal affects only this agent's installed copy.
 
