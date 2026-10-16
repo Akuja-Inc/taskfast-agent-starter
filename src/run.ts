@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { PING_MS, startConsole, type ConsoleAgent, type HostFacts, type Ledger } from "./console.js";
 import type { AgentRosterEntry, StartupAction } from "./console-lifecycle.js";
+import { CapabilityManager, recoverCapabilities } from "./capabilities.js";
+import type { CapabilityActivation } from "./capability-types.js";
 import { isMarketEvent } from "./core/event.js";
 import { runCli } from "./core/cli.js";
 import { CleanupError } from "./core/cleanup-error.js";
@@ -26,14 +28,14 @@ export function taskfastEnv(name: string): Env {
   if (!environment) throw new Error(`--env must be production, staging or development, not ${JSON.stringify(name)}`);
   return environment[1];
 }
-export type AgentHandle = Pick<MarketplaceAgent, "closed" | "deliver" | "ping" | "close"> & Partial<ConsoleAgent["agent"]>;
+export type AgentHandle = Pick<MarketplaceAgent, "closed" | "deliver" | "ping" | "close"> & Partial<ConsoleAgent["agent"]> & Partial<Pick<MarketplaceAgent, "quiesce" | "releaseInitialHold" | "capabilityConnections">>;
 export interface RunOptions {
   agentsDir: string;
   env: Env;
   walletPasswordFile?: string;
   console?: { port: number };
   command?: Command;
-  openAgent?(agent: { id: string; spec: AgentSpec; runtime: Runtime; storePath: string; signal?: AbortSignal }): Promise<AgentHandle>;
+  openAgent?(agent: { id: string; spec: AgentSpec; runtime: Runtime; storePath: string; signal?: AbortSignal; startHeld?: boolean }): Promise<AgentHandle>;
   listen?: typeof startListener;
   signal: AbortSignal;
   log(line: string): void;
@@ -120,6 +122,8 @@ export async function runAgents(o: RunOptions): Promise<void> {
   type Slot = {
     entry: AgentRosterEntry; pending: Promise<void>; controller?: AbortController;
     owned?: Owned; cleanupFailed: boolean; editing: boolean; failure?: unknown;
+    capabilities?: CapabilityManager;
+    recovered?: boolean;
   };
   const slots: Slot[] = ids.map((id) => ({ entry: { id, generation: 1, state: "starting", phase: "opening" }, pending: Promise.resolve(), cleanupFailed: false, editing: false }));
   let consoleServer: Awaited<ReturnType<typeof startConsole>> | undefined;
@@ -129,6 +133,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
   const current = (slot: Slot, generation: number) => !ended() && slot.entry.generation === generation && slot.entry.state === "starting";
   const ready = (slot: Slot, generation: number) => !ended() && slot.entry.generation === generation && slot.entry.state === "ready";
   function stopped(slot: Slot, error: unknown) {
+    slot.capabilities?.markStopped();
     slot.failure = error;
     slot.entry = { id: slot.entry.id, generation: slot.entry.generation, role: slot.entry.role, state: "stopped", reason: message(error) };
     o.log(`${slot.entry.id}: stopped: ${message(error)}`);
@@ -163,16 +168,22 @@ export async function runAgents(o: RunOptions): Promise<void> {
       await sleep(o.pingEveryMs ?? 900_000, undefined, { signal: owned.poll.signal }).catch(() => {});
     }
   }
-  async function start(slot: Slot, generation: number, controller: AbortController): Promise<void> {
+  async function start(slot: Slot, generation: number, controller: AbortController, held = false): Promise<void> {
     if (slot.cleanupFailed) throw new Error("previous cleanup failed; restart the host after checking ownership");
+    // Recover an interrupted publication only on first opening in this host. A
+    // deliberate apply leaves its journal live until the new registry has opened.
+    if (!slot.recovered) {
+      recoverCapabilities(resolve(o.agentsDir, slot.entry.id));
+      slot.recovered = true;
+    }
     const item = load(slot.entry.id);
     if (!current(slot, generation)) return;
     slot.entry = { id: item.id, generation, role: item.spec.role, state: "starting", phase: "opening" };
     let agent: AgentHandle;
     try {
       agent = o.openAgent
-        ? await o.openAgent({ ...item, signal: controller.signal })
-        : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, signal: controller.signal, log: (line) => o.log(`${item.id}: ${line}`) });
+        ? await o.openAgent({ ...item, signal: controller.signal, startHeld: held })
+        : await openMarketplaceAgent({ spec: item.spec, runtime: item.runtime, storePath: item.storePath, signal: controller.signal, startHeld: held, log: (line) => o.log(`${item.id}: ${line}`) });
     } catch (error) {
       // Failed opening can still retain ownership. Preserve that barrier even if
       // cancellation or a queued retry has already replaced this generation.
@@ -190,8 +201,11 @@ export async function runAgents(o: RunOptions): Promise<void> {
     } catch (error) { await closeOwned(slot, owned); throw error; }
     slot.owned = owned;
     owned.active = true;
-    slot.entry = { id: item.id, generation, role: item.spec.role, state: "ready" };
-    opened++;
+    if (!held) {
+      slot.entry = { id: item.id, generation, role: item.spec.role, state: "ready" };
+      void slot.capabilities?.markActive();
+      opened++;
+    }
     void agent.closed.then((end) => {
       if (end.reason !== "failed" || ended() || slot.owned !== owned) return;
       o.log(`${item.id}: session failed: ${message(end.error)}; stopping the agent`);
@@ -199,7 +213,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
       owned.active = false;
       slot.pending = slot.pending.then(() => closeOwned(slot, owned)).catch((error: unknown) => stopped(slot, error));
     }).catch((error: unknown) => o.log(`${item.id}: session close failed: ${message(error)}`));
-    owned.polling = poll(owned);
+    if (!held) owned.polling = poll(owned);
   }
   function schedule(slot: Slot) {
     const generation = slot.entry.generation;
@@ -306,6 +320,94 @@ export async function runAgents(o: RunOptions): Promise<void> {
     finally { slot.editing = false; }
   }
 
+  // A capability apply holds only new scheduling, not durable event admission or
+  // the owner's Pause choice. Publication starts only after the held run finishes.
+  async function activateCapabilities(slot: Slot, change: CapabilityActivation): Promise<void> {
+    if (ended() || slot.editing || slot.cleanupFailed || slot.entry.state === "starting") throw new Error("agent lifecycle changed; refresh before applying");
+    slot.editing = true;
+    let commitRegistered = false;
+    const work = async () => {
+      const owned = slot.owned;
+      let release: (() => Promise<void>) | undefined;
+      let published = false;
+      try {
+        if (owned) {
+          if (!owned.agent.quiesce) throw new Error("this host cannot safely wait for idle capability activation");
+          release = await owned.agent.quiesce(change.signal);
+        }
+        change.signal.throwIfAborted();
+        if (ended() || slot.owned !== owned) throw new Error("agent lifecycle changed; nothing was applied");
+        // The old registry is an immutable lifetime snapshot. Publishing while it
+        // is held lets the manager forbid Cancel before ownership starts closing.
+        await change.publish();
+        published = true;
+        const generation = slot.entry.generation + 1;
+        const controller = new AbortController();
+        slot.controller = controller;
+        slot.entry = { id: slot.entry.id, generation, role: slot.entry.role, state: "starting", phase: "waiting-for-close" };
+        if (owned) await closeOwned(slot, owned);
+        await start(slot, generation, controller, true);
+        const replacement = slot.owned;
+        if (!replacement || replacement === owned || !current(slot, generation)) throw new Error("agent could not reopen after applying capabilities");
+        if (!replacement.agent.releaseInitialHold) throw new Error("this host cannot activate a dormant capability registry");
+        // Verify after asynchronous connection work, while recovery, model runs and
+        // polling remain held. Only a durable commit may release this new registry.
+        await change.publish();
+        change.afterCommit(async () => {
+          try {
+            if (ended() || slot.owned !== replacement || !current(slot, generation)) throw new Error("host stopped before capability activation");
+            slot.entry = { id: replacement.item.id, generation, role: replacement.item.spec.role, state: "ready" };
+            await slot.capabilities?.markActive();
+            await replacement.agent.releaseInitialHold?.();
+            if (!ready(slot, generation)) throw new Error("agent stopped during capability activation");
+            opened++;
+            replacement.polling = poll(replacement);
+          } catch (error) {
+            stopped(slot, error);
+            if (slot.owned === replacement) await closeOwned(slot, replacement);
+            throw error;
+          } finally { slot.editing = false; }
+        }, async (restored) => {
+          try {
+            stopped(slot, new Error(restored ? "capability publication failed; previous configuration restored" : "capability publication failed; check the private recovery journal"));
+            if (slot.owned === replacement) await closeOwned(slot, replacement);
+            if (restored && !slot.cleanupFailed && !ended()) {
+              const retryGeneration = slot.entry.generation + 1;
+              const retryController = new AbortController();
+              slot.controller = retryController;
+              slot.entry = { id: slot.entry.id, generation: retryGeneration, role: slot.entry.role, state: "starting", phase: "waiting-for-close" };
+              try { await start(slot, retryGeneration, retryController); }
+              catch (error) { stopped(slot, error); }
+            }
+          } finally { slot.editing = false; }
+        });
+        commitRegistered = true;
+      } catch (error) {
+        if (published) {
+          stopped(slot, error);
+          const replacement = slot.owned;
+          if (replacement && replacement !== owned) await closeOwned(slot, replacement);
+          await change.rollback();
+          // A failed close is an ownership barrier, never permission to open again.
+          // Otherwise restore the previous configuration in the same durable store.
+          if (!slot.cleanupFailed && !ended()) {
+            const generation = slot.entry.generation + 1;
+            const controller = new AbortController();
+            slot.controller = controller;
+            slot.entry = { id: slot.entry.id, generation, role: slot.entry.role, state: "starting", phase: "waiting-for-close" };
+            try { await start(slot, generation, controller); }
+            catch (recovery) { stopped(slot, recovery); }
+          }
+        }
+        throw error;
+      } finally { await release?.(); }
+    };
+    const result = slot.pending.then(work);
+    slot.pending = result.then(() => {}, () => {});
+    try { await result; }
+    finally { if (!commitRegistered) slot.editing = false; }
+  }
+
   let wake = () => {};
   const abort = new Promise<void>((resolve) => { wake = resolve; });
   const stop = () => {
@@ -316,9 +418,15 @@ export async function runAgents(o: RunOptions): Promise<void> {
   o.signal.addEventListener("abort", stop, { once: true });
   try {
     if (o.console) {
+      for (const slot of slots) slot.capabilities = new CapabilityManager({
+        agentDir: resolve(o.agentsDir, slot.entry.id), env: o.env, active: false,
+        activate: (change) => activateCapabilities(slot, change),
+        connections: () => slot.entry.state === "ready" ? slot.owned?.agent.capabilityConnections?.() ?? [] : [],
+      });
       consoleServer = await startConsole({
         port: o.console.port, token: randomBytes(32).toString("hex"), env: o.env,
         roster: () => slots.map((slot) => ({ ...slot.entry })), startup,
+        capabilities: (id) => slots.find((slot) => slot.entry.id === id)?.capabilities,
         agents: () => slots.flatMap((slot) => {
           const owned = slot.owned;
           if (!owned || !owned.active || slot.entry.state !== "ready") return [];
@@ -350,9 +458,11 @@ export async function runAgents(o: RunOptions): Promise<void> {
     stop();
     o.signal.removeEventListener("abort", stop);
     await consoleServer?.close();
-    // Stop admission everywhere before waiting on slow openings or closing any
-    // ready store. An opening that ignores abort must not keep siblings listening.
+    // Stop admission everywhere before waiting on managers, slow openings or any
+    // store close. An applying agent must not keep siblings listening at shutdown.
     await Promise.allSettled(slots.flatMap((slot) => slot.owned ? [closeStreams(slot.owned)] : []));
+    // Closing managers cancels only idle waits, never a running marketplace write.
+    await Promise.allSettled(slots.flatMap((slot) => slot.capabilities ? [slot.capabilities.close()] : []));
     // Pending attempts own late results until cleanup finishes. Ready stores close
     // only after their event listeners; a rejected cleanup never permits a retry.
     await Promise.allSettled(slots.map((slot) => slot.pending));
