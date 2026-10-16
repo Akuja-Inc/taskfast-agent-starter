@@ -1,0 +1,1 @@
+{"name":"taskfast","owner":{"name":"TaskFast"},"description":"Project skills from .agents/skills, loaded in place for Claude Code","plugins":[{"name":"t","source":"./","description":"TaskFast agent starter project skills (.agents/skills)"}]}
