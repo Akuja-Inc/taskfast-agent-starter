@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { openNodeSqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import type { Storage } from "@earendil-works/pi-durable";
+import { CleanupError } from "./cleanup-error.js";
 
 // An independent rollback-mode database holds an OS lock for the entire ownership
 // lifetime. SQLite releases it on process death; there is no stale PID file to repair.
@@ -14,10 +15,11 @@ export async function openAgentStorage(file: string): Promise<Storage> {
   const path = existsSync(requested) ? realpathSync(requested) : requested;
   if (existsSync(path) && statSync(path).nlink !== 1) throw new Error("agent stores must not be hard linked");
   const owner = new DatabaseSync(`${path}.owner`);
+  const closeOwner = () => { try { owner.close(); } catch (error) { throw new CleanupError(error); } };
   try {
     owner.exec("PRAGMA busy_timeout=0; PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE");
   } catch (error) {
-    owner.close();
+    closeOwner();
     throw new Error(`agent store is already owned: ${path}`, { cause: error });
   }
   try {
@@ -31,7 +33,7 @@ export async function openAgentStorage(file: string): Promise<Storage> {
       storage = await SqliteStorage.open(database);
       chmodSync(path, 0o600);
     } catch (error) {
-      await database.close();
+      try { await database.close(); } catch (cleanup) { throw new CleanupError(cleanup); }
       throw error;
     }
     let closed = false;
@@ -42,14 +44,14 @@ export async function openAgentStorage(file: string): Promise<Storage> {
           if (closed) return;
           closed = true;
           try { await target.close(context); }
-          finally { owner.close(); }
+          finally { closeOwner(); }
         };
         const value: unknown = Reflect.get(target, key);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
   } catch (error) {
-    owner.close();
+    closeOwner();
     throw error;
   }
 }

@@ -1,6 +1,7 @@
 // What each key does in the terminal UI. Pure: it returns the next UI state and at
 // most one effect for the app to carry out. Every change to an agent is a console API
 // call; the UI never sets an amount and quitting never touches the host.
+import type { AgentRosterEntry, StartupAction } from "../console-lifecycle.js";
 import type { ConsoleView } from "../console.js";
 import type { AgentSpec } from "../core/types.js";
 import { screen } from "./screen.js";
@@ -37,6 +38,7 @@ export type Effect =
   | { kind: "message"; text: string; mode: MessageMode }
   | { kind: "open"; url: string }
   | { kind: "agent"; index: number }
+  | { kind: "startup"; intent: StartupAction }
   | { kind: "retry" }
   | { kind: "quit" };
 export const initialUi = (agent = 0): Ui => ({ agent, tab: "timeline", panel: "timeline", reply: 0, alert: 0, open: [], raw: [], help: false, sidebar: false, alerts: false, order: 0, field: 0, messageText: "" });
@@ -95,9 +97,22 @@ const toggle = (list: string[], key: string) => (list.includes(key) ? list.filte
 const clamp = (n: number, count: number) => Math.max(0, Math.min(n, count - 1));
 const PANELS: Ui["panel"][] = ["timeline", "attention", "queue"];
 
-export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents: number): { ui: Ui; effect?: Effect } {
-  // Can't reach the console: only retry and quit.
-  if (!view) return { ui, effect: key === "r" ? { kind: "retry" } : key === "q" ? { kind: "quit" } : undefined };
+export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents: number, lifecycle?: AgentRosterEntry, busy = false): { ui: Ui; effect?: Effect } {
+  if (!view) {
+    if (ui.editing === "message") {
+      if (key === "escape") return { ui: { ...ui, editing: undefined } };
+      return { ui, effect: key === "enter" || key === "ctrl+s" ? { kind: "notice", text: "Not queued: the agent is not ready. Your draft is kept." } : undefined };
+    }
+    if ((key === "<" || key === ">") && agents > 0) {
+      const index = (ui.agent + (key === ">" ? 1 : -1) + agents) % agents;
+      return { ui: initialUi(index), effect: { kind: "agent", index } };
+    }
+    if (key === "?" || key === "escape") return { ui: { ...ui, help: key === "?" ? !ui.help : false } };
+    if (!busy && lifecycle && ((key === "x" && lifecycle.state === "starting") || (key === "R" && lifecycle.state === "stopped"))) {
+      return { ui, effect: { kind: "startup", intent: { id: lifecycle.id, generation: lifecycle.generation, action: key === "x" ? "cancel" : "retry" } } };
+    }
+    return { ui, effect: key === "r" ? { kind: "retry" } : key === "q" ? { kind: "quit" } : key === "m" || key === "ctrl+s" || (key === "enter" && !!ui.messageText.trim()) ? { kind: "notice", text: "Not queued: the agent is not ready. Your draft is kept." } : undefined };
+  }
   const call = (method: "POST" | "PUT" | "DELETE", action: string, body?: unknown): Effect => ({ kind: "call", method, action, ...(body === undefined ? {} : { body }) });
   if (ui.confirm) {
     if (key === "y") {

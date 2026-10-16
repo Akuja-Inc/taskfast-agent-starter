@@ -11,6 +11,7 @@ import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type Que
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { marketplacePrompt } from "./prompt.js";
 import { connectMcp } from "./mcp.js";
+import { CleanupError } from "./cleanup-error.js";
 import { loadMcpConfig } from "./mcp-config.js";
 import { loadSkills, readSkill, skillsPrompt } from "./skills.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
@@ -488,9 +489,11 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     };
   } catch (error) {
     try {
-      if (pi) await pi.close(context);
-      else await storage?.close(context);
-    } finally { await mcp.close(); }
+      try {
+        if (pi) await pi.close(context);
+        else await storage?.close(context);
+      } finally { await mcp.close(); }
+    } catch (cleanup) { throw new CleanupError(cleanup); }
     throw error;
   }
 }

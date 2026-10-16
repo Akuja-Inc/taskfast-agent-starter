@@ -68,6 +68,42 @@ function call(port: number, path: string, { method = "GET", headers = {}, body }
   });
 }
 const auth = { authorization: `Bearer ${token}` };
+
+it.each([
+  { method: "POST", path: "messages", next: "starting" },
+  { method: "POST", path: "messages", next: "ready" },
+  { method: "DELETE", path: "orders/0", next: "starting" },
+  { method: "PUT", path: "spec", next: "ready" },
+] as const)("rejects $method $path whose body spans a transition to $next", async ({ method, path, next }) => {
+  const fake = fakeAgent({ state: { ...initialOperator(), orders: ["old order"] } });
+  const save = vi.fn(async () => {});
+  fake.agent.saveSpec = save;
+  let generation = 1;
+  let state: "ready" | "starting" = "ready";
+  let observed!: () => void;
+  const captured = new Promise<void>((resolve) => { observed = resolve; });
+  const server = await serve([fake.agent], { roster: () => {
+    observed();
+    return [{ id: "foo", generation, ...(state === "ready" ? { state } : { state, phase: "waiting-for-close" as const }) }];
+  } });
+  const body = JSON.stringify(path === "spec" ? fake.agent.spec : path.startsWith("orders") ? { expect: "old order" } : { requestId: "chunked-1", text: "Do work" });
+  let finish!: () => void;
+  const response = new Promise<number>((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port: server.port, path: `/api/agents/foo/${path}`, method,
+      headers: { ...auth, "content-type": "application/json", "content-length": Buffer.byteLength(body) } }, (res) => {
+      res.resume(); res.on("end", () => resolve(res.statusCode ?? 0));
+    });
+    req.on("error", reject);
+    req.write(body.slice(0, 1));
+    finish = () => req.end(body.slice(1));
+  });
+  await captured;
+  generation++; state = next;
+  finish();
+  expect(await response).toBe(409);
+  expect(fake.asked).toEqual([]);
+  expect(save).not.toHaveBeenCalled();
+});
 // Opens an event stream and hands back its frames one at a time: `view` events
 // parsed, comments as { comment }.
 type Frame = { event: string; data: unknown } | { comment: string };

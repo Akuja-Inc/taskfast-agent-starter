@@ -1,0 +1,14 @@
+{
+  "commit": "ab49780716b1808bf511918763d5c68dfb8e5304",
+  "sha256": {
+    "src/console-page.ts": "6b5c4f6d0e9ca920f3a0d84518ba44a1a80a9d6a1b35b5ea0d1d3e142354ac80",
+    "src/console.ts": "f9bfc2b87ac39dee46e65e6d6a31d5b930f7d9e39c8eadafbd3676054d8651ea",
+    "src/core/agent.ts": "c88c9e19ebe6fb620a88338f8aa37b9158c088fd199cefefb2b0d135f14baf96",
+    "src/core/operator.ts": "e00d75099e6d08b7b6e3edd4d2bdf00a50c0daa472200608673e1a71d39c0ef8",
+    "src/tui/app.tsx": "fd0094d96f9906d6b235ec7223eea2132d5d17e044d4db35592dbc95315c039a",
+    "src/tui/keys.ts": "5ca9e4041c0952a612592fe3b0c52cbe9d2a29b4a64e05c01449d30caa5d7cb9",
+    "test/fixtures/tui-host.mjs": "b609e7dd0f3977e4fe46c08f364ae1706a4bacac7ef8e03f67f4c23fb2c46f3a"
+  },
+  "captureScriptSha256": "7ab5b0c2f87ccb765cd81b764332e401ced0c1252ae788b8f950dcf54e4cb2df",
+  "capture": "Chromium browser screenshots and ImageMagick import of real Zutty/OpenTUI window pixels. Synthetic local host only."
+}
