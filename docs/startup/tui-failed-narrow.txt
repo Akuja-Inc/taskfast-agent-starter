@@ -1,0 +1,28 @@
+ DEVELOPMENT · local TaskFast server · no real money
+
+ ┌─ Agent stopped ──────────────────────────────────────────────────────────────────────┐
+ │                                                                                      │
+ │ failed-worker (worker)                                                               │
+ │ MCP reference server did not complete its handshake. Check this folder’s mcp.json    │
+ │ and retry.                                                                           │
+ │ R retry startup                                                                      │
+ │ Messages are not queued until this agent is ready.                                   │
+ │ < / > switch agent · ? help                                                          │
+ │ r retry · q quit                                                                     │
+ │                                                                                      │
+ └──────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

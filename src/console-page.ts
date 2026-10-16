@@ -159,7 +159,13 @@ textarea::placeholder { color: var(--muted); }
 @media (max-width: 640px) { .queue-row { grid-template-columns: minmax(0, 1fr); } .queue-actions { grid-column: 1; grid-row: 3; flex-direction: row; flex-wrap: wrap; } }
 .queue-error { grid-column: 1 / -1; }
 .queue-error:empty, .queue-notice:empty { display: none; }
-button:disabled, .queue-actions button[aria-disabled="true"] { cursor: wait; opacity: .6; }
+button:disabled, button[aria-disabled="true"] { cursor: wait; opacity: .6; }
+.startup { overflow-wrap: anywhere; }
+.startup-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.startup-feedback:empty { display: none; }
+header .switcher, header .spacer { min-width: 0; max-width: 100%; }
+header .switcher select { min-width: 0; max-width: 100%; }
+.sq.brand-sq.unready { color: #0B0B0B; }
 .error { color: var(--bad); font-size: 14px; }
 .unlock { max-width: 560px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 16px; }
 /* The rail: marks beside the turns, sized from --composer-space to end above the pinned composer. --under-band clears the sticky band. */
@@ -208,6 +214,21 @@ if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", 
 let token = store.get("token");
 const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
 let list = null, view = null;
+const drafts = new Map(), startupRequests = new Map();
+const selected = () => list && list.agents.find((a) => a.id === ui.agent);
+const stateOf = (entry) => entry ? entry.state || "ready" : "missing";
+const generationOf = (entry) => entry ? entry.generation || 0 : 0;
+const ready = () => stateOf(selected()) === "ready";
+const selectionKey = () => token && ready() ? token + " " + ui.agent + " " + generationOf(selected()) : null;
+function selectAgent(id) {
+  drafts.set(ui.agent, { draft: ui.draft, attempt: ui.attempt, messageError: ui.messageError });
+  ui.agent = id;
+  Object.assign(ui, drafts.get(id) || { draft: "", attempt: null, messageError: "" });
+  store.set("agent", id);
+  ui.open.clear(); ui.raw.clear(); ui.specDraft = null; ui.error = "";
+  view = null;
+  syncSelection(); render(true); refresh();
+}
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -287,8 +308,8 @@ function jsonBlock(key, value) {
     } }, icon(state === "done" ? DONE_ICON : COPY_ICON), el("span", { text: label })),
     el("span", { class: "sr-only", role: "status", "aria-live": "polite", text: state === "done" ? "JSON copied" : state === "failed" ? "Could not copy JSON" : "" }));
 }
-async function api(method, path, body) {
-  const res = await fetch(path, { method, headers: { authorization: "Bearer " + token, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
+async function api(method, path, body, signal) {
+  const res = await fetch(path, { method, signal, headers: { authorization: "Bearer " + token, ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 401) { token = null; store.drop("token"); render(); throw new Error("The console token was refused. Paste the link pnpm agents printed."); }
   if (!res.ok) { let message = res.statusText; try { message = (await res.json()).error || message; } catch {} const error = new Error(message); error.status = res.status; throw error; }
   return res.status === 204 ? null : res.json();
@@ -319,34 +340,88 @@ const plain = (node) => node.text !== undefined ? node.text : node.runs ? node.r
 // The stream being followed: which agent with which token, whether it is delivering,
 // and how to stop it.
 let following = { key: null, up: false, stop: () => {} };
-async function refresh() {
+let detailRequest = null, rosterRequest = null;
+function syncSelection() {
+  const key = selectionKey();
+  ui.reopening = !!ui.agent && !selected();
+  if (key === following.key) return;
+  following.stop();
+  if (detailRequest) detailRequest.abort();
+  detailRequest = null; view = null;
+  following = { key, up: false, stop: () => {} };
+  if (key) following.stop = follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token,
+    (next) => { if (selectionKey() !== key || following.key !== key) return; view = next; following.up = true; render(); },
+    () => { if (selectionKey() !== key || following.key !== key) return; following.up = false; refreshDetail(); });
+}
+async function refreshDetail() {
+  const key = selectionKey();
+  if (!key || following.up || detailRequest) return;
+  const controller = new AbortController();
+  detailRequest = controller;
   try {
-    if (token) {
-      list = await api("GET", "/api/agents");
-      // Fall back to the first agent only when nothing is selected. A selected agent
-      // missing from the list is mid save & reopen: keep the selection and say so,
-      // or the console would silently switch the operator to another agent.
-      if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
-      const present = ui.agent !== null && list.agents.some((a) => a.id === ui.agent);
-      ui.reopening = ui.agent !== null && !present;
-      const key = token && ui.agent ? token + " " + ui.agent : null;
-      // The server never re-pushes identical data, so a view GET that resolves after a
-      // newer stream push would overwrite it. Fetch the view only when the follower key
-      // is new or the stream is known down; while it delivers, its pushes are the truth.
-      if (key !== following.key || !following.up) {
-        const next = present ? await api("GET", "/api/agents/" + encodeURIComponent(ui.agent)) : null;
-        if (following.key !== key || !following.up) view = next;
-      }
-    }
-  } catch (error) { ui.error = error.message; }
-  const key = token && ui.agent ? token + " " + ui.agent : null;
-  if (key !== following.key) {
-    following.stop();
-    following = { key, up: false, stop: key ? follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token,
-      (next) => { if (following.key !== key) return; view = next; following.up = true; render(); },
-      () => { if (following.key !== key) return; following.up = false; refresh(); }) : () => {} };
-  }
-  render();
+    const next = await api("GET", "/api/agents/" + encodeURIComponent(ui.agent), undefined, controller.signal);
+    if (!controller.signal.aborted && selectionKey() === key && following.key === key && !following.up) { view = next; render(); }
+  } catch (error) {
+    if (!controller.signal.aborted && selectionKey() === key) { ui.error = error.message; render(); }
+  } finally { if (detailRequest === controller) detailRequest = null; }
+}
+// Roster polling never awaits a view or MCP. Even a hung detail request cannot
+// hide another agent's startup outcome or keep a cancelled generation on screen.
+async function refresh() {
+  if (!token || rosterRequest) { render(); return; }
+  const auth = token;
+  const controller = new AbortController();
+  rosterRequest = controller;
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const next = await api("GET", "/api/agents", undefined, controller.signal);
+    if (token !== auth) return;
+    const changed = JSON.stringify(list) !== JSON.stringify(next);
+    list = next;
+    if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
+    syncSelection();
+    if (changed) render();
+    void refreshDetail();
+  } catch (error) { if (token === auth) { ui.error = controller.signal.aborted ? "Cannot refresh agent status. Retrying…" : error.message; render(); } }
+  finally { clearTimeout(timeout); if (rosterRequest === controller) rosterRequest = null; }
+}
+async function startupAction(action) {
+  const entry = selected();
+  if (!entry || (action === "retry" ? stateOf(entry) !== "stopped" : stateOf(entry) !== "starting")) return;
+  const key = entry.id + "/" + generationOf(entry);
+  if (startupRequests.get(key)?.pending) return;
+  const state = { pending: true, text: action === "retry" ? "Requesting retry…" : "Requesting cancellation…" };
+  startupRequests.set(key, state);
+  updateStartupStatus();
+  try {
+    await api("POST", "/api/agents/" + encodeURIComponent(entry.id) + "/startup/" + action, { generation: generationOf(entry) });
+    state.text = action === "retry" ? "Retry accepted. Waiting for startup status." : "Cancellation accepted. Waiting for startup status.";
+  } catch (error) { state.text = "Request not confirmed. " + error.message; }
+  finally { state.pending = false; updateStartupStatus(); void refresh(); }
+}
+function updateStartupStatus() {
+  const state = startupRequests.get(ui.agent + "/" + generationOf(selected()));
+  const feedback = document.querySelector(".startup-feedback"), button = document.querySelector(".startup-action");
+  if (feedback) feedback.textContent = state ? state.text : "";
+  if (button) button.setAttribute("aria-disabled", String(!!state?.pending));
+}
+function startupPanel() {
+  const entry = selected(), state = stateOf(entry);
+  const title = state === "starting" ? "Starting agent" : state === "stopped" ? "Agent stopped" : state === "ready" ? "Loading agent" : ui.agent ? "Agent unavailable" : "No agents found";
+  const reason = state === "stopped" ? entry.reason : state === "starting" ? (entry.phase === "waiting-for-close" ? "Waiting for the previous attempt to close before starting." : "Opening the agent and checking its configured capabilities.") : state === "ready" ? "Waiting for this agent's view." : "Waiting for the host's agent roster. Other agents remain available in the selector.";
+  return el("div", { class: "page startup" }, el("main", {},
+    band(title),
+    el("section", { class: "card", "aria-label": "Agent startup" },
+      el("strong", { class: "mono", text: ui.agent ? "agents/" + ui.agent + "/" : "agents/" }),
+      el("div", { role: "status", text: reason }),
+      el("div", { class: "small", text: "Messages cannot be sent until this agent is ready. Your draft stays in this browser tab; it has not been queued." }),
+      el("div", { class: "startup-actions" },
+        state === "stopped" || state === "starting" ? el("button", { type: "button", class: "startup-action", "aria-disabled": "false", onclick: () => startupAction(state === "stopped" ? "retry" : "cancel"), text: state === "stopped" ? "Retry startup" : "Cancel startup" }) : null),
+      el("div", { class: "small startup-feedback", role: "status", "aria-live": "polite" })),
+    ui.tab === "timeline" && ui.agent ? el("form", { class: "card composer", onsubmit: (e) => { e.preventDefault(); } },
+      el("label", {}, "Draft for " + ui.agent, el("textarea", { rows: 3, "aria-label": "Message " + ui.agent, "aria-describedby": "startup-draft-note", text: ui.draft, oninput: (e) => { ui.draft = e.target.value; ui.attempt = null; }, onkeydown: (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" || e.key === "Enter" && !e.shiftKey && !e.isComposing) e.preventDefault(); } })),
+      el("button", { type: "button", class: "primary send", "aria-disabled": "true", text: "Send" }),
+      el("div", { class: "small", id: "startup-draft-note", style: "grid-column:1 / -1", text: "Not sent. Waiting for this agent to be ready." })) : null));
 }
 
 const ENV = { local: ["local", "DEVELOPMENT · local TaskFast server · no real money"], staging: ["staging", "STAGING · testnet funds"], prod: ["prod", "PRODUCTION · real money · every post and escrow spends USDC"] };
@@ -387,19 +462,20 @@ function taskCard(ref) {
 }
 
 function header() {
-  const op = view ? view.operator : null;
-  const waiting = view ? Object.values(view.events).filter((w) => w.kind === "admitted").length + op.messages.length : 0;
-  const [envClass, envText] = ENV[list ? list.env : "local"];
+  const op = ready() && view ? view.operator : null;
+  const waiting = op ? Object.values(view.events).filter((w) => w.kind === "admitted").length + op.messages.length : 0;
+  const [envClass, envText] = list ? ENV[list.env] : ["", "Environment pending · waiting for host"];
   const dark = document.documentElement.dataset.theme === "dark";
   // The brand robot carries the run state; the role square carries what the agent does.
   const ROLE = { poster: "flag", worker: "wrench", both: "both" };
   const me = list && list.agents.find((a) => a.id === ui.agent);
   const roleGlyph = ROLE[me && me.role] || ROLE.poster;
   const roleTitle = me && me.role ? me.role : "agent role";
+  const stateText = !ready() || !view ? (stateOf(me) === "starting" ? "Starting" : stateOf(me) === "stopped" ? "Stopped" : "Waiting for agent") : op.paused ? "Paused · " + waiting + " waiting" : "Running";
   return [
     el("div", { class: "banner " + envClass, role: "status" }, el("span", { text: envText }), el("span", { class: "host", text: location.host })),
     el("header", {}, el("div", { class: "row" },
-      el("span", { class: "brand" }, el("span", { class: "sq brand-sq" + (op && op.paused ? " paused" : ""), title: op && op.paused ? "Paused · " + waiting + " waiting" : "Running" }, pict("agent", 16)), "Agent console", el("span", { class: "sr-only", role: "status", text: op && op.paused ? "paused · " + waiting + " waiting" : "running" })),
+      el("span", { class: "brand" }, el("span", { class: "sq brand-sq" + (!op ? " unready" : op.paused ? " paused" : ""), title: stateText }, pict("agent", 16)), "Agent console", el("span", { class: "sr-only", role: "status", text: stateText.toLowerCase() })),
       el("nav", { "aria-label": "Console" },
         el("a", { href: "#", "aria-current": ui.tab === "timeline" ? "page" : null, onclick: (e) => { e.preventDefault(); ui.tab = "timeline"; render(); }, text: "Timeline" }),
         el("a", { href: "#", "aria-current": ui.tab === "briefing" ? "page" : null, onclick: (e) => { e.preventDefault(); ui.tab = "briefing"; render(); }, text: "Briefing" })),
@@ -407,9 +483,9 @@ function header() {
         el("span", { class: "rule" }),
         el("span", { class: "switcher" },
           el("span", { class: "sq you", title: roleTitle }, pict(roleGlyph, 15)),
-          el("select", { "aria-label": "Agent", onchange: (e) => { ui.agent = e.target.value; ui.attempt = null; ui.messageError = ""; store.set("agent", ui.agent); ui.open.clear(); ui.raw.clear(); ui.specDraft = null; refresh(); } },
+          el("select", { "aria-label": "Agent", onchange: (e) => selectAgent(e.target.value) },
             ui.reopening ? [el("option", { value: ui.agent, selected: true, text: ui.agent + " · reopening…" })] : [],
-            (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + " · " + a.role })))),
+            (list ? list.agents : []).map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + (a.role ? " · " + a.role : "") + (stateOf(a) === "ready" ? "" : " · " + stateOf(a)) })))),
         el("button", { class: "theme", "aria-label": dark ? "Switch to the light theme" : "Switch to the dark theme", title: dark ? "Switch to the light theme" : "Switch to the dark theme", onclick: () => {
           const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
           document.documentElement.dataset.theme = next;
@@ -668,6 +744,7 @@ function spendPanel() {
 }
 
 async function submitMessage(mode) {
+  if (!ready() || !view) { ui.messageError = "Not sent. Waiting for this agent to be ready."; updateMessageStatus(); return; }
   const text = ui.draft.trim();
   if (!text) return;
   // Identity includes the first mode and the owning agent, not whichever key retries it.
@@ -684,9 +761,14 @@ async function submitMessage(mode) {
       const textarea = document.querySelector("form.composer textarea");
       if (textarea) textarea.value = "";
     }
+    const saved = drafts.get(attempt.agent);
+    if (saved && saved.attempt === attempt && saved.draft === attempt.draft) drafts.set(attempt.agent, { draft: "", attempt: null, messageError: "" });
     await refresh();
   } catch (error) {
-    if (ui.attempt === attempt && ui.agent === attempt.agent) ui.messageError = "Message not confirmed. Retry keeps its ID and " + modeLabel(attempt.mode) + " mode. " + error.message;
+    const failure = "Message not confirmed. Retry keeps its ID and " + modeLabel(attempt.mode) + " mode. " + error.message;
+    if (ui.attempt === attempt && ui.agent === attempt.agent) ui.messageError = failure;
+    const saved = drafts.get(attempt.agent);
+    if (saved && saved.attempt === attempt) saved.messageError = failure;
   } finally { attempt.pending = false; render(); }
 }
 const modeLabel = (mode) => mode === "steer" ? "Steer" : "Follow-up";
@@ -694,7 +776,7 @@ function updateMessageStatus() {
   const status = document.querySelector(".message-status");
   if (status) { status.textContent = ui.messageError || (ui.attempt && ui.attempt.pending ? "Sending " + modeLabel(ui.attempt.mode) + "…" : ""); status.className = "message-status " + (ui.messageError ? "error" : "small"); }
   const send = document.querySelector("form.composer .send");
-  if (send) send.disabled = !!(ui.attempt && ui.attempt.pending);
+  if (send) send.setAttribute("aria-disabled", String(!ready() || !view || !!(ui.attempt && ui.attempt.pending)));
 }
 
 const promotionKey = (agent, requestId) => agent + "/" + requestId;
@@ -910,29 +992,44 @@ function unlock() {
     el("p", { class: "small", text: "Requests without this token, or from a page not served here, are refused. That stops other websites open in your browser from steering the agent or spending money. A new token is issued each time the host starts." }));
 }
 
-function render() {
+let renderedSelection = null;
+function render(force = false) {
+  const entry = selected();
+  const current = [token, ui.agent, stateOf(entry), generationOf(entry), entry?.phase, entry?.reason, !!view].join("/");
+  const changed = force || current !== renderedSelection;
   // Reconcile queue rows by ID before protecting the active editor. A stream push
   // must not hide a promotion or consume the composer's focus and selection.
   updateQueuedMessages();
   updateMessageStatus();
+  updateStartupStatus();
+  // Keep roster labels fresh even while the operator edits a protected draft.
+  const selector = document.querySelector('select[aria-label="Agent"]');
+  if (selector && list) {
+    const options = (ui.reopening ? [{ id: ui.agent, state: "missing" }] : []).concat(list.agents);
+    const signature = JSON.stringify(options);
+    if (selector.dataset.roster !== signature) {
+      selector.replaceChildren(...options.map((a) => el("option", { value: a.id, selected: a.id === ui.agent, text: a.id + (a.role ? " · " + a.role : "") + (stateOf(a) === "ready" ? "" : " · " + stateOf(a)) })));
+      selector.dataset.roster = signature;
+    }
+  }
   const activeTag = document.activeElement && document.activeElement.tagName;
   // Keep keyboard focus on stable queue controls as well as on the editor.
   const queue = document.querySelector("#queued-messages");
-  const timeline = token && view && !ui.reopening && ui.tab === "timeline";
-  if (timeline && queue && queue.contains(document.activeElement)) return;
+  const timeline = token && ready() && view && !ui.reopening && ui.tab === "timeline";
+  if (!changed && timeline && queue && queue.contains(document.activeElement)) return;
   // Briefing fields and inputs keep the old protection: never rebuild under them.
-  if ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "briefing")) return;
+  if (!changed && ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "briefing"))) return;
   // Queue and admission feedback update above without rebuilding a typed draft.
   // An empty composer keeps the existing full live refresh and gets focus back.
   const taHadFocus = activeTag === "TEXTAREA";
-  if (taHadFocus && ui.draft && timeline) return;
+  if (!changed && taHadFocus && ui.draft && ui.tab === "timeline") return;
   if (taHadFocus) ui.focusComposer = true;
+  renderedSelection = current;
   app.replaceChildren(...(!token ? [unlock()] :
-    !list || (!view && !ui.reopening) ? [el("div", { class: "unlock", text: ui.error || "Loading…" })] :
-    ui.reopening ? [...header(), el("div", { class: "page" },
-      el("div", { class: "note", role: "status", text: ui.agent + " is saving and reopening, so it is missing from the agent list for a moment. It stays selected here; its panels return when it reappears." }),
-      ui.error ? el("div", { class: "error", role: "alert", text: ui.error }) : null)] :
-    [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null, ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+    [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null,
+      !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+  updateStartupStatus();
+  if (activeTag === "SELECT" && changed) document.querySelector('select[aria-label="Agent"]')?.focus({ preventScroll: true });
   // The timeline opens at its newest turn, as a chat does.
   if (toEnd && view && ui.tab === "timeline") { toEnd = false; toNewest("auto"); }
   updateMessageStatus();
@@ -952,7 +1049,9 @@ function render() {
 addEventListener("keydown", (e) => {
   if (!e.defaultPrevented && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && token && view && ui.tab === "timeline") { e.preventDefault(); submitMessage("steer"); }
 });
+render();
 refresh();
+setInterval(() => { void refresh(); }, 1000);
 </script>
 </body>
 </html>

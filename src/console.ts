@@ -8,6 +8,7 @@ import { marketplacePrompt } from "./core/prompt.js";
 import { parseAgentSpec } from "./core/spec.js";
 import { buildTimeline } from "./core/timeline.js";
 import type { AgentSpec, Env } from "./core/types.js";
+import type { AgentRosterEntry, StartupAction } from "./console-lifecycle.js";
 
 // What the console needs from one running agent.
 export interface ConsoleAgent {
@@ -39,6 +40,10 @@ export interface ConsoleOptions {
   token: string;
   env: Env;
   agents(): ConsoleAgent[];
+  // Management remains available before an agent has a durable handle.
+  roster?(): AgentRosterEntry[];
+  // Schedules lifecycle intent without waiting for connection or cleanup.
+  startup?(request: StartupAction): boolean;
   // Event stream tuning; tests pass small values.
   coalesceMs?: number;
   pingMs?: number;
@@ -202,20 +207,35 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     if (req.method === "GET" && path === "/") return send(res, 200, PAGE, "text/html");
     if (!sameToken(req.headers.authorization, o.token)) return send(res, 401, { error: "missing or wrong console token" });
     if (req.method === "GET" && path === "/api/agents") {
-      return send(res, 200, { env: o.env, agents: o.agents().map(({ id, spec }) => ({ id, role: spec.role })) });
+      return send(res, 200, { env: o.env, agents: o.roster?.() ?? o.agents().map(({ id, spec }) => ({ id, role: spec.role })) });
     }
     const match = /^\/api\/agents\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(path);
     // A malformed percent-escape names no agent: not found, not a server error.
     let id: string | undefined;
     try { id = match ? decodeURIComponent(match[1]) : undefined; } catch { id = undefined; }
     const item = id === undefined ? undefined : o.agents().find((candidate) => candidate.id === id);
-    if (!item) return send(res, 404, { error: "not found" });
+    const entry = id === undefined ? undefined : o.roster?.().find((candidate) => candidate.id === id);
+    if (!item && !entry) return send(res, 404, { error: "not found" });
     const [, , action, arg] = match ?? [];
+    if (req.method === "POST" && action === "startup" && (arg === "retry" || arg === "cancel") && o.startup && entry) {
+      const generation = field(await readJson(req), "generation");
+      if (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 0) return send(res, 400, { error: "generation must be a nonnegative safe integer" });
+      if (generation !== entry.generation || !o.startup({ id: entry.id, generation, action: arg })) return send(res, 409, { error: "agent startup changed; refresh before trying again" });
+      return send(res, 202, { accepted: true });
+    }
+    if (!item || (entry && entry.state !== "ready")) return send(res, 409, { error: "agent is not ready" });
     // This one-shot read is not drained by closeStreams, so a fetch racing a spec-save
     // reopen can transiently 500; Pi's serialized queue keeps storage safe.
     if (req.method === "GET" && !action) return send(res, 200, await view(o.env, item));
     if (req.method === "GET" && action === "stream" && arg === undefined) return watch(item, res);
     const controls = item.agent.operator;
+    // Reading a body (or state) yields to a concurrent reopen. Never act through
+    // controls captured before that transition, even if the replacement is ready.
+    const stillReady = () => {
+      const now = o.roster?.().find((candidate) => candidate.id === id);
+      return (!entry || (now?.state === "ready" && now.generation === entry.generation))
+        && o.agents().some((candidate) => candidate.id === id && candidate.agent.operator === controls);
+    };
     if (req.method === "DELETE" && action === "messages" && arg !== undefined) {
       if (!validRequestId(arg)) return send(res, 400, { error: REQUEST_ID_PROBLEM });
       const result = await controls.withdraw(arg);
@@ -231,7 +251,9 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       // The page sends the text it rendered, so a stale render cannot remove the wrong order.
       const expected = field(await readJson(req), "expect");
       if (typeof expected !== "string") return send(res, 400, { error: "expect must be the current order text" });
+      if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
       if ((await controls.state()).orders[Number(arg)] !== expected) return send(res, 409, { error: "orders changed; refresh" });
+      if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
       await controls.removeOrder(Number(arg));
       return send(res, 204, "");
     }
@@ -239,6 +261,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       let spec: AgentSpec;
       try { spec = parseAgentSpec(await readJson(req)); }
       catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
+      if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
       await item.saveSpec(spec);
       return send(res, 204, "");
     }
@@ -255,6 +278,7 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     }
     if (arg !== undefined) return send(res, 404, { error: "not found" });
     const body = await readJson(req);
+    if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
     const problem = await act(controls, action, body);
     return problem === undefined ? send(res, 204, "") : send(res, problem === null ? 404 : 400, { error: problem ?? "not found" });
   }

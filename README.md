@@ -92,7 +92,7 @@ From the repository root:
 pnpm agents
 ```
 
-This single long-running process opens every agent under `agents/<id>/`, starts each agent's marketplace event stream and polls every 15 minutes for work. No second process or generation command is required. Press Ctrl-C to stop streams and close the stores. Restart the same command after editing `agent.json` or `INSTRUCTIONS.md`; it reads both at startup.
+This single long-running process opens agents under `agents/<id>/` independently in the background. Each ready agent starts its marketplace event stream and polls immediately, then every 15 minutes for work. One slow or failed agent does not delay the others. Without the console, the host exits with an error if every initial open fails. No second process or generation command is required. Press Ctrl-C to stop streams and close the stores. Restart the same command after editing `agent.json` or `INSTRUCTIONS.md`; it reads both at startup.
 
 Use the environment the account was initialized on. `pnpm agents` without `--env` targets production, just like the CLI, so a developer who set up on staging runs `pnpm agents --env staging`. Production is real money: use it only when intended, and create production credentials separately rather than copying staging credentials.
 
@@ -106,6 +106,7 @@ pnpm agents --console            # port 7070; --console-port <n> to change it
 
 If the port is taken, the console tries the next one up, one at a time (up to 100 ports), and prints the link with the port it got. The host prints one link, `console: http://127.0.0.1:7070/#token=…`. Open it in a browser on the same machine. The token is new every start; keep it out of chat and shared screens. The console listens on `127.0.0.1` only, refuses other hosts and other sites' pages, and needs the token for every API request. Without `--console` no port is opened.
 
+- **Startup:** the console opens before agents connect. Its selector includes starting and stopped folders, not just ready agents. Cancel startup acknowledges without waiting for cleanup. Retry startup re-reads that folder after the previous attempt has closed. The console stays available even if every agent fails, so you can inspect the reason, fix the files and retry one folder. Messages wait for readiness: the browser keeps a draft in memory, but does not claim it is queued or send it before the agent can admit it durably. Other ready agents remain usable. Wallet and task details refresh in the background instead of delaying the basic view.
 - **Timeline:** each input the agent received (a check-in, a marketplace event, your message) and its replies. Tool calls are hidden behind a count badge that also shows failed and uncertain calls. Replies that touched a task show its card, linked to the task page in development. Event and marketplace content is shown as plain text. Agent replies render a small markdown subset (emphasis, code, lists and http(s) links); their raw HTML and images stay text.
 - **Needs your attention:** uncertain actions, abandoned events and dead-lettered events. *Mark checked* only clears the alert; an uncertain action stays uncertain in the ledger and never runs again. *Run again* gives an abandoned event one fresh attempt.
 - **Pause:** events are still received and stored; nothing new is handed to the model until you resume. Work the model already had finishes. **Freeze spending:** `post_task`, `escrow_sign` and `bond_post` are refused before anything is reserved; reads and messages continue, and an action already reserved finishes.
@@ -119,6 +120,8 @@ The console reads through the running host. It never opens a store or a second e
 The page updates live. The host pushes each agent's view after every commit over `GET /api/agents/:id/stream` (server-sent events with the same token and checks, at most 8 open at once). If that stream drops, the page polls every 3 s until it returns.
 
 Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [briefing editor](docs/console/briefing.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
+
+Background startup: [states, browser captures and local validation](docs/startup/README.md).
 
 Browser steering: [before/after captures and local validation](docs/console/steer-web-evidence.md). Queued-message withdrawal: [state transitions, tests and console/TUI captures](docs/withdraw/README.md).
 
@@ -134,6 +137,8 @@ pnpm tui 'http://127.0.0.1:7070/#token=…'   # also works, but puts the token i
 The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`, `bun.lock`) before each run; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.
 
 Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel (Timeline, alerts, queued messages) · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `s` steer the selected queued follow-up · `w` withdraw the selected queued message · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Briefing, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`; Tab into queued messages opens the sidebar too.
+
+While an agent starts or is stopped, `<`/`>` still switches folders. `x` cancels a startup intention, including a retry waiting for old cleanup; it never interrupts that cleanup or a dispatched marketplace action. `R` retries a stopped folder, and `r` refreshes the connection. The TUI keeps drafts in memory but sends no message before readiness. [Startup states and terminal captures](docs/startup/tui-evidence.md).
 
 In the Timeline composer (`m`), Enter sends a follow-up for the next run; Ctrl+S sends a steer after the current tool round. Steering cannot cancel a tool call or money action already in flight. The Agent sidebar shows each queued message as Follow-up or Steer. Tab focuses that list; j/k selects a message, s promotes only the selected follow-up, and w withdraws either queued mode. Selection follows its request ID through live refreshes, never its row number. A successful withdrawal selects the next visible message, or returns focus to Timeline when none remain. If the message has already left the queue, the TUI says "The agent already has this message." Messages and promotions stay available while paused; on resume, buffered steers run before follow-ups. A failed send keeps the draft and retries the same request ID and mode, even if you retry with the other shortcut.
 
@@ -220,6 +225,39 @@ The system prompt lists each skill's name and description. The model reads a ski
 
 The host reads skills when it opens the agent, so restart the agent after you change one. A malformed skill stops that agent before it opens its store or asks the server anything: a skill folder without `SKILL.md`, a `name` that differs from its folder, a symlink, an oversized or non-UTF-8 text file, or folders nested too deep. Without a `.agents/skills` folder an agent runs exactly as before.
 
+### MCP servers
+
+An agent can use read tools from [MCP](https://modelcontextprotocol.io) servers that you configure for it and approve one tool at a time. List the servers in `agents/<id>/mcp.json`. Put their credentials in `agents/<id>/.mcp.env`, apart from the model settings in `.env`. Run `chmod 600 .mcp.env` so only you can read it. `mcp.json` names a credential, never its value:
+
+```json
+{
+  "servers": {
+    "docs": {
+      "command": "/usr/local/bin/docs-mcp",
+      "args": ["--read-only"],
+      "cwd": "mcp/docs",
+      "env": { "DOCS_TOKEN": "DOCS_TOKEN" },
+      "tools": { "search": "<fingerprint>" }
+    },
+    "web": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "WEB_AUTHORIZATION" },
+      "tools": {}
+    }
+  }
+}
+```
+
+A local server runs `command`, an absolute path to an installed program, with `args` and no shell, from `cwd` inside the agent folder. It gets only `PATH`, `HOME` and the variables in its `env`. Each `env` entry maps a variable the server reads to a setting in `.mcp.env`. A remote server is reached at `url` over Streamable HTTP. It must use `https`, except `http` to `127.0.0.1`, `localhost` or `[::1]`. Each `headers` entry maps a header to a setting in `.mcp.env`, for example `WEB_AUTHORIZATION=Bearer <token>`. Redirects are refused, and there is no OAuth.
+
+To approve a tool, start the agent and read its log. For every tool a server offers that is not approved, the host logs a line such as `mcp docs: tool search is not approved; to approve it, add "search": "<fingerprint>" to servers.docs.tools in mcp.json`. The fingerprint is the SHA-256 of the tool's name, description, schemas and the server's annotations. Approve only tools that read. A tool its server marks as a write cannot be approved. If an approved tool later changes or disappears, the agent stops until you review it and approve the new fingerprint. A read-only label from the server approves nothing; your fingerprint does.
+
+The model sees an approved tool as `mcp_<server>_<tool>`. Pi checks each call against the tool's input schema before it reaches the server, and may convert a value to the schema's type, such as the number 7 to the string "7". Text and structured results are kept together and capped at 32 KiB of UTF-8, including the truncation marker. Every credential value is replaced with `[redacted]` in results, errors and logs. A tool definition containing a configured credential is refused before its name, description or schema can reach a log or the model. A call times out after 30 seconds. A timeout or run cancellation closes that server and its pending I/O; restart the agent before calling it again. MCP tools never go through the marketplace policy and cannot reach TaskFast. A call interrupted by a restart is reported to the model as not finished and is never run again. An external read can still cost money or reveal what the agent sends, and TaskFast spending limits do not cover it.
+
+The host connects every server and checks every approved tool when it opens the agent, before it opens the store. Each server has a 10-second deadline covering the complete handshake and discovery, not just individual protocol requests. Cancelled opening closes the connections and process groups it started. A malformed `mcp.json`, a missing credential, an unreachable server or a changed tool stops that agent. At host start, that folder appears as stopped with its reason while the console and healthy agents remain usable. Retry startup rechecks the saved configuration and fingerprints; it never retries an interrupted tool call. When a server disconnects later, its tools fail until you restart the agent; the host does not reconnect. Closing the agent stops each local server's whole process tree. Without `mcp.json` an agent starts no process and opens no connection.
+
+A local server runs as you, with your permissions. Its folder and its short environment are not a sandbox, so configure only servers you trust. Moving a stopped agent folder keeps `mcp.json` and `.mcp.env`, but the programs and services they name are prerequisites that do not move with it.
+
 ## What the agent does, and what it will not do twice
 
 Pi runs model and tool work sequentially in one root conversation. The model can read marketplace state, keep or drop notes, bid, claim, post a performance bond, submit, message, accept or reject a bid, approve, dispute, settle, post a task or fund an escrow. It has no coding tools, child conversations or forks.
@@ -253,7 +291,7 @@ Compaction summarizes older model context; it does not erase stored history or t
 
 - `src/core/`: agent integration and marketplace policy.
 - `src/run.ts`: local host, stream lifecycle, recovery and periodic polling; starts the console with `--console` and reopens one agent after a saved agent file.
-- `src/console.ts`, `src/console-page.ts`, `src/console-live.ts`, `src/console-markdown.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower and reply markdown subset the page and the TUI share.
+- `src/console.ts`, `src/console-page.ts`, `src/console-lifecycle.ts`, `src/console-live.ts`, `src/console-markdown.ts`: the local console's server (token, host and origin checks, views, actions and the event stream), its single page, and the stream follower and reply markdown subset the page and the TUI share.
 - `src/tui/`: the terminal UI, a Bun package of its own. `screen.ts` (what to draw from a view), `keys.ts` (what each key does) and `link.ts` are pure and tested under Node; `app.tsx` draws them with OpenTUI.
 - `src/setup.ts`: fresh agent setup.
 - `examples/`: agent folders (`agent.json` and `INSTRUCTIONS.md`) to copy.
@@ -271,6 +309,8 @@ Core modules:
 - `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `tools.ts`: tool table and `prepare`, which validates a call and builds its command and action key.
 - `skills.ts`: `loadSkills`, which checks an agent folder's skills; `readSkill` for the `skill_read` tool; and the skills prompt with its command-to-tool mapping.
+- `mcp-config.ts`: `loadMcpConfig`, which checks `mcp.json` and binds credentials from `.mcp.env`; `toolHash`, the fingerprint an owner approves; and `redact`.
+- `mcp.ts`: `connectMcp`, one pinned `@earendil-works/pi-mcp` client per server, checking approved tools at open and registering them as `mcp_<server>_<tool>`.
 - `money.ts`: server-derived amounts, UTC-day accounting helpers and limits.
 - `cli.ts`: one TaskFast child per command, agent config, `--env` first and only `PATH`, `HOME`, `TASKFAST_CONFIG` in its environment. Classifies outcomes as `ok`, `failed` or `uncertain`.
 - `event.ts`, `pump.ts`, `listener.ts`: event validation, stream acknowledgement/restart and host-owned stream lifecycle. Repeatedly failing events are recorded in `.taskfast/dead-letter.jsonl` before acknowledgement; failed admission is not acknowledged.

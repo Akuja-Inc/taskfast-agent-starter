@@ -1,6 +1,7 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -13,6 +14,7 @@ import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
+import { CleanupError } from "./cleanup-error.js";
 import { example } from "../../test/example.js";
 
 const context = BACKGROUND_CONTEXT;
@@ -58,6 +60,26 @@ function hold() {
   const held = new Promise<void>((resolve) => { release = resolve; });
   return { held, release };
 }
+
+it("distinguishes failed opening cleanup while the real store remains owned", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "marketplace-cleanup-"));
+  dirs.push(dir);
+  const signal = new AbortController();
+  let release: (() => Promise<void>) | undefined;
+  try {
+    await expect(open({ dir, signal: signal.signal, openStorage: async (path) => {
+      const storage = await openAgentStorage(path);
+      release = () => storage.close(context);
+      signal.abort();
+      return new Proxy(storage, { get(target, key) {
+        if (key === "close") return async () => { throw new Error("injected cleanup failure"); };
+        const value: unknown = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      } });
+    } })).rejects.toBeInstanceOf(CleanupError);
+    await expect(openAgentStorage(join(dir, "state.sqlite"))).rejects.toThrow("already owned");
+  } finally { await release?.(); }
+});
 
 it("moves a stopped agent folder without losing notes, spend or completed business keys", async () => {
   const root = mkdtempSync(join(tmpdir(), "marketplace-move-"));
@@ -654,13 +676,84 @@ it("refuses a model's path outside the skill as a tool error, and the run carrie
   expect(kit.faux.state.callCount).toBe(2);
 });
 
-it("keeps an agent without skills as before: no skill tool, no skills prompt", async () => {
+it("uses an approved MCP read in the durable conversation, and refuses bad arguments before the server sees them", async () => {
+  const dir = agentFolder(false);
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { search: approve("search") } } });
+  const logs: string[] = [];
+  const kit = await open({ dir, log: (line) => logs.push(line) });
+  const requests: string[] = [];
+  kit.faux.setResponses([
+    seen(requests, fauxAssistantMessage([fauxToolCall("mcp_docs_search", { topic: "bonds" })], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage([fauxToolCall("mcp_docs_search", { query: "bond rules" }, { id: "second" })], { stopReason: "toolUse" })),
+    seen(requests, fauxAssistantMessage("Found it.")),
+  ]);
+  await run(kit.agent);
+  expect(logs).toContain("mcp docs: tools mcp_docs_search");
+  expect(requests[0]).toContain("Tools named mcp_* come from external servers your operator approved as reads");
+  // Pi checks the call against the server's schema; a call that does not fit never reaches it.
+  expect(requests[1]).not.toContain("results for");
+  expect(requests[1]).toContain("Validation failed for tool \\\"mcp_docs_search\\\"");
+  expect(requests[2]).toContain("results for bond rules");
+  expect(kit.calls).toEqual([["me"]]);
+});
+
+it("fails closed on a changed MCP tool before opening the store, and leaves no server running", async () => {
+  const dir = agentFolder(false);
+  const pidfile = join(dir, "grandchild.pid");
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], env: { FIXTURE_MODE: "MODE", FIXTURE_PIDFILE: "PIDFILE" }, tools: { search: approve("search") } } }, { MODE: "changed", PIDFILE: pidfile });
+  const calls: string[][] = [];
+  await expect(open({ dir, command: async (_runtime, args) => { calls.push(args); return me; } })).rejects.toThrow(/mcp docs: tool search \[redacted\] since you approved it/);
+  expect(calls).toEqual([]);
+  expect(existsSync(join(dir, "state.sqlite"))).toBe(false);
+  await expectGone(Number(readFileSync(pidfile, "utf8")));
+});
+
+it("keeps two agents' same-named servers apart: own process, own credential", async () => {
+  const kits = [];
+  for (const secret of ["first-token", "second-token"]) {
+    const dir = agentFolder(false);
+    writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], env: { DOCS_TOKEN: "DOCS_SECRET" }, tools: { env: approve("env") } } }, { DOCS_SECRET: secret });
+    kits.push(await open({ dir }));
+  }
+  const seenBy: string[][] = [[], []];
+  kits.forEach((kit, at) => kit.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("mcp_docs_env", {})], { stopReason: "toolUse" }),
+    seen(seenBy[at]!, fauxAssistantMessage("Done")),
+  ]));
+  await Promise.all(kits.map((kit) => run(kit.agent)));
+  for (const requests of seenBy) {
+    expect(requests[0]).toContain("[redacted]");
+    expect(requests[0]).not.toMatch(/first-token|second-token/);
+  }
+  await kits[0]!.agent.close();
+  kits[1]!.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_env", {}, { id: "after" })], { stopReason: "toolUse" }), fauxAssistantMessage("Still here")]);
+  await run(kits[1]!.agent);
+  expect(kits[1]!.faux.state.callCount).toBe(4);
+});
+
+it("abandons an MCP call a restart interrupted instead of running it again", async () => {
+  const dir = agentFolder(false);
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { slow: approve("slow") } } });
+  const first = await open({ dir });
+  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_slow", { ms: 60_000 })], { stopReason: "toolUse" })]);
+  await first.agent.ping();
+  await vi.waitFor(async () => expect(JSON.stringify((await first.agent.conversation.entries({ order: "descending" }, 5, undefined, context)).items)).toContain("mcp_docs_slow"), { timeout: 2000, interval: 20 });
+  await first.agent.close();
+  const second = await open({ dir });
+  const requests: string[] = [];
+  second.faux.setResponses([seen(requests, fauxAssistantMessage("Left it."))]);
+  await run(second.agent);
+  expect(requests[0]).toMatch(/Tool mcp_docs_slow was not started|abandoned|interrupted/i);
+});
+
+it("keeps an agent without skills or mcp.json as before: no skill or MCP tool, no extra prompt", async () => {
   const kit = await open({ dir: agentFolder(false) });
   const requests: string[] = [];
   kit.faux.setResponses([seen(requests, fauxAssistantMessage("Done"))]);
   await run(kit.agent);
   expect(requests[0]).not.toContain("skill_read");
   expect(requests[0]).not.toContain("Skills your operator installed");
+  expect(requests[0]).not.toContain("mcp_");
 });
 
 it("fails closed on a malformed skill before opening the store or asking the server anything", async () => {

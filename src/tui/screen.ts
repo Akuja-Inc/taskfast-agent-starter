@@ -1,5 +1,6 @@
 // What the terminal UI draws, worked out from one console view. Pure: no terminal,
 // no network. Imports from the host are types only, so Bun loads none of it.
+import type { AgentRosterEntry } from "../console-lifecycle.js";
 import type { ConsoleView } from "../console.js";
 import type { Call, Turn } from "../core/timeline.js";
 
@@ -18,6 +19,16 @@ const BANNER = {
   staging: { tone: "staging", text: "STAGING · testnet funds" },
   prod: { tone: "production", text: "PRODUCTION · real money · every post and escrow spends USDC" },
 } as const;
+export const environmentBanner = (env: ConsoleView["env"]) => BANNER[env];
+export function startupScreen(agent: AgentRosterEntry) {
+  return {
+    title: agent.state === "stopped" ? "Agent stopped" : agent.state === "starting" ? "Agent starting" : "Loading agent",
+    detail: agent.state === "stopped" ? clean(agent.reason) : agent.state === "starting" && agent.phase === "waiting-for-close"
+      ? "Waiting for the previous attempt to close. The store stays protected."
+      : agent.state === "starting" ? "Opening the agent. Other agents can keep running." : "Loading the durable agent view.",
+    action: agent.state === "stopped" ? "R retry startup" : agent.state === "starting" ? "x cancel startup" : "",
+  };
+}
 const TAG = { poll: "POLL", event: "EVENT", operator: "YOU", resume: "RESUME", other: "INPUT" } as const;
 // Which list a task joins, by the tool that touched it (as on the web page).
 const GROUP: Record<string, "POSTED" | "BIDDING" | "WORKING ON"> = {
