@@ -30,6 +30,16 @@ it("redacts synthetic credential values in raw text and structured results", () 
   );
 });
 
+it("redacts JSON-escaped credentials in structured data and raw JSON text", () => {
+  for (const secret of ['sec"ret', 'sec\\ret', "sec\nret"]) {
+    const encoded = JSON.stringify(secret).slice(1, -1);
+    const output = mcpOutput({ content: [{ type: "text", text: JSON.stringify({ secret }) }], structuredContent: { secret } }, [secret]);
+    expect(output).not.toContain(secret);
+    expect(output).not.toContain(encoded);
+    expect(output).toContain("[redacted]");
+  }
+});
+
 it("keeps normal text and omits direct and embedded image data", () => {
   expect(mcpOutput({ content: [
     { type: "text", text: "Preview:" },

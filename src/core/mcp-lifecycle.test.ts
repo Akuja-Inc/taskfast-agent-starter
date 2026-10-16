@@ -79,7 +79,25 @@ it("cancels a connection attempt while its HTTP handshake is pending", async () 
   await result;
 });
 
-it.skipIf(process.platform === "win32")("reaps the process group when a stdio parent exits before close", async () => {
+it("joins the same cleanup when callers close concurrently", async () => {
+  const script = `
+    setInterval(() => {}, 1000);
+    require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+      const m=JSON.parse(line); if(m.id===undefined)return;
+      const result=m.method==='initialize'?{protocolVersion:'2025-11-25',capabilities:{tools:{}},serverInfo:{name:'test',version:'1'}}:{tools:[]};
+      process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+String.fromCharCode(10));
+    });`;
+  const mcp = await connectMcp([{ name: "local", transport: "stdio", command: process.execPath, args: ["-e", script], cwd: tmpdir(), credentials: {}, tools: {} }], { log: () => {}, reserved: [] });
+  opened.push(mcp);
+  let finished = false;
+  const first = mcp.close().then(() => { finished = true; });
+  try {
+    await mcp.close();
+    expect(finished).toBe(true);
+  } finally { await first; }
+});
+
+it.skipIf(process.platform === "win32").each(["ignore", "inherit"])("reaps a crashed parent's descendants with %s pipes", async (stdio) => {
   const dir = mkdtempSync(join(tmpdir(), "mcp-crash-"));
   const file = join(dir, "child.pid");
   let pid: number | undefined;
@@ -90,7 +108,7 @@ it.skipIf(process.platform === "win32")("reaps the process group when a stdio pa
   const script = `
     const {spawn} = require('node:child_process');
     const {writeFileSync} = require('node:fs');
-    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {stdio: 'ignore'});
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {stdio: ${JSON.stringify(stdio)}});
     writeFileSync(process.argv[1], String(child.pid));
     require('node:readline').createInterface({input: process.stdin}).on('line', line => {
       const m = JSON.parse(line); if (m.id === undefined) return;
