@@ -1,0 +1,1 @@
+{"ok":false,"environment":"local","dry_run":false,"error":{"code":"usage","message":"usage: poster balance 1 < required bond 2500000 on token 0x20c0000000000000000000000000000000000000"},"security_warnings":[{"code":"custom_endpoints_allowed","message":"--allow-custom-endpoints is in effect; api_base=http://127.0.0.1:4123. Traffic will go to a non-well-known host."}]}

@@ -39,7 +39,7 @@ export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promis
     let file: string;
     try { file = parseWalletPasswordFile(rt.walletPasswordFile); }
     catch { return Promise.resolve({ outcome: "failed", error: "config: wallet password file must be an absolute path without NUL" }); }
-    if (args[0] === "post" || args[0] === "settle" || (args[0] === "escrow" && args[1] === "sign")) {
+    if (args[0] === "post" || args[0] === "settle" || (args[0] === "escrow" && args[1] === "sign") || (args[0] === "bond" && args[1] === "post")) {
       const delimiter = args.indexOf("--");
       const at = delimiter < 0 ? args.length : delimiter;
       commandArgs = [...args.slice(0, at), `--wallet-password-file=${file}`, ...args.slice(at)];

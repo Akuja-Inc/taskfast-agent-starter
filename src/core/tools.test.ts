@@ -50,12 +50,21 @@ describe("prepare", () => {
     expect(prepare("task_get", { task_id: T }).key).toBeNull();
   });
 
-  it("marks exactly the two tools that commit funds as money, each with a code-side amount source", () => {
+  it("marks exactly the three tools that commit funds as money, each with a code-side amount source", () => {
     const money = Object.entries(TOOLS).filter(([, t]) => t.kind === "money");
-    expect(money.map(([n, t]) => [n, t.amount])).toEqual([["post_task", "submissionFee"], ["escrow_sign", "bidPrice"]]);
+    expect(money.map(([n, t]) => [n, t.amount])).toEqual([["bond_post", "bondStake"], ["post_task", "submissionFee"], ["escrow_sign", "bidPrice"]]);
     expect(Object.values(TOOLS).filter((t) => t.kind !== "money").every((t) => t.amount === undefined)).toBe(true);
     // The model cannot hand escrow a price: the tool has no such field.
     expect(Object.keys(TOOLS.escrow_sign!.schema.properties)).toEqual(["task_id", "bid_id"]);
+    // A bond post can sign before it refuses, so its failures must stay uncertain.
+    expect(Object.entries(TOOLS).filter(([, t]) => t.kind === "money" && t.spendAfterPreflight === true).map(([n]) => n)).toEqual(["bond_post"]);
+  });
+
+  it("builds the worker commands", () => {
+    expect(prepare("task_claim", { task_id: T }).args).toEqual(["task", "claim", "--", T]);
+    expect(prepare("bond_post", { task_id: T }).args).toEqual(["bond", "post", "--", T]);
+    expect(prepare("bond_post", { task_id: T }).key).toBe(`bond:${T}`);
+    expect(Object.keys(TOOLS.bond_post!.schema.properties)).toEqual(["task_id"]);
   });
 
   it("builds the poster commands", () => {

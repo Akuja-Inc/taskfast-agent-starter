@@ -1,0 +1,11 @@
+GET /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/stake/quote?stake_source=operator_self body=null
+GET /config/network body=null
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"data": "0x70a0823100000000000000000000000019e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "from": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "to": "0x20c0000000000000000000000000000000000000"}, "latest"]}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"data": "0xdd62ed3e00000000000000000000000019e7e376e7c213b7e7e7e46cc70a5dd086daff2a0000000000000000000000001234567890abcdef1234567890abcdef12345678", "from": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "to": "0x20c0000000000000000000000000000000000000"}, "latest"]}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_chainId", "params": []}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionCount", "params": ["0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "pending"]}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_gasPrice", "params": []}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_estimateGas", "params": [{"data": "0x535aa08200000000000000000000000020c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002625a0000000000000000000000000000000004b7e9c1a2f3d4e5f8a9b0c1d2e3f4a5bd7cce30a0023d2224a079d61130a42649f862bdc02983629b3a678bbb88b9970", "from": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "to": "0x1234567890abcdef1234567890abcdef12345678"}]}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_sendRawTransaction", "params": ["<raw tx, redacted>"]}
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionReceipt", "params": ["0xabababababababababababababababababababababababababababababababab"]}
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/stake/report body={"stake_source": "operator_self", "tx_hash": "0xabababababababababababababababababababababababababababababababab"}

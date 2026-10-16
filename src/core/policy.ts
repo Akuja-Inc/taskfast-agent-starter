@@ -1,6 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader, type Tx } from "@earendil-works/pi-durable";
-import { runCli, type CliResult } from "./cli.js";
+import { runCli, type CliResult, type Outcome } from "./cli.js";
 import { amountOf, overLimit, today } from "./money.js";
 import { FROZEN, Operator } from "./operator.js";
 import { prepare, UUID } from "./tools.js";
@@ -159,14 +159,18 @@ export function marketplacePolicy(o: PolicyOptions) {
       let result: CliResult;
       try { result = await command(o.runtime, args); }
       catch (error) { result = { outcome: "uncertain", error: error instanceof Error ? error.message : String(error) }; }
+      // A money tool that can spend after its own preflight has no failure the kit can
+      // call known: the CLI may have signed before it refused, so a failure that would
+      // otherwise release the money stays uncertain and never repeats.
+      const outcome: Outcome = result.outcome === "failed" && spec.kind === "money" && spec.spendAfterPreflight === true ? "uncertain" : result.outcome;
       await commit(async (tx) => {
         const state = await tx.doc(Policy);
         const action = state.actions[key];
-        action.status = result.outcome === "ok" ? "done" : result.outcome;
+        action.status = outcome === "ok" ? "done" : outcome;
         action.at = now().toISOString();
-        if (result.outcome === "failed") state.spend[action.day] -= action.amount;
+        if (outcome === "failed") state.spend[action.day] -= action.amount;
       });
-      return result.outcome === "ok" ? result.data ?? null : { [result.outcome]: result.error ?? "" };
+      return outcome === "ok" ? result.data ?? null : { [outcome]: result.error ?? "" };
     });
   }
   return { initialize, execute, snapshot };

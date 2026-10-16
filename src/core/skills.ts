@@ -109,14 +109,14 @@ export function readSkill(skills: readonly Skill[], input: unknown): string {
 export const SKILL_COMMANDS: Record<string, string> = {
   "me": "me", "wallet balance": "wallet_balance", "discover": "discover", "task get": "task_get", "task list": "task_list",
   "bid list": "bid_list", "message list": "message_list", "task bids": "task_bids", "bid create": "bid_create",
-  "task claim": "task_claim", "task submit": "task_submit", "message send": "message_send", "post": "post_task",
+  "task claim": "task_claim", "bond post": "bond_post", "task submit": "task_submit", "message send": "message_send", "post": "post_task",
   "bid accept": "bid_accept", "bid reject": "bid_reject", "escrow sign": "escrow_sign", "task approve": "task_approve",
   "task dispute": "task_dispute", "settle": "settle",
 };
 // Commands the bundle names that no tool runs. Setup and event delivery belong to the
 // owner and the host; the rest need their own safety contract before they become tools.
 export const UNSUPPORTED_COMMANDS = [
-  "init", "config", "skills", "ping", "platform", "webhook", "events", "bond", "artifact", "payment", "review",
+  "init", "config", "skills", "ping", "platform", "webhook", "events", "artifact", "payment", "review",
   "dispute", "bid cancel", "task refuse", "task remedy", "task concede", "task retry-fee", "task cancel", "task edit",
   "task open", "task reopen", "task reassign", "task abort", "message conversations",
 ];
@@ -128,7 +128,8 @@ export function skillsPrompt(skills: readonly Skill[]): string {
     ...skills.map((skill) => `- ${skill.name}: ${skill.description}`),
     "",
     `Skills may be written for agents with a shell. You have no shell and no taskfast command; use your tools. ${Object.entries(SKILL_COMMANDS).map(([command, tool]) => `\`taskfast ${command}\` is ${tool}`).join(", ")}. task_submit takes a summary only, no artifacts.`,
-    `No tool runs ${UNSUPPORTED_COMMANDS.map((command) => `\`taskfast ${command}\``).join(", ")}. You work on your own, so never wait for help with one of those and never work around it: do not bid on or claim work that needs one, such as a task that requires a performance bond or file artifacts, and choose work your tools can finish. If work you already hold turns out to need one, keep a note of what was missing with remember, so your operator sees it.`,
+    "A stake-tier task (worth $1 or more) needs its performance bond first: task_claim is refused with bond_pending, then bond_post posts the bond and you claim again. The bond spends your wallet and counts against your spending limits until the task settles.",
+    `No tool runs ${UNSUPPORTED_COMMANDS.map((command) => `\`taskfast ${command}\``).join(", ")}. You work on your own, so never wait for help with one of those and never work around it: do not bid on or claim work that needs one, such as a task that requires file artifacts, and choose work your tools can finish. If work you already hold turns out to need one, keep a note of what was missing with remember, so your operator sees it.`,
     "Your tools' rules win over any skill: never repeat a write whose result was uncertain, escrow_sign included, and leave restarts, event polling and webhooks to the host.",
   ].join("\n");
 }

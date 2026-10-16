@@ -10,8 +10,10 @@ import { createHash } from "node:crypto";
 // agent's limits), memory (changes only the agent's notes).
 export type ToolKind = "read" | "write" | "money" | "memory";
 // A money tool must name where its amount comes from: the type will not compile without
-// one, so a charged command cannot be added without being counted.
-export type AmountSource = "bidPrice" | "submissionFee";
+// one, so a charged command cannot be added without being counted. bidPrice and
+// submissionFee are prices the server publishes; bondStake is the bond a task's quote
+// requires.
+export type AmountSource = "bidPrice" | "submissionFee" | "bondStake";
 interface ToolBase {
   description: string;
   schema: { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[] }>; required: string[]; additionalProperties: false };
@@ -21,8 +23,11 @@ export type ToolSpec =
   | (ToolBase & { kind: "read" | "memory"; amount?: never; key?: never })
   | (ToolBase & { kind: "write"; amount?: never; key(input: Record<string, unknown>): string })
   // For a money tool, where its amount comes from, always read from the server: the
-  // bid's price, or the platform's submission fee. Never free text from the model.
-  | (ToolBase & { kind: "money"; amount: AmountSource; key(input: Record<string, unknown>): string });
+  // bid's price, the platform's submission fee, or a task's quoted performance bond.
+  // Never free text from the model. spendAfterPreflight marks a command that can move
+  // funds after its own preflight and before a refusal: policy then records a failed
+  // dispatch as uncertain, because the CLI may have signed before it refused.
+  | (ToolBase & { kind: "money"; amount: AmountSource; key(input: Record<string, unknown>): string; spendAfterPreflight?: true });
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PRICE = /^\d{1,9}(\.\d{1,2})?$/;
@@ -82,6 +87,19 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "claim", "--", uuid(i.task_id, "task_id")],
     key: (i) => `claim:${uuid(i.task_id, "task_id")}`,
+  },
+  // A stake-tier task (worth $1 or more) needs this before task_claim can succeed. The
+  // CLI quotes the stake, approves the token if needed, posts TaskBond.post and reports,
+  // in one command. The deployment's task_bond_contract and default token are its own
+  // defaults, so no address comes from the model or from an agent setting.
+  bond_post: {
+    kind: "money",
+    description: "Post the performance bond a stake-tier task needs before you can claim it. Spends the stake the server quotes; the bond returns after clean settlement.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["bond", "post", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `bond:${uuid(i.task_id, "task_id")}`,
+    amount: "bondStake",
+    spendAfterPreflight: true,
   },
   task_submit: {
     kind: "write",

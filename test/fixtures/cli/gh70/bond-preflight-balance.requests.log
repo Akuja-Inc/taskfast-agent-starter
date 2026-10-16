@@ -1,0 +1,3 @@
+GET /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/stake/quote?stake_source=operator_self body=null
+GET /config/network body=null
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"data": "0x70a0823100000000000000000000000019e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "from": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "to": "0x20c0000000000000000000000000000000000000"}, "latest"]}

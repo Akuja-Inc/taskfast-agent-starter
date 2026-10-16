@@ -1,0 +1,2 @@
+GET /config/network body=null
+POST /rpc/testnet body={"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"data": "0x313ce567", "to": "0x20c0000000000000000000000000000000000000"}, "latest"]}
