@@ -53,6 +53,9 @@ const BID_STATUS = ["pending", "accepted_pending_escrow", "accepted", "rejected"
 const TASK_KIND = ["mine", "queue", "posted"];
 const MINE_STATUS = ["assigned", "in_progress", "under_review", "disputed", "remedied"];
 const DISCOVER_STATUS = ["open", "bidding"];
+const ASSIGNMENT = ["open", "direct"];
+// A list's next_cursor, which the server says to pass back unchanged and never build.
+const cursor = (v: unknown, n: string) => (typeof v === "string" && /^[\x21-\x7e]{1,1024}$/.test(v) ? v : bad(`${n} must be the next_cursor a previous page returned`));
 // The pickup windows the server accepts (Task.pickup_window_hours in the app).
 const PICKUP_HOURS = [1, 4, 12, 24, 72];
 const hours = (v: unknown, n: string) => (typeof v === "number" && PICKUP_HOURS.includes(v) ? String(v) : bad(`${n} must be one of ${PICKUP_HOURS.join(", ")}`));
@@ -62,6 +65,9 @@ const digest = (s: string) => createHash("sha256").update(s).digest("hex").slice
 
 const s = (description: string) => ({ type: "string", description });
 const obj = (properties: Schema["properties"], required: string[] = []): Schema => ({ type: "object", properties, required, additionalProperties: false });
+// Every page option a list takes: the cursor to continue from, and the page size.
+const PAGE = { cursor: s("next_cursor from the previous page, to read the next one"), limit: { type: "number", description: "page size, 1-100" } };
+const page = (i: Record<string, unknown>) => [...opt("cursor", i.cursor, cursor), ...opt("limit", i.limit, limit)];
 
 // Artifacts are files the kit writes: text the model writes, or an image an approved MCP
 // tool returned, which code saved under .pi-state/media and named by a media: handle.
@@ -131,8 +137,21 @@ export const TOOLS: Record<string, ToolSpec> = {
   discover: {
     kind: "read",
     description: "Browse open tasks on the marketplace.",
-    schema: obj({ status: { type: "string", enum: DISCOVER_STATUS, description: "open (taking bids) or bidding (has bids, none accepted); both when omitted" }, capability: s("capability filter"), budget_min: s("minimum budget, e.g. 10.00"), budget_max: s("maximum budget"), limit: { type: "number", description: "1-100" } }),
-    args: (i) => ["discover", ...opt("status", i.status, oneOf(DISCOVER_STATUS)), ...opt("capability", i.capability, word), ...opt("budget-min", i.budget_min, money), ...opt("budget-max", i.budget_max, money), ...opt("limit", i.limit, limit)],
+    // capability stays one string, as stored calls hold it; commas give the CLI one
+    // --capability per tag.
+    schema: obj({
+      status: { type: "string", enum: DISCOVER_STATUS, description: "open (taking bids) or bidding (has bids, none accepted); both when omitted" },
+      assignment_type: { type: "string", enum: ASSIGNMENT, description: "open auctions, or direct invitations to you; both when omitted" },
+      capability: s("capability tag, or several separated by commas: a task must require them all"),
+      budget_min: s("minimum budget, e.g. 10.00"),
+      budget_max: s("maximum budget"),
+      ...PAGE,
+    }),
+    args: (i) => [
+      "discover", ...opt("status", i.status, oneOf(DISCOVER_STATUS)), ...opt("assignment-type", i.assignment_type, oneOf(ASSIGNMENT)),
+      ...(i.capability === undefined ? [] : String(i.capability).split(",").map((tag) => `--capability=${word(tag.trim(), "capability")}`)),
+      ...opt("budget-min", i.budget_min, money), ...opt("budget-max", i.budget_max, money), ...page(i),
+    ],
   },
   task_get: { kind: "read", description: "Full detail of one task.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["task", "get", "--", uuid(i.task_id, "task_id")] },
   task_list: {
@@ -141,20 +160,20 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({
       kind: { type: "string", enum: TASK_KIND, description: "mine: tasks assigned to you (the default); queue: assigned but not yet claimed; posted: tasks you posted" },
       status: { type: "string", enum: MINE_STATUS, description: "only with kind mine; omit it for all your active tasks" },
-      limit: { type: "number", description: "1-100" },
+      ...PAGE,
     }),
     args: (i) => {
       if (i.status !== undefined && i.kind !== undefined && i.kind !== "mine") bad("status filters only kind mine");
-      return ["task", "list", ...opt("kind", i.kind, oneOf(TASK_KIND)), ...opt("status", i.status, oneOf(MINE_STATUS)), ...opt("limit", i.limit, limit)];
+      return ["task", "list", ...opt("kind", i.kind, oneOf(TASK_KIND)), ...opt("status", i.status, oneOf(MINE_STATUS)), ...page(i)];
     },
   },
   bid_list: {
     kind: "read",
     description: "Bids you have placed.",
-    schema: obj({ status: { type: "string", enum: BID_STATUS } }),
-    args: (i) => ["bid", "list", ...opt("status", i.status, oneOf(BID_STATUS))],
+    schema: obj({ status: { type: "string", enum: BID_STATUS }, ...PAGE }),
+    args: (i) => ["bid", "list", ...opt("status", i.status, oneOf(BID_STATUS)), ...page(i)],
   },
-  message_list: { kind: "read", description: "Messages on one task.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["message", "list", "--", uuid(i.task_id, "task_id")] },
+  message_list: { kind: "read", description: "Messages on one task.", schema: obj({ task_id: s("task UUID"), ...PAGE }, ["task_id"]), args: (i) => ["message", "list", ...page(i), "--", uuid(i.task_id, "task_id")] },
 
   bid_create: {
     kind: "write",
@@ -212,8 +231,8 @@ export const TOOLS: Record<string, ToolSpec> = {
   task_bids: {
     kind: "read",
     description: "Bids received on one of your tasks.",
-    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
-    args: (i) => ["task", "bids", "--", uuid(i.task_id, "task_id")],
+    schema: obj({ task_id: s("task UUID"), ...PAGE }, ["task_id"]),
+    args: (i) => ["task", "bids", ...page(i), "--", uuid(i.task_id, "task_id")],
   },
 
   // A post commits no budget, which is paid later through escrow_sign; it charges the
