@@ -69,6 +69,8 @@ const cursor = (v: unknown, n: string) => (typeof v === "string" && /^[\x21-\x7e
 // The pickup windows the server accepts (Task.pickup_window_hours in the app).
 const PICKUP_HOURS = [1, 4, 12, 24, 72];
 const hours = (v: unknown, n: string) => (typeof v === "number" && PICKUP_HOURS.includes(v) ? String(v) : bad(`${n} must be one of ${PICKUP_HOURS.join(", ")}`));
+// A task's review or remedy window (TaskCreateRequest: 1 to 72 hours).
+const windowHours = (v: unknown, n: string) => (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 72 ? String(v) : bad(`${n} must be 1 to 72 hours`));
 const limit = (v: unknown, n: string) => (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 100 ? String(v) : bad(`${n} must be 1 to 100`));
 const money = (v: unknown, n: string) => (typeof v === "string" && PRICE.test(v) ? v : bad(`${n} must be a decimal amount like "40.00"`));
 const digest = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -324,6 +326,43 @@ export const TOOLS: Record<string, ToolSpec> = {
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "open", "--", uuid(i.task_id, "task_id")],
     key: (i) => `open:${uuid(i.task_id, "task_id")}`,
+  },
+  // Each different edit is its own action, so a task can be edited more than once.
+  task_edit: {
+    kind: "write",
+    description: "Change a task of yours that has no accepted bid yet (pending evaluation, open or bidding). The task goes back to evaluation and every pending bid on it is withdrawn.",
+    schema: obj({
+      task_id: s("task UUID"),
+      title: s("new title"),
+      description: s("new description"),
+      budget_max: s('new most you will pay, e.g. "40.00"'),
+      review_window_hours: { type: "number", description: "hours you have to dispute a submission, 1-72" },
+      remedy_window_hours: { type: "number", description: "hours the worker has to remedy a dispute, 1-72" },
+    }, ["task_id"]),
+    args: (i) => {
+      const changes = [
+        ...opt("title", i.title, (v, n) => text(v, n, 200)), ...opt("description", i.description, text), ...opt("budget-max", i.budget_max, money),
+        ...opt("review-window-hours", i.review_window_hours, windowHours), ...opt("remedy-window-hours", i.remedy_window_hours, windowHours),
+      ];
+      return changes.length ? ["task", "edit", ...changes, "--", uuid(i.task_id, "task_id")] : bad("task_edit needs at least one field to change");
+    },
+    key: (i) => `edit:${uuid(i.task_id, "task_id")}:${digest(JSON.stringify([i.title, i.description, i.budget_max, i.review_window_hours, i.remedy_window_hours]))}`,
+  },
+  task_cancel: {
+    kind: "write",
+    description: "Cancel a task of yours before work starts (open, bidding, assigned, unassigned, awaiting stake or abandoned). Any escrow returns to you.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "cancel", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `cancel:${uuid(i.task_id, "task_id")}`,
+  },
+  // ponytail: once per task. A task abandoned a second time after a reopen cannot be
+  // reopened again; key it by the abandonment if that ever matters.
+  task_reopen: {
+    kind: "write",
+    description: "Reopen a task of yours that was abandoned (its execution deadline passed) so it takes new bids.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "reopen", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `reopen:${uuid(i.task_id, "task_id")}`,
   },
   // bid_accept and bid_reject run on the bid alone but keep task_id in their schema:
   // stored conversations hold calls with it, and recovery must still accept them.
