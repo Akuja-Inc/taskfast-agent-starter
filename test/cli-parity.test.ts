@@ -22,7 +22,7 @@ const BEFORE: Record<string, ToolSpec> = {
 
 describe("tool and CLI parity", () => {
   it("reads the captured CLI's commands, its own options and their allowed values", () => {
-    expect(capture.version).toBe("taskfast 0.19.8");
+    expect(capture.version).toBe("taskfast 0.20.0");
     expect(surface.get("bid list")!.options.get("status")).toEqual(["pending", "accepted-pending-escrow", "accepted", "rejected", "withdrawn"]);
     expect(surface.get("discover")!.options.get("status")).toEqual(["open", "bidding"]);
     expect(surface.get("task list")!.options.get("kind")).toEqual(["mine", "queue", "posted"]);

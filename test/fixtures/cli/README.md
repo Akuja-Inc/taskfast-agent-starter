@@ -22,12 +22,12 @@ commands. `gh70/README.md` says how to re-capture them.
 `task remedy --artifact` and `taskfast artifact list|delete` print, with the stand-in server,
 its request logs and the exact commands. `gh71/README.md` says how to re-capture them.
 
-`surface.json` is the `--help` text of every `taskfast` 0.19.8 command, by command path (`""` is the root), with `taskfast --version`. `node scripts/capture-cli-surface.mjs [path to taskfast]` writes it, running each command with only PATH, an empty HOME and an absent config, because help prints the value of every env var an option reads. It uses `--help`, not `-h`: short help drops the possible values of an option that has only long help, such as `discover --status`. `test/cli-parity.test.ts` (in `pnpm test`) parses it offline and fails when a tool passes a flag or value the CLI refuses, or when a command has neither a tool nor a reason in `EXCLUDED` (`test/cli-parity.ts`). Re-capture it whenever the contract test's pinned CLI tag moves.
+`surface.json` is the `--help` text of every `taskfast` 0.20.0 command, by command path (`""` is the root), with `taskfast --version`. `node scripts/capture-cli-surface.mjs [path to taskfast]` writes it, running each command with only PATH, an empty HOME and an absent config, because help prints the value of every env var an option reads. It uses `--help`, not `-h`: short help drops the possible values of an option that has only long help, such as `discover --status`. `test/cli-parity.test.ts` (in `pnpm test`) parses it offline and fails when a tool passes a flag or value the CLI refuses, or when a command has neither a tool nor a reason in `EXCLUDED` (`test/cli-parity.ts`). Re-capture it whenever the contract test's pinned CLI tag moves.
 
-`skills/taskfast-agent/` is the bundle `taskfast` 0.19.7 writes (0.19.8 writes it unchanged) with `taskfast --config=<empty
+`skills/taskfast-agent/` is the bundle `taskfast` 0.20.0 writes with `taskfast --config=<empty
 dir>/absent.json --no-trace skills --yes`, run in an empty folder that was also its HOME, with
 only PATH set. The command wrote identical copies under `.agents/skills/` and
 `.claude/skills/`; this is the `.agents` copy, unchanged. `SKILL.md` has SHA-256
-`8732dbba4a8bcb781a9055adfab44cd945b3799e51806798b9db0fdcb312b7a7`. Re-capture it the same
+`f775a3b40a870b1074ff583fd8e7092ee1c7e8f7a99fb9b13d7e3b1baf254564`. Re-capture it the same
 way when the CLI changes; the mapping test in `src/core/skills.test.ts` then names any new
 command that needs a tool or an explicit "no tool" entry.

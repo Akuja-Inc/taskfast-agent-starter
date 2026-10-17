@@ -1,2 +1,4 @@
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts/uploads body={"content_type":"application/json","filename":"results.json","size_bytes":20}
 POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts part={"filename": "results.json", "content_type": "application/json", "size": 20}
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts/uploads body={"content_type":"text/csv","filename":"data.csv","size_bytes":8}
 POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts part={"filename": "data.csv", "content_type": "text/csv", "size": 8}

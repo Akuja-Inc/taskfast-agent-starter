@@ -1,6 +1,6 @@
 # Captured artifact output (gh#71)
 
-Real stdout of the `taskfast` 0.19.7 binary (the version this kit pins), run with
+Real stdout of the `taskfast` 0.20.0 binary (the version this kit pins), run with
 `--env local` against `stand-in-server.py` in this folder. The server answers the shapes
 `test/fixtures/openapi.yaml` documents, so nothing here touches a marketplace account.
 
@@ -8,6 +8,12 @@ Every `<name>.json` is the CLI's own envelope, unchanged. Every `<name>.requests
 what the stand-in server received during that command; for an upload it records the
 multipart part's filename, content type and size. That is how a capture shows which
 uploads landed before a refusal.
+
+Since 0.20.0 (taskfast-cli#193) each upload first asks `POST /tasks/{id}/artifacts/uploads`
+for a presigned PUT. The stand-in answers 404, so under `--env local` the CLI falls back to
+the multipart POST, and each upload logs both requests. On staging and production the CLI
+puts the bytes straight to R2 and never falls back; these captures do not exercise that
+path.
 
 | Capture | Command | Exit | What it shows |
 |---|---|---|---|
