@@ -59,7 +59,7 @@ The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins an
 
 ### The server contract
 
-No other repository imports this kit. `test/tools-contract.test.ts` checks the tool enums against `test/fixtures/openapi.yaml`, the spec that the taskfast-cli release named in that test vendors and checks against the live server. When a newer CLI release changes the spec, copy it over, update the tag and hash in the test, and fix any tool that no longer matches.
+No other repository imports this kit. `test/tools-contract.test.ts` checks the tool enums against `test/fixtures/openapi.yaml`, the spec that the taskfast-cli release named in that test vendors and checks against the live server. When a newer CLI release changes the spec, copy it over, update the tag and hash in the test, and fix any tool that no longer matches. When the pinned tag moves, also re-capture `test/fixtures/cli/surface.json` with `node scripts/capture-cli-surface.mjs`; the parity test (`test/cli-parity.test.ts`) then names any flag, value or command the tools and the CLI disagree on, and every command without a tool needs a reason in `EXCLUDED` (`test/cli-parity.ts`).
 
 The runtime is Pi Durable; `durable-actors` and its Bun build are no longer used, so its old pinning and bump rules no longer apply. The Pi packages are experimental and pinned exactly to 1.2.0. Do not float versions. Bump them on their own, never as part of another change, and verify persistence, replay safety and provider support at any new pin. The one exception is the PR that replaced `durable-actors` with Pi (#9), which also moved pnpm 10 to 12 and added wallet unlock files and folder portability.
 

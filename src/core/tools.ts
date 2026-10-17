@@ -46,6 +46,13 @@ const text = (v: unknown, name: string, max = 4000) =>
   typeof v === "string" && v.trim() && v.length <= max ? v : bad(`${name} must be non-empty text up to ${max} characters`);
 const word = (v: unknown, name: string) => (typeof v === "string" && /^[a-z0-9_-]{1,40}$/i.test(v) ? v : bad(`${name} must be a single word`));
 const opt = (name: string, v: unknown, check: (v: unknown, n: string) => string) => (v === undefined ? [] : [`--${name}=${check(v, name)}`]);
+// A status filter the model names in the server's words (accepted_pending_escrow), which
+// the CLI's argument parser only takes in kebab case (accepted-pending-escrow).
+const oneOf = (values: string[]) => (v: unknown, n: string) => (typeof v === "string" && values.includes(v) ? v.replaceAll("_", "-") : bad(`${n} must be one of ${values.join(", ")}`));
+const BID_STATUS = ["pending", "accepted_pending_escrow", "accepted", "rejected", "withdrawn"];
+const TASK_KIND = ["mine", "queue", "posted"];
+const MINE_STATUS = ["assigned", "in_progress", "under_review", "disputed", "remedied"];
+const DISCOVER_STATUS = ["open", "bidding"];
 // The pickup windows the server accepts (Task.pickup_window_hours in the app).
 const PICKUP_HOURS = [1, 4, 12, 24, 72];
 const hours = (v: unknown, n: string) => (typeof v === "number" && PICKUP_HOURS.includes(v) ? String(v) : bad(`${n} must be one of ${PICKUP_HOURS.join(", ")}`));
@@ -124,21 +131,28 @@ export const TOOLS: Record<string, ToolSpec> = {
   discover: {
     kind: "read",
     description: "Browse open tasks on the marketplace.",
-    schema: obj({ status: s("task status filter"), capability: s("capability filter"), budget_min: s("minimum budget, e.g. 10.00"), budget_max: s("maximum budget"), limit: { type: "number", description: "1-100" } }),
-    args: (i) => ["discover", ...opt("status", i.status, word), ...opt("capability", i.capability, word), ...opt("budget-min", i.budget_min, money), ...opt("budget-max", i.budget_max, money), ...opt("limit", i.limit, limit)],
+    schema: obj({ status: { type: "string", enum: DISCOVER_STATUS, description: "open (taking bids) or bidding (has bids, none accepted); both when omitted" }, capability: s("capability filter"), budget_min: s("minimum budget, e.g. 10.00"), budget_max: s("maximum budget"), limit: { type: "number", description: "1-100" } }),
+    args: (i) => ["discover", ...opt("status", i.status, oneOf(DISCOVER_STATUS)), ...opt("capability", i.capability, word), ...opt("budget-min", i.budget_min, money), ...opt("budget-max", i.budget_max, money), ...opt("limit", i.limit, limit)],
   },
   task_get: { kind: "read", description: "Full detail of one task.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["task", "get", "--", uuid(i.task_id, "task_id")] },
   task_list: {
     kind: "read",
     description: "Tasks you are involved in.",
-    schema: obj({ kind: s("which collection, e.g. mine or assigned"), status: s("status filter"), limit: { type: "number", description: "1-100" } }),
-    args: (i) => ["task", "list", ...opt("kind", i.kind, word), ...opt("status", i.status, word), ...opt("limit", i.limit, limit)],
+    schema: obj({
+      kind: { type: "string", enum: TASK_KIND, description: "mine: tasks assigned to you (the default); queue: assigned but not yet claimed; posted: tasks you posted" },
+      status: { type: "string", enum: MINE_STATUS, description: "only with kind mine; omit it for all your active tasks" },
+      limit: { type: "number", description: "1-100" },
+    }),
+    args: (i) => {
+      if (i.status !== undefined && i.kind !== undefined && i.kind !== "mine") bad("status filters only kind mine");
+      return ["task", "list", ...opt("kind", i.kind, oneOf(TASK_KIND)), ...opt("status", i.status, oneOf(MINE_STATUS)), ...opt("limit", i.limit, limit)];
+    },
   },
   bid_list: {
     kind: "read",
     description: "Bids you have placed.",
-    schema: obj({ status: { type: "string", enum: ["pending", "accepted_pending_escrow", "accepted", "rejected", "withdrawn"] } }),
-    args: (i) => ["bid", "list", ...opt("status", i.status, word)],
+    schema: obj({ status: { type: "string", enum: BID_STATUS } }),
+    args: (i) => ["bid", "list", ...opt("status", i.status, oneOf(BID_STATUS))],
   },
   message_list: { kind: "read", description: "Messages on one task.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["message", "list", "--", uuid(i.task_id, "task_id")] },
 
