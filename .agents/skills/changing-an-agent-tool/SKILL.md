@@ -21,7 +21,7 @@ Each entry in `TOOLS` (`src/core/tools.ts`) maps a marketplace tool to a CLI com
 
 ## 1. Check the command exists
 
-Run `taskfast <command> --help` with the CLI version the kit requires (0.19.0 or later). Note every option the tool will pass, and what the command prints on success. If the command is new or its output shape changed, re-capture a fixture in `test/fixtures/cli/` (its README says how) and parse it in `test/cli-captures.test.ts`.
+Run `taskfast <command> --help` with the CLI version the kit requires (0.20.0 or later). Note every option the tool will pass, and what the command prints on success. If the command is new or its output shape changed, re-capture a fixture in `test/fixtures/cli/` (its README says how) and parse it in `test/cli-captures.test.ts`.
 
 ## 2. Pick the kind
 

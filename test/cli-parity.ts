@@ -75,8 +75,6 @@ export const SAMPLES: Record<string, Record<string, unknown> | Record<string, un
   task_open: { task_id: T },
   task_edit: { task_id: T, title: "Logo", description: "A logo", budget_max: "50.00", review_window_hours: 24, remedy_window_hours: 48 },
   task_cancel: { task_id: T },
-  // The 0.19.8 help says reopen flips a direct task back to assigned; taskfast-cli#196
-  // corrected the text after this capture: it reopens an abandoned task for new bids.
   task_reopen: { task_id: T },
   bid_accept: { task_id: T, bid_id: B },
   bid_reject: { task_id: T, bid_id: B, reason: "Too high" },

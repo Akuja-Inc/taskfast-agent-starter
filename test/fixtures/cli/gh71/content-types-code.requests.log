@@ -1,4 +1,7 @@
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts/uploads body={"content_type":"application/xml","filename":"data.xml","size_bytes":9}
 POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts part={"filename": "data.xml", "content_type": "application/xml", "size": 9}
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts/uploads body={"content_type":"text/css","filename":"style.css","size_bytes":13}
 POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts part={"filename": "style.css", "content_type": "text/css", "size": 13}
+POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts/uploads body={"content_type":"application/javascript","filename":"app.js","size_bytes":15}
 POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/artifacts part={"filename": "app.js", "content_type": "application/javascript", "size": 15}
 POST /tasks/4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b/submit body={"artifact_ids":["550e8400-e29b-41d4-a716-446655440001","550e8400-e29b-41d4-a716-446655440002","550e8400-e29b-41d4-a716-446655440003"],"summary":"Delivered"}

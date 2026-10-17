@@ -7,7 +7,7 @@ import { ownUploads } from "../src/core/tools.js";
 
 // The money parsers against what the real taskfast binary prints (see
 // test/fixtures/cli/README.md), not against output this package invented: 0.19.0 for the
-// bid list and platform config, 0.19.7 for the gh70 bond and gh71 artifact captures.
+// bid list and platform config, 0.19.7 for the gh70 bond captures, 0.20.0 for the gh71 artifact captures.
 const capture = (name: string) => JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "cli", `${name}.json`), "utf8")) as { ok: boolean; data: unknown };
 const asRead = (name: string) => async (): Promise<CliResult> => ({ outcome: "ok", data: capture(name).data as never });
 
