@@ -25,7 +25,10 @@ describe("prepare", () => {
     ["a task id that is not a UUID", "task_claim", { task_id: "t-1" }, /task_id must be a UUID/],
     ["a price with letters", "bid_create", { task_id: T, price: "40 USD" }, /decimal amount/],
     ["a limit over 100", "discover", { limit: 500 }, /1 to 100/],
-    ["a status with spaces", "task_list", { status: "in progress" }, /single word/],
+    ["a status with spaces", "task_list", { status: "in progress" }, /must be one of assigned, in_progress/],
+    ["a task collection the CLI does not list", "task_list", { kind: "assigned" }, /must be one of mine, queue, posted/],
+    ["a status filter on another collection", "task_list", { kind: "posted", status: "assigned" }, /status filters only kind mine/],
+    ["a discover status the CLI does not list", "discover", { status: "assigned" }, /must be one of open, bidding/],
     ["an empty summary", "task_submit", { task_id: T, summary: "  " }, /non-empty text/],
     ["an unknown field", "task_get", { task_id: T, env: "prod" }, /has no field env/],
     ["an unknown tool", "withdraw_all", {}, /no tool named withdraw_all/],
@@ -35,8 +38,9 @@ describe("prepare", () => {
     expect(() => prepare(tool, input)).toThrow(why);
   });
 
-  it("passes a bid status filter through (the values are checked against the contract in test/tools-contract.test.ts)", () => {
-    expect(prepare("bid_list", { status: "accepted_pending_escrow" }).args).toEqual(["bid", "list", "--status=accepted_pending_escrow"]);
+  it("passes a status filter in the CLI's kebab case (the server's words are checked against the contract in test/tools-contract.test.ts)", () => {
+    expect(prepare("bid_list", { status: "accepted_pending_escrow" }).args).toEqual(["bid", "list", "--status=accepted-pending-escrow"]);
+    expect(prepare("task_list", { kind: "mine", status: "under_review" }).args).toEqual(["task", "list", "--kind=mine", "--status=under-review"]);
   });
 
   it("keys each write so it can run once: per task, or per task and message text", () => {

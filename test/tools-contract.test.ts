@@ -5,7 +5,7 @@ import { TOOLS } from "../src/core/tools.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):
-// spec/openapi.yaml at tag taskfast-cli-v0.19.6, sha256 51c0bba22cff86dd9c06962064af583993852cfbb5873212262d37bc5b232a47.
+// spec/openapi.yaml at tag taskfast-cli-v0.19.8, sha256 51c0bba22cff86dd9c06962064af583993852cfbb5873212262d37bc5b232a47.
 // To refresh, copy that file from the newest CLI release and update the tag and hash here:
 //   curl -fL -o test/fixtures/openapi.yaml https://raw.githubusercontent.com/Akuja-Inc/taskfast-cli/<tag>/spec/openapi.yaml
 const OPENAPI = join(import.meta.dirname, "fixtures", "openapi.yaml");
