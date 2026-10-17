@@ -13,7 +13,8 @@ export const MEDIA_TYPES: Record<string, { ext: string; magic: (b: Buffer) => bo
   "image/gif": { ext: "gif", magic: (b) => ["GIF87a", "GIF89a"].includes(b.subarray(0, 6).toString("latin1")) },
   "image/webp": { ext: "webp", magic: (b) => b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP" },
 };
-// Under the server's 8,000,000-byte multipart limit, with room for the form around the file.
+// Under the 8,000,000-byte multipart limit servers enforced before Akuja-Inc/taskfast#1679,
+// with room for the form around the file. ponytail: raise it with video, once that server is everywhere.
 export const MAX_MEDIA_BYTES = 7 * 1024 * 1024;
 export const mediaDigest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex").slice(0, 16);
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
