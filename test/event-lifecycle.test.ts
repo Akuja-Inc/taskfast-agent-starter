@@ -77,7 +77,7 @@ function streamFixture({ dir, configPath = join(dir, "config.json"), incoming, e
   writeFileSync(bin, `#!${process.execPath}\n` + readFileSync(new URL("fixtures/event-stream.mjs", import.meta.url), "utf8"));
   chmodSync(bin, 0o700);
   const journal = join(dir, "stream.jsonl");
-  writeFileSync(configPath, JSON.stringify({ journal, event: incoming, exitAfterAck }));
+  writeFileSync(configPath, JSON.stringify({ environment: "staging", journal, event: incoming, exitAfterAck }));
   const runtime: Runtime = { env: "staging", configPath };
   return { bin, runtime, journal };
 }

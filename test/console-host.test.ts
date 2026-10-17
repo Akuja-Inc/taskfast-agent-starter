@@ -22,14 +22,14 @@ const dirs: string[] = [];
 const releases: (() => void)[] = [];
 afterEach(() => { dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })); });
 
-// Agent folders with a valid agent file and an (empty) TaskFast config each.
+// Agent folders with a valid agent file and a local TaskFast config each.
 function folders(...ids: string[]): string {
   const dir = mkdtempSync(join(tmpdir(), "console-host-"));
   dirs.push(dir);
   for (const id of ids) {
     mkdirSync(join(dir, id, ".taskfast"), { recursive: true });
     copyExample("brisk-poster", join(dir, id));
-    writeFileSync(join(dir, id, ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, id, ".taskfast", "config.json"), JSON.stringify({ environment: "local" }));
   }
   return dir;
 }
@@ -120,6 +120,67 @@ function gate() {
   return { promise, release };
 }
 
+it("shows only environment-matching agents in the roster and dropdown", async () => {
+  const dir = folders("local-agent", "staging-agent", "prod-agent");
+  for (const [id, environment] of [["staging-agent", "staging"], ["prod-agent", "prod"]]) {
+    writeFileSync(join(dir, id, ".taskfast/config.json"), JSON.stringify({ environment }));
+  }
+  await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls) => {
+    expect((await roster(link!)).map(({ id }) => id)).toEqual(["local-agent"]);
+    expect(calls).toEqual(["open local-agent"]);
+    expect((await get(link!, "/api/agents/staging-agent")).status).toBe(404);
+    expect((await startup(link!, "prod-agent", "retry", 1)).status).toBe(404);
+  });
+});
+
+it("rechecks environment before retrying a stopped slot", async () => {
+  const dir = folders("me");
+  let opens = 0;
+  await host({ agentsDir: dir, console: { port: 0 }, openAgent: async () => { opens++; throw new Error("offline"); } }, async (link) => {
+    expect((await roster(link!))[0].state).toBe("stopped");
+    writeFileSync(join(dir, "me", ".taskfast/config.json"), JSON.stringify({ environment: "prod" }));
+    expect((await startup(link!, "me", "retry", 1)).status).toBe(202);
+    await expect.poll(async () => (await roster(link!))[0].reason).toContain("configured for prod, selected local");
+    expect(opens).toBe(1);
+    writeFileSync(join(dir, "me", ".taskfast/config.json"), JSON.stringify({ environment: "local" }));
+    expect((await startup(link!, "me", "retry", 2)).status).toBe(202);
+    await expect.poll(async () => (await roster(link!))[0].reason).toBe("offline");
+    expect(opens).toBe(2);
+  });
+});
+
+it("refuses a Briefing reopen after the folder's environment changes and restores both files", async () => {
+  const dir = folders("me");
+  const file = join(dir, "me", "agent.json");
+  const instructions = join(dir, "me", "INSTRUCTIONS.md");
+  const before = [readFileSync(file, "utf8"), readFileSync(instructions, "utf8")];
+  await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls) => {
+    writeFileSync(join(dir, "me", ".taskfast/config.json"), JSON.stringify({ environment: "staging" }));
+    expect((await put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), instructions: "New instructions." })).status).not.toBe(204);
+    expect(calls).toEqual(["open me"]);
+    expect((await roster(link!))[0]).toMatchObject({ state: "ready" });
+    expect([readFileSync(file, "utf8"), readFileSync(instructions, "utf8")]).toEqual(before);
+  });
+});
+
+it("rechecks environment after old-owner cleanup before a Briefing replacement opens", async () => {
+  const dir = folders("me");
+  const file = join(dir, "me", "agent.json");
+  const before = readFileSync(file, "utf8");
+  let opens = 0;
+  await host({ agentsDir: dir, console: { port: 0 }, openAgent: async ({ id }) => {
+    opens++;
+    return { ...handle(id, []), close: async () => {
+      writeFileSync(join(dir, "me", ".taskfast/config.json"), JSON.stringify({ environment: "prod" }));
+    } };
+  } }, async (link) => {
+    expect((await put(link!, "/api/agents/me/spec", { ...example("brisk-poster"), instructions: "New instructions." })).status).not.toBe(204);
+    expect(opens).toBe(1);
+    expect((await roster(link!))[0]).toMatchObject({ state: "stopped", reason: "configured for prod, selected local" });
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+});
+
 it("serves the console and pings a healthy sibling while another opening is hung", async () => {
   const opening = gate();
   const calls: string[] = [];
@@ -157,14 +218,15 @@ it("keeps malformed agents visible and the console alive when all agents stop", 
   });
 });
 
-it("never publishes JSON parser snippets from a malformed private config", async () => {
-  const dir = folders("me");
+it("skips a malformed private config without publishing JSON parser snippets", async () => {
+  const dir = folders("me", "healthy");
   const secret = "synthetic-private-token-not-for-display";
   writeFileSync(join(dir, "me", ".taskfast", "config.json"), `not-json-${secret}`);
   await host({ agentsDir: dir, console: { port: 0 } }, async (link, calls, lines) => {
     const rows = await roster(link!);
-    expect(rows).toMatchObject([{ id: "me", state: "stopped", reason: "me: cannot read .taskfast/config.json as JSON" }]);
-    expect(calls).toEqual([]);
+    expect(rows).toMatchObject([{ id: "healthy", state: "ready" }]);
+    expect(calls).toEqual(["open healthy"]);
+    expect(lines).toContain("me: skipped: cannot read .taskfast/config.json as JSON");
     expect(JSON.stringify(rows)).not.toContain(secret);
     expect(lines.join("\n")).not.toContain(secret);
     expect((await get(link!, "/")).status).toBe(200);

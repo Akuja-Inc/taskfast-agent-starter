@@ -18,7 +18,7 @@ const examples = new URL("../../examples/", import.meta.url);
 for (const [id, name] of [["shop", "brisk-poster"], ["worker", "careful-worker"]]) {
   cpSync(new URL(name, examples), join(dir, id), { recursive: true });
   mkdirSync(join(dir, id, ".taskfast"), { recursive: true });
-  writeFileSync(join(dir, id, ".taskfast", "config.json"), "{}");
+  writeFileSync(join(dir, id, ".taskfast", "config.json"), JSON.stringify({ environment: "local" }));
   writeFileSync(join(dir, id, ".taskfast", "wallet-password"), "synthetic", { mode: 0o400 });
 }
 writeFileSync(join(dir, "shop", ".taskfast", "dead-letter.jsonl"), `${JSON.stringify({ at: "2026-10-13T08:00:00Z", reason: "event has no name", line: JSON.stringify({ event_id: "bad-1", task_id: OTHER }) })}\n`);

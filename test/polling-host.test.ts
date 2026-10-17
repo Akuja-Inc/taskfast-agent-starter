@@ -29,7 +29,7 @@ function folders(intervals: Record<string, number | undefined>) {
     copyExample("careful-worker", join(dir, id));
     const { instructions: _, ...file } = example("careful-worker");
     writeFileSync(join(dir, id, "agent.json"), JSON.stringify({ ...file, pollIntervalMinutes: minutes }));
-    writeFileSync(join(dir, id, ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, id, ".taskfast", "config.json"), JSON.stringify({ environment: "local" }));
   }
   return dir;
 }
