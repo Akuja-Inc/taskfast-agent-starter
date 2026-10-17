@@ -24,8 +24,9 @@ export const EXCLUDED: Record<string, string> = {
 };
 
 // Flags no tool passes even where a command takes them: code and config own wallets,
-// keys, RPC endpoints and file paths, and the model never sees them.
-const NEVER = new Set(["keystore", "wallet-password-file", "wallet-address", "rpc-url", "criteria-file"]);
+// keys, RPC endpoints and file paths, and the model never sees them. An amount is only
+// ever the quote priceOf inserts at dispatch (stake's --amount), never a tool's args.
+const NEVER = new Set(["keystore", "wallet-password-file", "wallet-address", "rpc-url", "criteria-file", "amount"]);
 
 // Valid calls per tool that set every schema field between them, so every flag a tool
 // can pass is built and checked. A new field fails the check until its sample is here.

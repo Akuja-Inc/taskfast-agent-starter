@@ -30,6 +30,8 @@ describe("tool and CLI parity", () => {
     expect(surface.get("task")!.leaf).toBe(false);
     // Global options are not the command's own: no tool may pass --env or --api-base.
     expect(surface.get("bid list")!.options.has("env")).toBe(false);
+    // policy inserts the quoted stake as --amount, which the command must take.
+    expect(surface.get("stake")!.options.get("amount")).toBeNull();
   });
 
   it("found the three advertised values the CLI refused before gh#91", () => {
@@ -49,12 +51,14 @@ describe("tool and CLI parity", () => {
     const tools: Record<string, ToolSpec> = {
       ...TOOLS,
       settle: { ...TOOLS.settle!, args: (i) => ["settle", "--keystore=/x", "--", String(i.task_id)] },
+      stake: { ...TOOLS.stake!, args: (i) => ["stake", "--amount=1", "--", String(i.task_id)] },
       me: { ...TOOLS.me!, args: () => ["me", "--env=prod"] },
     };
     const { ping: _, ...excluded } = EXCLUDED;
     const problems = parityProblems(tools, surface, { ...excluded, "task claim": "stale", "nope": "gone" });
     expect(problems).toEqual(expect.arrayContaining([
       "settle: passes --keystore, which code and config own",
+      "stake: passes --amount, which code and config own",
       "me: `taskfast me` has no --env",
       "`taskfast ping` has no tool and no reason in EXCLUDED",
       "EXCLUDED names `taskfast task claim`, which a tool runs",
