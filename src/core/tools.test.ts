@@ -89,6 +89,44 @@ describe("prepare", () => {
     expect(Object.entries(TOOLS).filter(([, t]) => t.kind === "money" && t.spendAfterPreflight === true).map(([n]) => n)).toEqual(["bond_post"]);
   });
 
+  it("builds the reads a poster and a worker need, ids after --", () => {
+    const A = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    expect(prepare("platform_config", {}).args).toEqual(["platform", "config"]);
+    expect(prepare("message_conversations", { task_id: T }).args).toEqual(["message", "conversations", "--", T]);
+    expect(prepare("agent_list", { capability: "writing", limit: 10 }).args).toEqual(["agent", "list", "--capability=writing", "--limit=10"]);
+    expect(prepare("agent_get", { agent_id: A.toUpperCase() }).args).toEqual(["agent", "get", "--", A]);
+    expect(prepare("dispute_get", { task_id: T }).args).toEqual(["dispute", "--", T]);
+    expect(prepare("artifact_list", { task_id: T, cursor: "c2" }).args).toEqual(["artifact", "list", "--cursor=c2", "--", T]);
+    expect(prepare("artifact_get", { task_id: T, artifact_id: A }).args).toEqual(["artifact", "get", "--", T, A]);
+    expect(prepare("payment_get", { task_id: T }).args).toEqual(["payment", "get", "--", T]);
+    expect(prepare("payment_list", { status: "disbursed", from: "2026-10-01", to: "2026-10-31" }).args).toEqual(["payment", "list", "--status=disbursed", "--from=2026-10-01", "--to=2026-10-31"]);
+    expect(prepare("review_list", { agent_id: A }).args).toEqual(["review", "list", `--agent=${A}`]);
+    expect(prepare("review_list", { task_id: T, limit: 5 }).args).toEqual(["review", "list", `--task=${T}`, "--limit=5"]);
+    for (const tool of ["platform_config", "agent_list", "agent_get", "dispute_get", "artifact_list", "artifact_get", "payment_get", "payment_list", "review_list", "message_conversations"]) expect(TOOLS[tool]!.kind).toBe("read");
+  });
+
+  it("writes one review per task and reviewee", () => {
+    const A = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    expect(prepare("review_create", { task_id: T, reviewee_id: A.toUpperCase(), rating: 5, comment: "Clean, on time" })).toMatchObject({
+      args: ["review", "create", `--reviewee-id=${A}`, "--rating=5", "--comment=Clean, on time", "--", T],
+      key: `review:${T}:${A}`,
+    });
+  });
+
+  it.each([
+    ["a review list with both a task and an agent", "review_list", { task_id: T, agent_id: T }, /exactly one of task_id or agent_id/],
+    ["a review list with neither", "review_list", {}, /exactly one of task_id or agent_id/],
+    ["a rating of 6 stars", "review_create", { task_id: T, reviewee_id: T, rating: 6, comment: "x" }, /1 to 5/],
+    ["a half-star rating", "review_create", { task_id: T, reviewee_id: T, rating: 4.5, comment: "x" }, /1 to 5/],
+    ["an empty review", "review_create", { task_id: T, reviewee_id: T, rating: 4, comment: " " }, /comment must be non-empty/],
+    ["a payment date that is not a day", "payment_list", { from: "October" }, /from must be a date/],
+    ["a payment date that does not exist", "payment_list", { to: "2026-02-30" }, /to must be a date/],
+    ["a payment status the CLI does not list", "payment_list", { status: "settled" }, /must be one of pending, disbursed, held, failed/],
+    ["an artifact id that is a flag", "artifact_get", { task_id: T, artifact_id: "--env=prod" }, /artifact_id must be a UUID/],
+  ])("refuses %s", (_n, tool, input, why) => {
+    expect(() => prepare(tool, input)).toThrow(why);
+  });
+
   it("builds the worker lifecycle commands, each once per task or bid", () => {
     const B = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
     expect(prepare("task_refuse", { task_id: T })).toMatchObject({ args: ["task", "refuse", "--", T], key: `refuse:${T}` });
@@ -128,7 +166,7 @@ describe("prepare", () => {
       "post", "--title=Logo", "--description=A logo for a bakery", "--budget=40.00", "--pickup-deadline-hours=24", "--capabilities=design,branding",
       `--criterion=${JSON.stringify({ ...gate, target_artifact_pattern: null })}`,
       `--criterion=${JSON.stringify({ ...gate, check_type: "json_schema", check_expression: '{"type":"object"}', target_artifact_pattern: "*.json" })}`,
-      "--execution-deadline=2026-10-20T17:00:00Z", "--venue=tempo-zone-moderato", "--assignment-type=direct", `--direct-agent-id=${A}`, "--yes",
+      "--execution-deadline=2026-10-20T17:00:00Z", "--venue=tempo-zone-moderato", "--assignment-type=direct", `--direct-agent-id=${A.toLowerCase()}`, "--yes",
     ]);
     // The same title and description are the same post, whatever else changed.
     expect(key).toBe(prepare("post_task", post).key);

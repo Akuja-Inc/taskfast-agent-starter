@@ -30,6 +30,8 @@ describe("tool and CLI parity", () => {
     expect(surface.get("task")!.leaf).toBe(false);
     // Global options are not the command's own: no tool may pass --env or --api-base.
     expect(surface.get("bid list")!.options.has("env")).toBe(false);
+    // policy inserts the quoted stake as --amount, which the command must take.
+    expect(surface.get("stake")!.options.get("amount")).toBeNull();
   });
 
   it("found the three advertised values the CLI refused before gh#91", () => {
@@ -49,12 +51,14 @@ describe("tool and CLI parity", () => {
     const tools: Record<string, ToolSpec> = {
       ...TOOLS,
       settle: { ...TOOLS.settle!, args: (i) => ["settle", "--keystore=/x", "--", String(i.task_id)] },
+      stake: { ...TOOLS.stake!, args: (i) => ["stake", "--amount=1", "--", String(i.task_id)] },
       me: { ...TOOLS.me!, args: () => ["me", "--env=prod"] },
     };
     const { ping: _, ...excluded } = EXCLUDED;
     const problems = parityProblems(tools, surface, { ...excluded, "task claim": "stale", "nope": "gone" });
     expect(problems).toEqual(expect.arrayContaining([
       "settle: passes --keystore, which code and config own",
+      "stake: passes --amount, which code and config own",
       "me: `taskfast me` has no --env",
       "`taskfast ping` has no tool and no reason in EXCLUDED",
       "EXCLUDED names `taskfast task claim`, which a tool runs",
@@ -65,6 +69,16 @@ describe("tool and CLI parity", () => {
   it("needs a sample that sets every field of a tool", () => {
     const tools = { ...TOOLS, task_get: { ...TOOLS.task_get!, schema: { ...TOOLS.task_get!.schema, properties: { ...TOOLS.task_get!.schema.properties, cursor: s("page") } } } };
     expect(parityProblems(tools, surface)).toContain("task_get: SAMPLES needs a call that sets every field (task_id, cursor)");
+  });
+
+  // gh#91's "deliberately not tools", plus the artifact steps that run inside a submit.
+  // A tool that ran one would fail above as "EXCLUDED names ..., which a tool runs".
+  it("keeps exactly the commands no model tool may run", () => {
+    expect(Object.keys(EXCLUDED)).toEqual([
+      "init", "config", "skills", "ping", "events", "webhook", "cast", "backer", "agent update-me",
+      "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
+    ]);
+    expect(Object.values(EXCLUDED).some((reason) => reason.includes("planned"))).toBe(false);
   });
 
   it("gives a reason for every command the skill prompt calls unsupported", () => {

@@ -50,9 +50,9 @@ If the CLI can refuse the command before acting with an error code not in `REFUS
 
 In `src/core/tools.test.ts`, add the command it builds to the `prepare` cases, at least one refusal for a bad value, and its key for a write.
 
-One test pins the whole table on purpose and will fail until you update it: "marks exactly the two tools that commit funds as money", the list of money tools. Adding to it means the agent can spend money in a new way. Confirm that with the user before you change the expected list.
+One test pins the whole table on purpose and will fail until you update it: "marks exactly the five tools that commit funds as money", the list of money tools. Adding to it means the agent can spend money in a new way. Confirm that with the user before you change the expected list.
 
-In `test/cli-parity.ts`, add one call to `SAMPLES` that sets every field of the tool, and drop the command's `EXCLUDED` entry. `test/cli-parity.test.ts` then checks every flag and every `enum` value the tool passes against the CLI's captured `--help`. A field that feeds a flag with fixed values needs an `enum`; when the server's word differs from the CLI's (`accepted_pending_escrow` and `accepted-pending-escrow`), advertise the server's and translate in `args`, as `oneOf` does.
+In `test/cli-parity.ts`, add one call to `SAMPLES` that sets every field of the tool (a list of calls when fields exclude each other, as `review_list`'s do), and drop the command's `EXCLUDED` entry. `test/cli-parity.test.ts` then checks every flag and every `enum` value the tool passes against the CLI's captured `--help`. A field that feeds a flag with fixed values needs an `enum`; when the server's word differs from the CLI's (`accepted_pending_escrow` and `accepted-pending-escrow`), advertise the server's and translate in `args`, as `oneOf` does.
 
 If the tool offers a fixed list of values the server publishes (an `enum`, such as `bid_list`'s `status`), add a case to `test/tools-contract.test.ts` that compares it with `test/fixtures/openapi.yaml`.
 

@@ -21,27 +21,19 @@ export const EXCLUDED: Record<string, string> = {
   "artifact delete": "policy runs it to clear the agent's own uploads before a submit with files",
   "artifact cid": "delivery by an externally pinned CID; the kit delivers the files the model writes",
   "artifact cid-status": "verdict on a CID delivery, which the kit never makes",
-  "payment": "planned in gh#91 group 4 (reads): worker-only; a poster reads settlement on task_get",
-  "dispute": "planned in gh#91 group 4 (reads)",
-  "review": "planned in gh#91 group 4 (reads)",
-  "agent list": "planned in gh#91 group 4 (reads)",
-  "agent get": "planned in gh#91 group 4 (reads)",
-  "platform config": "planned in gh#91 group 4 (reads), for venues and the completion fee tiers bid pricing needs; money.ts already reads the submission fee from it",
-  "artifact list": "planned in gh#91 group 4 (reads); policy already lists uploads before a submit with files",
-  "artifact get": "planned in gh#91 group 4 (reads)",
-  "message conversations": "planned in gh#91 group 4 (reads)",
 };
 
 // Flags no tool passes even where a command takes them: code and config own wallets,
-// keys, RPC endpoints and file paths, and the model never sees them.
-const NEVER = new Set(["keystore", "wallet-password-file", "wallet-address", "rpc-url", "criteria-file"]);
+// keys, RPC endpoints and file paths, and the model never sees them. An amount is only
+// ever the quote priceOf inserts at dispatch (stake's --amount), never a tool's args.
+const NEVER = new Set(["keystore", "wallet-password-file", "wallet-address", "rpc-url", "criteria-file", "amount"]);
 
-// One valid call per tool with every schema field set, so every flag a tool can pass is
-// built and checked. A new field fails the check until its sample is here.
+// Valid calls per tool that set every schema field between them, so every flag a tool
+// can pass is built and checked. A new field fails the check until its sample is here.
 const T = "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b";
 const B = "550e8400-e29b-41d4-a716-446655440001";
 const files = [{ name: "results.json", content: "{}" }];
-export const SAMPLES: Record<string, Record<string, unknown>> = {
+export const SAMPLES: Record<string, Record<string, unknown> | Record<string, unknown>[]> = {
   me: {},
   wallet_balance: {},
   discover: { status: "open", assignment_type: "direct", capability: "writing,research", budget_min: "10.00", budget_max: "40.00", cursor: "c2", limit: 5 },
@@ -49,6 +41,18 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   task_list: { kind: "mine", status: "in_progress", cursor: "c2", limit: 5 },
   bid_list: { status: "pending", cursor: "c2", limit: 5 },
   message_list: { task_id: T, cursor: "c2", limit: 5 },
+  message_conversations: { task_id: T },
+  platform_config: {},
+  agent_list: { capability: "writing", cursor: "c2", limit: 5 },
+  agent_get: { agent_id: B },
+  dispute_get: { task_id: T },
+  artifact_list: { task_id: T, cursor: "c2", limit: 5 },
+  artifact_get: { task_id: T, artifact_id: B },
+  payment_get: { task_id: T },
+  payment_list: { status: "disbursed", from: "2026-10-01", to: "2026-10-31", cursor: "c2", limit: 5 },
+  // review_list takes exactly one of task_id or agent_id, so it needs two calls.
+  review_list: [{ task_id: T, cursor: "c2", limit: 5 }, { agent_id: B }],
+  review_create: { task_id: T, reviewee_id: B, rating: 5, comment: "Clean work" },
   bid_create: { task_id: T, price: "40.00", pitch: "I write well" },
   task_claim: { task_id: T },
   task_refuse: { task_id: T },
@@ -140,13 +144,15 @@ export function parityProblems(tools: Record<string, ToolSpec>, surface: Map<str
 
   for (const [tool, spec] of Object.entries(tools)) {
     if (spec.kind === "memory") continue;
-    const sample = samples[tool];
+    // Fields that exclude each other take one call each; together they set every field.
+    const calls = [samples[tool] ?? []].flat();
+    const sample = calls[0];
     const fields = Object.keys(spec.schema.properties);
-    if (!sample || fields.some((f) => !(f in sample))) {
+    if (!sample || fields.some((f) => !calls.some((call) => f in call))) {
       problems.push(`${tool}: SAMPLES needs a call that sets every field (${fields.join(", ")})`);
       continue;
     }
-    check(tool, sample);
+    for (const call of calls) check(tool, call);
     // Every advertised value, on its own beside the required fields, or in the full
     // sample when it needs a partner field (assignment_type direct and direct_agent_id).
     const required = Object.fromEntries(spec.schema.required.map((f) => [f, sample[f]]));

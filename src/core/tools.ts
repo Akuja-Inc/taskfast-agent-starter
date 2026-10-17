@@ -54,11 +54,15 @@ const oneOf = (values: string[]) => (v: unknown, n: string) => among(values)(v, 
 const tags = (v: unknown, n: string) => (typeof v === "string" ? v.split(",").map((tag) => word(tag.trim(), n)) : bad(`${n} must be tags separated by commas`));
 const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,9})?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
 // Dates roll over (2026-02-31 is March 3), so the month and day must survive the calendar.
-const timestamp = (v: unknown, n: string) => {
-  const [, y, m, d] = (typeof v === "string" && RFC3339.exec(v)) || [];
+const onCalendar = (match: RegExpExecArray | null) => {
+  const [, y, m, d] = match ?? [];
   const day = y ? new Date(Date.UTC(+y, +m! - 1, +d!)) : null;
-  return day && day.getUTCMonth() === +m! - 1 && day.getUTCDate() === +d! ? (v as string) : bad(`${n} must be an RFC 3339 time like 2026-10-20T17:00:00Z`);
+  return day !== null && day.getUTCMonth() === +m! - 1 && day.getUTCDate() === +d!;
 };
+const timestamp = (v: unknown, n: string) => (typeof v === "string" && onCalendar(RFC3339.exec(v)) ? v : bad(`${n} must be an RFC 3339 time like 2026-10-20T17:00:00Z`));
+const date = (v: unknown, n: string) => (typeof v === "string" && onCalendar(/^(\d{4})-(\d{2})-(\d{2})$/.exec(v)) ? v : bad(`${n} must be a date like 2026-10-20`));
+const rating = (v: unknown, n: string) => (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 5 ? String(v) : bad(`${n} must be a whole number of stars, 1 to 5`));
+const PAYMENT_STATUS = ["pending", "disbursed", "held", "failed"];
 const BID_STATUS = ["pending", "accepted_pending_escrow", "accepted", "rejected", "withdrawn"];
 const TASK_KIND = ["mine", "queue", "posted"];
 const MINE_STATUS = ["assigned", "in_progress", "under_review", "disputed", "remedied"];
@@ -217,6 +221,53 @@ export const TOOLS: Record<string, ToolSpec> = {
     args: (i) => ["bid", "list", ...opt("status", i.status, oneOf(BID_STATUS)), ...page(i)],
   },
   message_list: { kind: "read", description: "Messages on one task.", schema: obj({ task_id: s("task UUID"), ...PAGE }, ["task_id"]), args: (i) => ["message", "list", ...page(i), "--", uuid(i.task_id, "task_id")] },
+  message_conversations: { kind: "read", description: "The separate conversations on one task, one per counterparty.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["message", "conversations", "--", uuid(i.task_id, "task_id")] },
+  platform_config: { kind: "read", description: "The platform's settings: the submission fee, the completion fee tiers (what share of a payout the platform keeps), settlement venues and contract addresses.", schema: obj({}), args: () => ["platform", "config"] },
+  agent_list: {
+    kind: "read",
+    description: "Active agents on the marketplace, optionally with one capability: who you could give a direct task to.",
+    schema: obj({ capability: s("capability tag filter"), ...PAGE }),
+    args: (i) => ["agent", "list", ...opt("capability", i.capability, word), ...page(i)],
+  },
+  agent_get: { kind: "read", description: "One agent's public profile: capabilities, rating and record.", schema: obj({ agent_id: s("agent UUID") }, ["agent_id"]), args: (i) => ["agent", "get", "--", uuid(i.agent_id, "agent_id")] },
+  dispute_get: { kind: "read", description: "The dispute on a task: its reason, the remedies used and left, and the remedy deadline.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["dispute", "--", uuid(i.task_id, "task_id")] },
+  artifact_list: {
+    kind: "read",
+    description: "The files delivered on a task, with who uploaded each. Check a submission here before you approve or dispute it.",
+    schema: obj({ task_id: s("task UUID"), ...PAGE }, ["task_id"]),
+    args: (i) => ["artifact", "list", ...page(i), "--", uuid(i.task_id, "task_id")],
+  },
+  // The CLI has no verb that downloads an artifact, so this shows its metadata only.
+  artifact_get: {
+    kind: "read",
+    description: "One delivered file's metadata: name, type, size and when it was uploaded. You cannot read its content with your tools.",
+    schema: obj({ task_id: s("task UUID"), artifact_id: s("artifact UUID") }, ["task_id", "artifact_id"]),
+    args: (i) => ["artifact", "get", "--", uuid(i.task_id, "task_id"), uuid(i.artifact_id, "artifact_id")],
+  },
+  // payment get is worker-only (taskfast-cli#196): a poster reads the settlement block on task_get.
+  payment_get: { kind: "read", description: "Your payout on a task you worked: status disbursed with a disbursement transaction hash means you were paid. Workers only; as a poster, read settlement on task_get.", schema: obj({ task_id: s("task UUID") }, ["task_id"]), args: (i) => ["payment", "get", "--", uuid(i.task_id, "task_id")] },
+  payment_list: {
+    kind: "read",
+    description: "Your payment history, the earnings ledger.",
+    schema: obj({ status: { type: "string", enum: PAYMENT_STATUS }, from: s("first day, e.g. 2026-10-01"), to: s("last day, e.g. 2026-10-31"), ...PAGE }),
+    args: (i) => ["payment", "list", ...opt("status", i.status, among(PAYMENT_STATUS)), ...opt("from", i.from, date), ...opt("to", i.to, date), ...page(i)],
+  },
+  review_list: {
+    kind: "read",
+    description: "Reviews on one task (both directions) or reviews written about one agent. Give exactly one of task_id or agent_id.",
+    schema: obj({ task_id: s("task UUID"), agent_id: s("agent UUID"), ...PAGE }),
+    args: (i) => ((i.task_id === undefined) === (i.agent_id === undefined)
+      ? bad("review_list takes exactly one of task_id or agent_id")
+      : ["review", "list", ...opt("task", i.task_id, uuid), ...opt("agent", i.agent_id, uuid), ...page(i)]),
+  },
+  // One review per task and reviewee, as the reputation loop after settlement intends.
+  review_create: {
+    kind: "write",
+    description: "Review the other side of a completed task: 1 to 5 stars and a written comment. Once per task and reviewee.",
+    schema: obj({ task_id: s("task UUID"), reviewee_id: s("UUID of the account you review"), rating: { type: "number", description: "stars, 1 to 5" }, comment: s("your review, in your own words") }, ["task_id", "reviewee_id", "rating", "comment"]),
+    args: (i) => ["review", "create", `--reviewee-id=${uuid(i.reviewee_id, "reviewee_id")}`, `--rating=${rating(i.rating, "rating")}`, `--comment=${text(i.comment, "comment", 2000)}`, "--", uuid(i.task_id, "task_id")],
+    key: (i) => `review:${uuid(i.task_id, "task_id")}:${uuid(i.reviewee_id, "reviewee_id")}`,
+  },
 
   bid_create: {
     kind: "write",
@@ -478,7 +529,7 @@ export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: s
     if (!Object.hasOwn(spec.schema.properties, k)) bad(`${tool} has no field ${k}`);
     // UUID case is not marketplace identity. Normalize before both key construction
     // and the policy reads, so a fresh model call cannot vary casing to run twice.
-    if (k === "task_id" || k === "bid_id" || k === "agent_id") i[k] = uuid(i[k], k).toLowerCase();
+    if (k.endsWith("_id")) i[k] = uuid(i[k], k).toLowerCase();
   }
   return { spec, args: spec.args(i), key: spec.key ? spec.key(i) : null, files: spec.files ? spec.files(i) : [], input: i };
 }
