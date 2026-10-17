@@ -127,6 +127,19 @@ describe("prepare", () => {
     expect(prepare("task_open", { task_id: T })).toMatchObject({ args: ["task", "open", "--", T], key: `open:${T}` });
   });
 
+  it("builds the poster lifecycle commands, one edit action per different change", () => {
+    expect(prepare("task_edit", { task_id: T, budget_max: "55.00", review_window_hours: 12 }).args).toEqual(["task", "edit", "--budget-max=55.00", "--review-window-hours=12", "--", T]);
+    expect(prepare("task_edit", { task_id: T, title: "New", description: "Text", remedy_window_hours: 72 }).args).toEqual(["task", "edit", "--title=New", "--description=Text", "--remedy-window-hours=72", "--", T]);
+    const key = prepare("task_edit", { task_id: T, budget_max: "55.00" }).key;
+    expect(key).toBe(prepare("task_edit", { task_id: T, budget_max: "55.00" }).key);
+    expect(key).not.toBe(prepare("task_edit", { task_id: T, budget_max: "60.00" }).key);
+    expect(prepare("task_cancel", { task_id: T })).toMatchObject({ args: ["task", "cancel", "--", T], key: `cancel:${T}` });
+    expect(prepare("task_reopen", { task_id: T })).toMatchObject({ args: ["task", "reopen", "--", T], key: `reopen:${T}` });
+    expect(() => prepare("task_edit", { task_id: T })).toThrow(/at least one field/);
+    expect(() => prepare("task_edit", { task_id: T, review_window_hours: 96 })).toThrow(/review-window-hours must be 1 to 72/);
+    expect(() => prepare("task_edit", { task_id: T, budget_max: "a lot" })).toThrow(/decimal amount/);
+  });
+
   it.each([
     ["a budget with letters", { title: "x", description: "y", budget: "lots", pickup_deadline_hours: 24 }, /decimal amount/],
     ["a pickup window the server does not offer", { title: "x", description: "y", budget: "10.00", pickup_deadline_hours: 48 }, /one of 1, 4, 12, 24, 72/],

@@ -21,12 +21,7 @@ export const EXCLUDED: Record<string, string> = {
   "artifact delete": "policy runs it to clear the agent's own uploads before a submit with files",
   "artifact cid": "delivery by an externally pinned CID; the kit delivers the files the model writes",
   "artifact cid-status": "verdict on a CID delivery, which the kit never makes",
-  "task edit": "planned in gh#91 group 2 (poster lifecycle)",
-  "task cancel": "planned in gh#91 group 2 (poster lifecycle)",
   "task retry-fee": "planned in gh#91 group 2 (poster lifecycle); it charges the submission fee again",
-  // 0.19.8's help says it flips a direct task back to assigned; taskfast-cli#196 corrected
-  // the text after this capture: it reopens an abandoned task to open for new bids.
-  "task reopen": "planned in gh#91 group 2 (poster lifecycle): reopens an abandoned task for new bids",
   "task refuse": "planned in gh#91 group 3 (worker lifecycle)",
   "task abort": "planned in gh#91 group 3 (worker lifecycle)",
   "task concede": "planned in gh#91 group 3 (worker lifecycle)",
@@ -74,6 +69,11 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   task_reassign: { task_id: T, agent_id: B },
   task_open: { task_id: T },
+  task_edit: { task_id: T, title: "Logo", description: "A logo", budget_max: "50.00", review_window_hours: 24, remedy_window_hours: 48 },
+  task_cancel: { task_id: T },
+  // The 0.19.8 help says reopen flips a direct task back to assigned; taskfast-cli#196
+  // corrected the text after this capture: it reopens an abandoned task for new bids.
+  task_reopen: { task_id: T },
   bid_accept: { task_id: T, bid_id: B },
   bid_reject: { task_id: T, bid_id: B, reason: "Too high" },
   escrow_sign: { task_id: T, bid_id: B },
