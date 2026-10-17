@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
+import { PNG } from "../../test/fixtures/mcp/server.mjs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -822,6 +823,53 @@ it("uses an approved MCP read in the durable conversation, and refuses bad argum
   expect(requests[1]).toContain("Validation failed for tool \\\"mcp_docs_search\\\"");
   expect(requests[2]).toContain("results for bond rules");
   expect(kit.calls).toEqual([["me"]]);
+});
+
+it("delivers an image an approved MCP tool returned by its media handle, also after a restart", async () => {
+  const dir = agentFolder(false);
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { image: approve("image") } } });
+  const png = Buffer.from(PNG, "base64");
+  const hash = createHash("sha256").update(png).digest("hex").slice(0, 16);
+  const commands: string[][] = [];
+  const command = async (_rt: unknown, args: string[]): Promise<CliResult> => {
+    commands.push(args);
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact") return { outcome: "ok", data: { artifacts: [] } };
+    return { outcome: "ok", data: { submission: { status: "under_review" } } };
+  };
+  const logo = { name: "logo.png", media: `media:${hash}.png` };
+  const first = await open({ dir, command });
+  first.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("mcp_docs_image", {})], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Logo", artifacts: [logo] }, { id: "submit" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Done"),
+  ]);
+  await run(first.agent);
+  expect((await toolResults(first.agent))[0]).toContain(`saved as media:${hash}.png`);
+  const path = `.pi-state/artifacts/${task}/${hash}/logo.png`;
+  expect(readFileSync(join(dir, path)).equals(png)).toBe(true);
+  expect(commands.filter((args) => args[0] === "task")).toEqual([["task", "submit", "--summary=Logo", `--artifact=${path}`, "--", task]]);
+  await first.agent.close();
+  // The handle the model read before the restart still names its file.
+  const kit = await open({ dir, command });
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_remedy", { task_id: task, summary: "Same logo", artifacts: [logo] }, { id: "remedy" })], { stopReason: "toolUse" }), fauxAssistantMessage("Done")]);
+  await run(kit.agent);
+  expect(commands.filter((args) => args[1] === "remedy")).toEqual([["task", "remedy", "--summary=Same logo", `--artifact=${path}`, "--", task]]);
+});
+
+it.each([
+  ["missing", undefined, /media file not found/],
+  ["changed since it was saved", Buffer.from("other bytes"), /media file changed since it was saved/],
+])("refuses a media artifact whose file is %s, before reserving or calling the CLI", async (_n, bytes, why) => {
+  const commands: string[][] = [];
+  const kit = await open({ command: async (_rt, args): Promise<CliResult> => { commands.push(args); return args[0] === "me" ? me : { outcome: "ok", data: null }; } });
+  const hash = createHash("sha256").update(Buffer.from(PNG, "base64")).digest("hex").slice(0, 16);
+  if (bytes) { mkdirSync(join(kit.dir, ".pi-state/media"), { recursive: true }); writeFileSync(join(kit.dir, ".pi-state/media", `${hash}.png`), bytes); }
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Logo", artifacts: [{ name: "logo.png", media: `media:${hash}.png` }] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
+  await run(kit.agent);
+  expect((await toolResults(kit.agent))[0]).toMatch(why);
+  expect(commands.filter((args) => args[0] !== "me")).toEqual([]);
+  expect((await kit.agent.status()).actions).toEqual({});
 });
 
 it("fails closed on a changed MCP tool before opening the store, and leaves no server running", async () => {

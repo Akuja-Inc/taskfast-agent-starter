@@ -1,12 +1,13 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader, type Tx } from "@earendil-works/pi-durable";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { runCli, type CliResult, type Outcome } from "./cli.js";
 import { agentDirectory, folderFile } from "./folder.js";
+import { mediaDigest } from "./media.js";
 import { amountOf, overLimit, today } from "./money.js";
 import { FROZEN, Operator } from "./operator.js";
-import { ownUploads, prepare, UUID } from "./tools.js";
+import { ownUploads, prepare, UUID, type ArtifactFile } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
 
 export type Action = {
@@ -89,13 +90,22 @@ export function marketplacePolicy(o: PolicyOptions) {
       }
     });
   }
-  // Paths are content-addressed, so writing one again is harmless.
-  function writeFiles(files: { path: string; content: string }[]): string | null {
+  // Paths are content-addressed, so writing one again is harmless. A media file must
+  // still hold the bytes its handle names, since the action key is built from them.
+  function writeFiles(files: ArtifactFile[]): string | null {
     try {
+      const agentDir = agentDirectory(o.runtime);
       for (const file of files) {
-        const path = folderFile({ agentDir: agentDirectory(o.runtime), path: file.path, resource: "artifact" });
+        let content: string | Buffer;
+        if ("media" in file) {
+          const source = folderFile({ agentDir, path: file.media, resource: "media" });
+          if (!existsSync(source)) throw new Error(`media file not found: ${file.media}`);
+          content = readFileSync(source);
+          if (mediaDigest(content) !== file.digest) throw new Error(`media file changed since it was saved: ${file.media}`);
+        } else content = file.content;
+        const path = folderFile({ agentDir, path: file.path, resource: "artifact" });
         mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-        writeFileSync(path, file.content, { mode: 0o600 });
+        writeFileSync(path, content, { mode: 0o600 });
       }
       return null;
     } catch (error) {

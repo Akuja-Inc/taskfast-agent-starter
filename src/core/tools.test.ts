@@ -97,6 +97,7 @@ describe("prepare", () => {
 describe("artifacts", () => {
   const results = { name: "results.json", content: '{"results":[1,2,3]}\n' };
   const at = (name: string, content: string) => `.pi-state/artifacts/${T}/${createHash("sha256").update(content).digest("hex").slice(0, 16)}/${name}`;
+  const D = "0123456789abcdef";
 
   it("writes each file under a folder code chooses and passes its path as an option before --", () => {
     const call = prepare("task_submit", { task_id: T.toUpperCase(), summary: "Delivered", artifacts: [results, { name: "notes.md", content: "# Notes" }] });
@@ -128,8 +129,43 @@ describe("artifacts", () => {
     ["empty content", { name: "a.txt", content: "" }, /a.txt content must be 1 to 262144 bytes/],
     ["content over 256 KiB", { name: "a.txt", content: "é".repeat(131073) }, /content must be 1 to 262144 bytes/],
     ["an extra field", { name: "a.txt", content: "x", path: "/etc/passwd" }, /each artifact is \{ name, content \}/],
+    ["both content and media", { name: "logo.png", content: "x", media: `media:${D}.png` }, /each artifact is \{ name, content \} or \{ name, media \}/],
+    ["neither content nor media", { name: "a.txt" }, /each artifact is \{ name, content \} or \{ name, media \}/],
+    ["image text from the model", { name: "logo.png", content: "x" }, /logo.png is an image: deliver it as \{ name, media \}/],
+    ["a media path", { name: "logo.png", media: ".pi-state/media/0123456789abcdef.png" }, /media must be a handle/],
+    ["a traversing handle", { name: "logo.png", media: "media:../x.png" }, /media must be a handle/],
+    ["a short digest", { name: "logo.png", media: "media:abc.png" }, /media must be a handle/],
+    ["an absolute path", { name: "logo.png", media: "/etc/passwd" }, /media must be a handle/],
+    ["a handle for another type", { name: "logo.jpg", media: `media:${D}.png` }, /logo.jpg must end in .png to match its media/],
+    ["a text name for media", { name: "notes.txt", media: `media:${D}.png` }, /notes.txt must end in .png/],
   ])("refuses an artifact with %s", (_n, artifact, why) => {
     expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [artifact] })).toThrow(why);
+  });
+
+  it("delivers an SVG the model writes as text", () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+    expect(prepare("task_submit", { task_id: T, summary: "Done", artifacts: [{ name: "diagram.svg", content: svg }] }).files).toEqual([{ path: at("diagram.svg", svg), content: svg }]);
+  });
+
+  it("delivers a saved image by its handle, beside text, under a folder named by its bytes", () => {
+    const call = prepare("task_submit", { task_id: T, summary: "Done", artifacts: [{ name: "logo.png", media: `media:${D}.png` }, { name: "photo.jpeg", media: `media:${D}.jpg` }, results] });
+    expect(call.files).toEqual([
+      { path: `.pi-state/artifacts/${T}/${D}/logo.png`, media: `.pi-state/media/${D}.png`, digest: D },
+      { path: `.pi-state/artifacts/${T}/${D}/photo.jpeg`, media: `.pi-state/media/${D}.jpg`, digest: D },
+      { path: at("results.json", results.content), content: results.content },
+    ]);
+    expect(call.args).toEqual(["task", "submit", "--summary=Done", `--artifact=.pi-state/artifacts/${T}/${D}/logo.png`, `--artifact=.pi-state/artifacts/${T}/${D}/photo.jpeg`, `--artifact=${at("results.json", results.content)}`, "--", T]);
+  });
+
+  it("keys a remedy with media by the image's bytes", () => {
+    const remedy = (media: string) => prepare("task_remedy", { task_id: T, summary: "Revised", artifacts: [{ name: "logo.png", media }] }).key;
+    expect(remedy(`media:${D}.png`)).toBe(remedy(`media:${D}.png`));
+    expect(remedy(`media:${"f".repeat(16)}.png`)).not.toBe(remedy(`media:${D}.png`));
+  });
+
+  it("lets the model leave out content for a media artifact, and keeps { name, content } valid", () => {
+    expect(TOOLS.task_submit!.schema.properties.artifacts!.items!.required).toEqual(["name"]);
+    expect(Object.keys(TOOLS.task_remedy!.schema.properties.artifacts!.items!.properties)).toEqual(["name", "content", "media"]);
   });
 
   it("refuses an empty list, more than five files and repeated names", () => {
