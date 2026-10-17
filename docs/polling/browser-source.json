@@ -1,0 +1,14 @@
+{
+  "commit": "0418447b528b140b8604df46e518c770187f13a4",
+  "beforeCommit": "f34c49e1b59556d1f2ded00aa22b6eb86a5420e1",
+  "dirty": false,
+  "sha256": {
+    "src/console-page.ts": "b0e8ddb7ec55d30d9841043d79735569123b002e4c49009f9d4ae5a489993cce",
+    "src/console-live.ts": "941fe42e17fc2831c51befac9a2d6a03e64e686917ee3e22aa38a9899f7b108f",
+    "src/console-markdown.ts": "807ebc46b7b8503471643fe7eaf96e867f300f721ef2d470190428512424359f",
+    "src/core/spec.ts": "c2637c0daa492fe91a3869a4a9f2d5a6db96d0830929758af3f5658be3e3f01d",
+    "docs/polling/browser-host.mjs": "bb0913ea350c123f81a371bdbee46fbe464758b8e83df590737098510238dbde",
+    "docs/polling/capture.py": "45628e19dc91e0860b2a925abdc27c76915746c830b748cb72a184d6342016ea"
+  },
+  "capture": "Headless Chromium; desktop 1440x1000 and phone 390x844; light and dark. Synthetic browser fixture only, no marketplace calls."
+}
