@@ -29,6 +29,11 @@ describe("prepare", () => {
     ["a task collection the CLI does not list", "task_list", { kind: "assigned" }, /must be one of mine, queue, posted/],
     ["a status filter on another collection", "task_list", { kind: "posted", status: "assigned" }, /status filters only kind mine/],
     ["a discover status the CLI does not list", "discover", { status: "assigned" }, /must be one of open, bidding/],
+    ["an assignment type the CLI does not list", "discover", { assignment_type: "auction" }, /must be one of open, direct/],
+    ["an empty capability between commas", "discover", { capability: "writing,,research" }, /capability must be a single word/],
+    ["a cursor with spaces", "bid_list", { cursor: "next page" }, /next_cursor a previous page returned/],
+    ["an empty cursor", "task_bids", { task_id: T, cursor: "" }, /next_cursor a previous page returned/],
+    ["a page size over 100", "message_list", { task_id: T, limit: 101 }, /1 to 100/],
     ["an empty summary", "task_submit", { task_id: T, summary: "  " }, /non-empty text/],
     ["an unknown field", "task_get", { task_id: T, env: "prod" }, /has no field env/],
     ["an unknown tool", "withdraw_all", {}, /no tool named withdraw_all/],
@@ -41,6 +46,21 @@ describe("prepare", () => {
   it("passes a status filter in the CLI's kebab case (the server's words are checked against the contract in test/tools-contract.test.ts)", () => {
     expect(prepare("bid_list", { status: "accepted_pending_escrow" }).args).toEqual(["bid", "list", "--status=accepted-pending-escrow"]);
     expect(prepare("task_list", { kind: "mine", status: "under_review" }).args).toEqual(["task", "list", "--kind=mine", "--status=under-review"]);
+  });
+
+  it("reads past the first page with the cursor a list returned, before the positionals", () => {
+    const next = "eyJpZCI6IjQyIn0=";
+    expect(prepare("task_bids", { task_id: T, cursor: next, limit: 100 }).args).toEqual(["task", "bids", `--cursor=${next}`, "--limit=100", "--", T]);
+    expect(prepare("message_list", { task_id: T, cursor: next }).args).toEqual(["message", "list", `--cursor=${next}`, "--", T]);
+    expect(prepare("bid_list", { cursor: next, limit: 5 }).args).toEqual(["bid", "list", `--cursor=${next}`, "--limit=5"]);
+    expect(prepare("task_list", { kind: "posted", cursor: next }).args).toEqual(["task", "list", "--kind=posted", `--cursor=${next}`]);
+    expect(prepare("discover", { cursor: next }).args).toEqual(["discover", `--cursor=${next}`]);
+  });
+
+  it("filters discover by assignment type and by every capability a task must require", () => {
+    expect(prepare("discover", { assignment_type: "direct", capability: "writing, research" }).args).toEqual(["discover", "--assignment-type=direct", "--capability=writing", "--capability=research"]);
+    // A stored call with one tag still runs as it did.
+    expect(prepare("discover", { capability: "writing" }).args).toEqual(["discover", "--capability=writing"]);
   });
 
   it("keys each write so it can run once: per task, or per task and message text", () => {
