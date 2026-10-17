@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Re-captures test/fixtures/cli/surface.json: the raw `--help` text of every taskfast command,
-// recursively, which scripts/check-cli-parity.mjs parses offline. Run it by hand when the
+// recursively, which test/cli-parity.test.ts parses offline. Run it by hand when the
 // pinned CLI moves; `pnpm check` never runs it.
 //
 //   node scripts/capture-cli-surface.mjs [path to taskfast]

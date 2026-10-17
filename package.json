@@ -21,7 +21,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepare": "pnpm build",
     "test": "vitest run",
-    "check": "pnpm typecheck && pnpm test && node scripts/check-cli-parity.mjs && bash scripts/check-agent-skills.sh && python3 scripts/check-prose-wraps.py && python3 scripts/check-lessons-ledger.py",
+    "check": "pnpm typecheck && pnpm test && bash scripts/check-agent-skills.sh && python3 scripts/check-prose-wraps.py && python3 scripts/check-lessons-ledger.py",
     "typecheck": "tsc --noEmit",
     "agents": "pnpm build && node dist/src/run.js",
     "setup-agent": "pnpm build && node dist/src/setup.js",

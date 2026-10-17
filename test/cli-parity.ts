@@ -1,9 +1,9 @@
-import type { ToolSpec } from "./tools.js";
+import type { ToolSpec } from "../src/core/tools.js";
 
 // Keeps the TOOLS table and the taskfast CLI from drifting apart. The CLI side is the raw
-// `-h` text of every command in test/fixtures/cli/surface.json (re-captured with
-// scripts/capture-cli-surface.mjs); scripts/check-cli-parity.mjs runs the check in
-// `pnpm check`. It fails when a tool passes a flag or a value the CLI's own argument
+// `--help` text of every command in fixtures/cli/surface.json (re-captured with
+// scripts/capture-cli-surface.mjs, never by `pnpm check`); cli-parity.test.ts runs the
+// check offline. It fails when a tool passes a flag or a value the CLI's own argument
 // parser refuses, and when a CLI command has neither a tool nor a reason below.
 
 // Every CLI command no tool runs, by command or command group, with the reason.
@@ -99,7 +99,8 @@ export function parseSurface(help: Record<string, string>): Map<string, CliComma
   }));
 }
 
-const excludedBy = (path: string, key: string) => path === key || path.startsWith(`${key} `);
+// Whether an entry naming a command or a command group covers `path`.
+export const excludedBy = (path: string, key: string) => path === key || path.startsWith(`${key} `);
 
 export function parityProblems(tools: Record<string, ToolSpec>, surface: Map<string, CliCommand>, excluded = EXCLUDED, samples = SAMPLES): string[] {
   const problems: string[] = [];
@@ -110,12 +111,13 @@ export function parityProblems(tools: Record<string, ToolSpec>, surface: Map<str
     try { args = tools[tool]!.args(input); }
     catch (e) { return problems.push(`${tool}: refuses ${JSON.stringify(input)}: ${(e as Error).message}`); }
     const end = args.includes("--") ? args.indexOf("--") : args.length;
-    const at = args.findIndex((a) => a.startsWith("-"));
-    const path = args.slice(0, at < 0 ? end : at).join(" ");
+    const flag = args.findIndex((a) => a.startsWith("-"));
+    const start = flag < 0 ? end : flag;
+    const path = args.slice(0, start).join(" ");
     const command = surface.get(path);
     if (!command?.leaf) return problems.push(`${tool}: \`taskfast ${path}\` is not a CLI command`);
     used.add(path);
-    for (const arg of args.slice(at < 0 ? end : at, end)) {
+    for (const arg of args.slice(start, end)) {
       const [, name, value] = /^--([a-z0-9-]+)(?:=([\s\S]*))?$/.exec(arg) ?? [];
       if (!name) problems.push(`${tool}: passes ${JSON.stringify(arg)}, which is not a --name=value option`);
       else if (NEVER.has(name)) problems.push(`${tool}: passes --${name}, which code and config own`);
@@ -123,8 +125,9 @@ export function parityProblems(tools: Record<string, ToolSpec>, surface: Map<str
       else {
         const values = command.options.get(name);
         if (values && (value === undefined || !values.includes(value))) problems.push(`${tool}: passes --${name}=${value}, but the CLI accepts only ${values.join(", ")}`);
-        const field = tools[tool]!.schema.properties[name.replaceAll("-", "_")];
-        if (values && field && !field.enum) problems.push(`${tool}: ${name.replaceAll("-", "_")} is free text, but --${name} accepts only ${values.join(", ")}`);
+        const field = name.replaceAll("-", "_");
+        const prop = tools[tool]!.schema.properties[field];
+        if (values && prop && !prop.enum) problems.push(`${tool}: ${field} is free text, but --${name} accepts only ${values.join(", ")}`);
       }
     }
   };

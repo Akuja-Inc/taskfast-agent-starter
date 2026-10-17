@@ -51,10 +51,6 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Reads dist/, which the test step's global setup has just rebuilt.
-      - name: Tool and CLI parity
-        run: node scripts/check-cli-parity.mjs
-
       # The wrap gate reads code blocks out of a real CommonMark parse rather
       # than guessing where fences end, so it needs python3-markdown-it. Ubuntu
       # ships it, and apt keeps the runner's python PEP 668-clean.

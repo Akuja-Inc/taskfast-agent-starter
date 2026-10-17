@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { EXCLUDED, parityProblems, parseSurface } from "./cli-parity.js";
-import { UNSUPPORTED_COMMANDS } from "./skills.js";
-import { TOOLS, type ToolSpec } from "./tools.js";
+import { UNSUPPORTED_COMMANDS } from "../src/core/skills.js";
+import { TOOLS, type ToolSpec } from "../src/core/tools.js";
+import { EXCLUDED, excludedBy, parityProblems, parseSurface } from "./cli-parity.js";
 
-const capture = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "test", "fixtures", "cli", "surface.json"), "utf8")) as { version: string; help: Record<string, string> };
+const capture = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "cli", "surface.json"), "utf8")) as { version: string; help: Record<string, string> };
 const surface = parseSurface(capture.help);
 
 // The three entries' schemas and flags as they stood before gh#91 (values passed through
@@ -40,6 +40,7 @@ describe("tool and CLI parity", () => {
     expect(problems).toContain("discover: status is free text, but --status accepts only open, bidding");
   });
 
+  // The gate: `pnpm test` (and so `pnpm check` and CI) fails here on any drift.
   it("finds none in the current tools", () => {
     expect(parityProblems(TOOLS, surface)).toEqual([]);
   });
@@ -67,7 +68,7 @@ describe("tool and CLI parity", () => {
   });
 
   it("gives a reason for every command the skill prompt calls unsupported", () => {
-    const reasoned = (command: string) => Object.keys(EXCLUDED).some((key) => key === command || key.startsWith(`${command} `) || command.startsWith(`${key} `));
+    const reasoned = (command: string) => Object.keys(EXCLUDED).some((key) => excludedBy(command, key) || excludedBy(key, command));
     expect(UNSUPPORTED_COMMANDS.filter((command) => !reasoned(command))).toEqual([]);
   });
 });
