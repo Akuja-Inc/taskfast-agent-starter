@@ -977,6 +977,16 @@ function briefingTab() {
   const number = (value) => value === "" ? undefined : Number(value);
   const limitText = (value) => value === undefined ? "no limit" : money(value);
   const limitChanges = ["perJobUsd", "dailyUsd"].filter((k) => (view.spec.limits || {})[k] !== (draft.limits || {})[k]);
+  function saveBriefing() {
+    const minutes = draft.pollIntervalMinutes ?? ${POLL_MINUTES.default};
+    if (!Number.isInteger(minutes) || minutes < ${POLL_MINUTES.min} || minutes > ${POLL_MINUTES.max}) {
+      ui.error = "Check-for-work interval must be a whole number from ${POLL_MINUTES.min} to ${POLL_MINUTES.max} minutes.";
+      render(true);
+      return;
+    }
+    if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits;
+    act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; });
+  }
   return el("div", { class: "page" },
     el("main", {},
       el("section", { class: "section" },
@@ -1009,7 +1019,7 @@ function briefingTab() {
           limitChanges.map((k) => el("div", { class: "mono", text: (k === "dailyUsd" ? "Daily limit " : "Per job limit ") + limitText((view.spec.limits || {})[k]) + " → " + limitText((draft.limits || {})[k]) })),
           el("div", { class: "small", text: "Takes effect when the agent reopens. Spending already counted today still counts." })) : null,
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
-          el("button", { class: "primary", onclick: () => { const minutes = draft.pollIntervalMinutes ?? ${POLL_MINUTES.default}; if (!Number.isInteger(minutes) || minutes < ${POLL_MINUTES.min} || minutes > ${POLL_MINUTES.max}) { ui.error = "Check-for-work interval must be a whole number from ${POLL_MINUTES.min} to ${POLL_MINUTES.max} minutes."; render(true); return; } if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits; act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; }); }, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
+          el("button", { class: "primary", onclick: saveBriefing, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
         el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
     el("aside", {}, el("section", { class: "section" },
