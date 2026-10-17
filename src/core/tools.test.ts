@@ -105,10 +105,44 @@ describe("prepare", () => {
     expect(prepare("task_bids", { task_id: T }).args).toEqual(["task", "bids", "--", T]);
   });
 
+  const post = { title: "Logo", description: "A logo for a bakery", budget: "40.00", pickup_deadline_hours: 24 };
+  const gate = { description: "has results", check_type: "file_exists", check_expression: "results.json", expected_value: "true" };
+
+  it("posts a direct task with capabilities, criteria, a deadline and a venue, each as its own option", () => {
+    const A = "9A8B7C6D-5E4F-4A3B-8C2D-1E0F9A8B7C6D";
+    const { args, key } = prepare("post_task", { ...post, capabilities: "design, branding", criteria: [gate, { ...gate, check_type: "json_schema", check_expression: '{"type":"object"}', target_artifact_pattern: "*.json" }], execution_deadline: "2026-10-20T17:00:00Z", venue: "tempo-zone-moderato", assignment_type: "direct", direct_agent_id: A });
+    expect(args).toEqual([
+      "post", "--title=Logo", "--description=A logo for a bakery", "--budget=40.00", "--pickup-deadline-hours=24", "--capabilities=design,branding",
+      `--criterion=${JSON.stringify({ ...gate, target_artifact_pattern: null })}`,
+      `--criterion=${JSON.stringify({ ...gate, check_type: "json_schema", check_expression: '{"type":"object"}', target_artifact_pattern: "*.json" })}`,
+      "--execution-deadline=2026-10-20T17:00:00Z", "--venue=tempo-zone-moderato", "--assignment-type=direct", `--direct-agent-id=${A}`, "--yes",
+    ]);
+    // The same title and description are the same post, whatever else changed.
+    expect(key).toBe(prepare("post_task", post).key);
+  });
+
+  it("builds the direct task commands, keyed by task and new agent", () => {
+    const A = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    expect(prepare("task_reassign", { task_id: T, agent_id: A.toUpperCase() })).toMatchObject({ args: ["task", "reassign", `--agent-id=${A}`, "--", T], key: `reassign:${T}:${A}` });
+    expect(prepare("task_open", { task_id: T })).toMatchObject({ args: ["task", "open", "--", T], key: `open:${T}` });
+  });
+
   it.each([
     ["a budget with letters", { title: "x", description: "y", budget: "lots", pickup_deadline_hours: 24 }, /decimal amount/],
     ["a pickup window the server does not offer", { title: "x", description: "y", budget: "10.00", pickup_deadline_hours: 48 }, /one of 1, 4, 12, 24, 72/],
     ["an empty title", { title: " ", description: "y", budget: "10.00", pickup_deadline_hours: 24 }, /title must be non-empty/],
+    ["a direct task with no agent", { ...post, assignment_type: "direct" }, /direct_agent_id goes with assignment_type direct/],
+    ["an agent on an open task", { ...post, direct_agent_id: T }, /direct_agent_id goes with assignment_type direct/],
+    ["a direct agent that is not a UUID", { ...post, assignment_type: "direct", direct_agent_id: "--env=prod" }, /direct_agent_id must be a UUID/],
+    ["a capability with spaces", { ...post, capabilities: "data entry" }, /capabilities must be a single word/],
+    ["a deadline that is not RFC 3339", { ...post, execution_deadline: "next Friday" }, /RFC 3339/],
+    ["a deadline on a day that does not exist", { ...post, execution_deadline: "2026-02-31T10:00:00Z" }, /RFC 3339/],
+    ["a deadline in a month that does not exist", { ...post, execution_deadline: "2026-13-01T10:00:00Z" }, /RFC 3339/],
+    ["a venue with spaces", { ...post, venue: "tempo zone" }, /venue must be a single word/],
+    ["an empty criteria list", { ...post, criteria: [] }, /criteria must be a list of 1 to 10/],
+    ["a criterion with an unknown check type", { ...post, criteria: [{ ...gate, check_type: "ai_judge" }] }, /check_type must be one of json_schema/],
+    ["a criterion with an extra field", { ...post, criteria: [{ ...gate, path: "/etc/passwd" }] }, /each criterion is/],
+    ["a criterion missing its expected value", { ...post, criteria: [{ ...gate, expected_value: undefined }] }, /expected_value must be non-empty/],
   ])("refuses a post with %s", (_n, input, why) => {
     expect(() => prepare("post_task", input)).toThrow(why);
   });

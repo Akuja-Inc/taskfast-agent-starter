@@ -24,11 +24,9 @@ export const EXCLUDED: Record<string, string> = {
   "task edit": "planned in gh#91 group 2 (poster lifecycle)",
   "task cancel": "planned in gh#91 group 2 (poster lifecycle)",
   "task retry-fee": "planned in gh#91 group 2 (poster lifecycle); it charges the submission fee again",
-  "task reassign": "planned in gh#91 group 2, with direct assignment",
   // 0.19.8's help says it flips a direct task back to assigned; taskfast-cli#196 corrected
   // the text after this capture: it reopens an abandoned task to open for new bids.
   "task reopen": "planned in gh#91 group 2 (poster lifecycle): reopens an abandoned task for new bids",
-  "task open": "planned in gh#91 group 2, with direct assignment",
   "task refuse": "planned in gh#91 group 3 (worker lifecycle)",
   "task abort": "planned in gh#91 group 3 (worker lifecycle)",
   "task concede": "planned in gh#91 group 3 (worker lifecycle)",
@@ -69,7 +67,13 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   task_remedy: { task_id: T, summary: "Fixed", artifacts: files },
   message_send: { task_id: T, content: "Hello" },
   task_bids: { task_id: T, cursor: "c2", limit: 5 },
-  post_task: { title: "Title", description: "Do it", budget: "40.00", pickup_deadline_hours: 24 },
+  post_task: {
+    title: "Title", description: "Do it", budget: "40.00", pickup_deadline_hours: 24, capabilities: "writing,research",
+    criteria: [{ description: "has results", check_type: "file_exists", check_expression: "results.json", expected_value: "true" }],
+    execution_deadline: "2026-10-20T17:00:00Z", venue: "tempo-zone-moderato", assignment_type: "direct", direct_agent_id: B,
+  },
+  task_reassign: { task_id: T, agent_id: B },
+  task_open: { task_id: T },
   bid_accept: { task_id: T, bid_id: B },
   bid_reject: { task_id: T, bid_id: B, reason: "Too high" },
   escrow_sign: { task_id: T, bid_id: B },
@@ -143,9 +147,13 @@ export function parityProblems(tools: Record<string, ToolSpec>, surface: Map<str
       continue;
     }
     check(tool, sample);
-    // Every advertised value, on its own beside the required fields.
+    // Every advertised value, on its own beside the required fields, or in the full
+    // sample when it needs a partner field (assignment_type direct and direct_agent_id).
     const required = Object.fromEntries(spec.schema.required.map((f) => [f, sample[f]]));
-    for (const [field, prop] of Object.entries(spec.schema.properties)) for (const value of prop.enum ?? []) check(tool, { ...required, [field]: value });
+    const builds = (input: Record<string, unknown>) => { try { spec.args(input); return true; } catch { return false; } };
+    for (const [field, prop] of Object.entries(spec.schema.properties)) {
+      for (const value of prop.enum ?? []) check(tool, builds({ ...required, [field]: value }) ? { ...required, [field]: value } : { ...sample, [field]: value });
+    }
   }
 
   for (const [path, command] of surface) {
