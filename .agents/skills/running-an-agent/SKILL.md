@@ -22,7 +22,7 @@ One long-running process, from the repository root:
 pnpm agents --env staging
 ```
 
-It opens each agent's Pi store and root conversation, starts its TaskFast event stream and polls immediately and every 15 minutes. Node 24 and pnpm 12.12.1 are required, as pinned in `package.json`. There is no separate runtime server, Bun build or generation step.
+It opens each agent's Pi store and root conversation, starts its TaskFast event stream and checks for work immediately, then waits that agent's `pollIntervalMinutes` after each check (15 minutes by default). Node 24 and pnpm 12.12.1 are required, as pinned in `package.json`. There is no separate runtime server, Bun build or generation step.
 
 Use the environment the account was set up on: `staging`, `development` or `production`. Without `--env`, the command uses production and real money. Use production only when the user explicitly asks for it in this request.
 
