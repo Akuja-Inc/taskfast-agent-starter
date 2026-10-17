@@ -67,6 +67,16 @@ describe("tool and CLI parity", () => {
     expect(parityProblems(tools, surface)).toContain("task_get: SAMPLES needs a call that sets every field (task_id, cursor)");
   });
 
+  // gh#91's "deliberately not tools", plus the artifact steps that run inside a submit.
+  // A tool that ran one would fail above as "EXCLUDED names ..., which a tool runs".
+  it("keeps exactly the commands no model tool may run", () => {
+    expect(Object.keys(EXCLUDED)).toEqual([
+      "init", "config", "skills", "ping", "events", "webhook", "cast", "backer", "agent update-me",
+      "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
+    ]);
+    expect(Object.values(EXCLUDED).some((reason) => reason.includes("planned"))).toBe(false);
+  });
+
   it("gives a reason for every command the skill prompt calls unsupported", () => {
     const reasoned = (command: string) => Object.keys(EXCLUDED).some((key) => excludedBy(command, key) || excludedBy(key, command));
     expect(UNSUPPORTED_COMMANDS.filter((command) => !reasoned(command))).toEqual([]);

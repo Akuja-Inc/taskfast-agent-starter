@@ -129,12 +129,17 @@ export const SKILL_COMMANDS: Record<string, string> = {
   "task edit": "task_edit", "task cancel": "task_cancel", "task reopen": "task_reopen",
   "task refuse": "task_refuse", "task abort": "task_abort", "task concede": "task_concede", "bid cancel": "bid_cancel",
   "task retry-fee": "task_retry_fee", "stake": "stake",
+  "message conversations": "message_conversations", "platform config": "platform_config", "agent list": "agent_list", "agent get": "agent_get",
+  "dispute": "dispute_get", "artifact list": "artifact_list", "artifact get": "artifact_get", "payment get": "payment_get", "payment list": "payment_list",
+  "review list": "review_list", "review create": "review_create",
 };
 // Commands the bundle names that no tool runs. Setup and event delivery belong to the
-// owner and the host; the rest need their own safety contract before they become tools.
+// owner and the host; artifact uploads and deletes run inside task_submit and
+// task_remedy; the rest are outside what the kit lets an agent do (EXCLUDED in
+// test/cli-parity.ts gives each reason).
 export const UNSUPPORTED_COMMANDS = [
-  "init", "config", "skills", "ping", "platform", "webhook", "events", "artifact", "payment", "review",
-  "dispute", "message conversations",
+  "init", "config", "skills", "ping", "webhook", "events", "cast", "backer", "agent update-me",
+  "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
 ];
 
 // The skills section of the system prompt. Rebuilt every turn, so it survives compaction.
@@ -144,7 +149,7 @@ export function skillsPrompt(skills: readonly Skill[]): string {
     ...skills.map((skill) => `- ${skill.name}: ${skill.description}`),
     "",
     `Skills may be written for agents with a shell. You have no shell and no taskfast command; use your tools. ${Object.entries(SKILL_COMMANDS).map(([command, tool]) => `\`taskfast ${command}\` is ${tool}`).join(", ")}.`,
-    "task_submit and task_remedy deliver up to 5 files as artifacts. A text file you write in the call as a name and its full content: up to 256 KiB, ending in .txt, .md, .csv, .json, .xml, .html, .css, .js or .svg. A PNG, JPEG, GIF or WebP image only as a name and the media: handle a tool result gave you, because you cannot make image bytes yourself. Name each file as the task's criteria require. The upload, list and delete steps of `taskfast artifact` happen inside them: your earlier uploads on a task are cleared before you submit again. So a task that needs text files, an SVG, or an image one of your tools produces is work you can take.",
+    "task_submit and task_remedy deliver up to 5 files as artifacts. A text file you write in the call as a name and its full content: up to 256 KiB, ending in .txt, .md, .csv, .json, .xml, .html, .css, .js or .svg. A PNG, JPEG, GIF or WebP image only as a name and the media: handle a tool result gave you, because you cannot make image bytes yourself. Name each file as the task's criteria require. The upload and delete steps of `taskfast artifact` happen inside them: your earlier uploads on a task are cleared before you submit again. So a task that needs text files, an SVG, or an image one of your tools produces is work you can take.",
     "A stake-tier task (worth $1 or more) needs its performance bond first: task_claim is refused with bond_pending, then bond_post posts the bond and you claim again. The bond spends your wallet and counts against your spending limits until the task settles.",
     `No tool runs ${UNSUPPORTED_COMMANDS.map((command) => `\`taskfast ${command}\``).join(", ")}. You work on your own, so never wait for help with one of those and never work around it: do not bid on or claim work that needs one, such as a task that requires a PDF, a video, an archive or an image none of your tools produces, and choose work your tools can finish. If work you already hold turns out to need one, keep a note of what was missing with remember, so your operator sees it.`,
     "Your tools' rules win over any skill: never repeat a write whose result was uncertain, escrow_sign included, and leave restarts, event polling and webhooks to the host.",
