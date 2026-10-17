@@ -51,12 +51,12 @@ describe("tool and CLI parity", () => {
       settle: { ...TOOLS.settle!, args: (i) => ["settle", "--keystore=/x", "--", String(i.task_id)] },
       me: { ...TOOLS.me!, args: () => ["me", "--env=prod"] },
     };
-    const { stake: _, ...excluded } = EXCLUDED;
+    const { ping: _, ...excluded } = EXCLUDED;
     const problems = parityProblems(tools, surface, { ...excluded, "task claim": "stale", "nope": "gone" });
     expect(problems).toEqual(expect.arrayContaining([
       "settle: passes --keystore, which code and config own",
       "me: `taskfast me` has no --env",
-      "`taskfast stake` has no tool and no reason in EXCLUDED",
+      "`taskfast ping` has no tool and no reason in EXCLUDED",
       "EXCLUDED names `taskfast task claim`, which a tool runs",
       "EXCLUDED names `taskfast nope`, which the CLI does not have",
     ]));

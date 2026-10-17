@@ -44,11 +44,30 @@ export async function findBid(input: Record<string, unknown>, read: (args: strin
 }
 
 // The amount a money tool commits, from code (I9): the bid's price as the server reports
-// it, the platform's submission fee, or a task's quoted bond. The bid read is deliberate,
+// it, the platform's submission fee, or a task's quoted bond or stake. The bid read is deliberate,
 // even if the model just listed the bids itself: the amount must come from the server,
 // never from the model. A string is the reason the amount could not be fixed.
 export async function amountOf(source: AmountSource | undefined, input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<number | string> {
-  if (source === "bondStake") return bondStake(input, read);
+  const price = await priceOf(source, input, read);
+  return typeof price === "string" ? price : price.usd;
+}
+
+// What a money tool commits, fixed by code: the amount in USD for the agent's limits,
+// and the options its command needs to commit exactly that amount. `taskfast stake`
+// takes the stake as --amount in bond base units, so the quote that is counted is the
+// stake that is sent; every other money command fixes its own amount.
+export interface Price { usd: number; flags: string[] }
+export async function priceOf(source: AmountSource | undefined, input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<Price | string> {
+  if (source === "bondStake" || source === "stakeQuote") {
+    const quote = await bondQuote(input, read);
+    if (typeof quote === "string") return quote;
+    return { usd: quote.usd, flags: source === "stakeQuote" ? [`--amount=${quote.units}`] : [] };
+  }
+  const usd = await serverAmount(source, input, read);
+  return typeof usd === "string" ? usd : { usd, flags: [] };
+}
+
+async function serverAmount(source: AmountSource | undefined, input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<number | string> {
   if (source === "submissionFee") return submissionFee(read);
   if (source !== "bidPrice") return "this money tool has no amount source";
   const bid = await findBid(input, read);
@@ -67,23 +86,23 @@ async function submissionFee(read: (args: string[]) => Promise<CliResult>): Prom
   return Number.isFinite(fee) && fee >= 0 ? fee : "could not read the submission fee: the platform config has none";
 }
 
-// The performance bond a stake-tier task requires, in USD for the agent's limits.
-// `taskfast bond post --dry-run` fetches the server's quote and stops before any
-// transaction, so `data.amount` is the required stake in bond base units. The token's
-// decimals come from a read-only `cast call`, so nothing is assumed about the token.
-// A string is the reason the amount could not be fixed.
-async function bondStake(input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<number | string> {
+// The performance bond or stake a task requires (the server's /stake/quote), in bond
+// base units and in USD for the agent's limits. `taskfast bond post --dry-run` fetches
+// that quote and stops before any transaction, so `data.amount` is the required stake
+// in base units. The token's decimals come from a read-only `cast call`, so nothing is
+// assumed about the token. A string is the reason the amount could not be fixed.
+async function bondQuote(input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<{ usd: number; units: number } | string> {
   const r = await read(["bond", "post", "--dry-run", "--", String(input.task_id)]);
   if (r.outcome !== "ok") return `could not read the bond quote: ${r.error ?? r.outcome}`;
   const data = r.data as { action?: unknown; amount?: unknown; token?: unknown } | null;
   if (data?.action !== "would_post_bond") return "the bond dry run did not quote a stake";
   const raw = data.amount;
-  if (!Number.isInteger(raw) || (raw as number) <= 0) return `the bond quote has no usable amount (${JSON.stringify(raw)})`;
+  if (!Number.isSafeInteger(raw) || (raw as number) <= 0) return `the bond quote has no usable amount (${JSON.stringify(raw)})`;
   const token = data.token;
   if (typeof token !== "string" || !/^0x[0-9a-f]{40}$/i.test(token)) return `the bond quote has no usable token (${JSON.stringify(token)})`;
   const decimals = await tokenDecimals(token, read);
   if (typeof decimals === "string") return decimals;
-  return (raw as number) / 10 ** decimals;
+  return { usd: (raw as number) / 10 ** decimals, units: raw as number };
 }
 
 // The bond token's decimals, as the token itself reports them. A string is the reason.

@@ -75,9 +75,13 @@ describe("prepare", () => {
     expect(prepare("task_get", { task_id: T }).key).toBeNull();
   });
 
-  it("marks exactly the three tools that commit funds as money, each with a code-side amount source", () => {
+  it("marks exactly the five tools that commit funds as money, each with a code-side amount source", () => {
     const money = Object.entries(TOOLS).filter(([, t]) => t.kind === "money");
-    expect(money.map(([n, t]) => [n, t.amount])).toEqual([["bond_post", "bondStake"], ["post_task", "submissionFee"], ["escrow_sign", "bidPrice"]]);
+    expect(money.map(([n, t]) => [n, t.amount])).toEqual([["bond_post", "bondStake"], ["stake", "stakeQuote"], ["post_task", "submissionFee"], ["task_retry_fee", "submissionFee"], ["escrow_sign", "bidPrice"]]);
+    // The model cannot name a stake: code passes the quote as --amount.
+    expect(Object.keys(TOOLS.stake!.schema.properties)).toEqual(["task_id"]);
+    expect(prepare("stake", { task_id: T })).toMatchObject({ args: ["stake", "--", T], key: `stake:${T}` });
+    expect(prepare("task_retry_fee", { task_id: T })).toMatchObject({ args: ["task", "retry-fee", "--", T], key: `retry-fee:${T}` });
     expect(Object.values(TOOLS).filter((t) => t.kind !== "money").every((t) => t.amount === undefined)).toBe(true);
     // The model cannot hand escrow a price: the tool has no such field.
     expect(Object.keys(TOOLS.escrow_sign!.schema.properties)).toEqual(["task_id", "bid_id"]);
