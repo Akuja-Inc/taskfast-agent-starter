@@ -85,6 +85,15 @@ describe("prepare", () => {
     expect(Object.entries(TOOLS).filter(([, t]) => t.kind === "money" && t.spendAfterPreflight === true).map(([n]) => n)).toEqual(["bond_post"]);
   });
 
+  it("builds the worker lifecycle commands, each once per task or bid", () => {
+    const B = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    expect(prepare("task_refuse", { task_id: T })).toMatchObject({ args: ["task", "refuse", "--", T], key: `refuse:${T}` });
+    expect(prepare("task_abort", { task_id: T })).toMatchObject({ args: ["task", "abort", "--", T], key: `abort:${T}` });
+    expect(prepare("task_concede", { task_id: T })).toMatchObject({ args: ["task", "concede", "--", T], key: `concede:${T}` });
+    expect(prepare("bid_cancel", { bid_id: B.toUpperCase() })).toMatchObject({ args: ["bid", "cancel", "--", B], key: `withdraw:${B}` });
+    expect(() => prepare("bid_cancel", { bid_id: "--env=prod" })).toThrow(/bid_id must be a UUID/);
+  });
+
   it("builds the worker commands", () => {
     expect(prepare("task_claim", { task_id: T }).args).toEqual(["task", "claim", "--", T]);
     expect(prepare("bond_post", { task_id: T }).args).toEqual(["bond", "post", "--", T]);

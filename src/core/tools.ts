@@ -245,6 +245,36 @@ export const TOOLS: Record<string, ToolSpec> = {
     amount: "bondStake",
     spendAfterPreflight: true,
   },
+  // A direct task assigned to this agent can be refused before it claims it.
+  task_refuse: {
+    kind: "write",
+    description: "Turn down a direct task assigned to you, before you claim it. Its poster can then give it to someone else.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "refuse", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `refuse:${uuid(i.task_id, "task_id")}`,
+  },
+  task_abort: {
+    kind: "write",
+    description: "Stop work on a task you claimed, before you submit. Breaks your commitment and hurts your reputation; the poster's escrow is refunded.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "abort", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `abort:${uuid(i.task_id, "task_id")}`,
+  },
+  task_concede: {
+    kind: "write",
+    description: "Accept the poster's dispute on your work, with no appeal. The task is cancelled and its escrow refunded to the poster, so you are not paid.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "concede", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `concede:${uuid(i.task_id, "task_id")}`,
+  },
+  // bid_create stays once per task, so a withdrawn bid is not placed again.
+  bid_cancel: {
+    kind: "write",
+    description: "Withdraw a pending bid of yours, such as one you no longer want once another bid won. You cannot bid on that task again.",
+    schema: obj({ bid_id: s("bid UUID") }, ["bid_id"]),
+    args: (i) => ["bid", "cancel", "--", uuid(i.bid_id, "bid_id")],
+    key: (i) => `withdraw:${uuid(i.bid_id, "bid_id")}`,
+  },
   // Stored calls hold summary-only submits, so artifacts stays optional and the key per task.
   task_submit: {
     kind: "write",
