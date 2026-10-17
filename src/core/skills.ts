@@ -128,12 +128,13 @@ export const SKILL_COMMANDS: Record<string, string> = {
   "task dispute": "task_dispute", "settle": "settle", "task reassign": "task_reassign", "task open": "task_open",
   "task edit": "task_edit", "task cancel": "task_cancel", "task reopen": "task_reopen",
   "task refuse": "task_refuse", "task abort": "task_abort", "task concede": "task_concede", "bid cancel": "bid_cancel",
+  "task retry-fee": "task_retry_fee", "stake": "stake",
 };
 // Commands the bundle names that no tool runs. Setup and event delivery belong to the
 // owner and the host; the rest need their own safety contract before they become tools.
 export const UNSUPPORTED_COMMANDS = [
   "init", "config", "skills", "ping", "platform", "webhook", "events", "artifact", "payment", "review",
-  "dispute", "task retry-fee", "message conversations",
+  "dispute", "message conversations",
 ];
 
 // The skills section of the system prompt. Rebuilt every turn, so it survives compaction.

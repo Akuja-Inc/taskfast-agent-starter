@@ -13,8 +13,8 @@ export type ToolKind = "read" | "write" | "money" | "memory";
 // A money tool must name where its amount comes from: the type will not compile without
 // one, so a charged command cannot be added without being counted. bidPrice and
 // submissionFee are prices the server publishes; bondStake is the bond a task's quote
-// requires.
-export type AmountSource = "bidPrice" | "submissionFee" | "bondStake";
+// requires; stakeQuote is that same quote, which code also passes to `taskfast stake`.
+export type AmountSource = "bidPrice" | "submissionFee" | "bondStake" | "stakeQuote";
 type Schema = { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[]; items?: Schema }>; required: string[]; additionalProperties: false };
 interface ToolBase {
   description: string;
@@ -245,6 +245,18 @@ export const TOOLS: Record<string, ToolSpec> = {
     amount: "bondStake",
     spendAfterPreflight: true,
   },
+  // A direct high-assurance task waits at awaiting_stake for its agent's performance
+  // stake. The stake is the server's quote: code reads it, counts it, and passes it as
+  // --amount in bond base units, so the model never names it. One POST with the agent's
+  // key and no signing, so a known refusal means nothing was staked.
+  stake: {
+    kind: "money",
+    description: "Post the performance stake a direct high-assurance task assigned to you needs (status awaiting_stake). Spends the stake the server quotes, held as a bond until the task settles.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["stake", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `stake:${uuid(i.task_id, "task_id")}`,
+    amount: "stakeQuote",
+  },
   // A direct task assigned to this agent can be refused before it claims it.
   task_refuse: {
     kind: "write",
@@ -339,6 +351,18 @@ export const TOOLS: Record<string, ToolSpec> = {
       ];
     },
     key: (i) => `post:${digest(`${text(i.title, "title", 200)}\n${text(i.description, "description")}`)}`,
+    amount: "submissionFee",
+  },
+  // A post whose fee charge failed parks at blocked_on_submission_fee_debt, and only this
+  // recovers it: the server broadcasts a fresh fee transfer, so the fee counts again.
+  // ponytail: once per task; a retry whose new transfer also fails cannot run a second
+  // time. Key it by the failed charge if that ever happens.
+  task_retry_fee: {
+    kind: "money",
+    description: "Charge the submission fee again for a task of yours whose fee charge failed (task_get shows submission_fee_status failed and next_action retry_submission_fee). Costs the platform's submission fee. A retry_not_needed refusal means a transfer is still in flight: wait and check the task again.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "retry-fee", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `retry-fee:${uuid(i.task_id, "task_id")}`,
     amount: "submissionFee",
   },
   // A direct task the agent refused or let lapse sits at unassigned until its poster
