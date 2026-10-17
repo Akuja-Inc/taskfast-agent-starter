@@ -48,7 +48,17 @@ const word = (v: unknown, name: string) => (typeof v === "string" && /^[a-z0-9_-
 const opt = (name: string, v: unknown, check: (v: unknown, n: string) => string) => (v === undefined ? [] : [`--${name}=${check(v, name)}`]);
 // A status filter the model names in the server's words (accepted_pending_escrow), which
 // the CLI's argument parser only takes in kebab case (accepted-pending-escrow).
-const oneOf = (values: string[]) => (v: unknown, n: string) => (typeof v === "string" && values.includes(v) ? v.replaceAll("_", "-") : bad(`${n} must be one of ${values.join(", ")}`));
+const among = (values: string[]) => (v: unknown, n: string) => (typeof v === "string" && values.includes(v) ? v : bad(`${n} must be one of ${values.join(", ")}`));
+const oneOf = (values: string[]) => (v: unknown, n: string) => among(values)(v, n).replaceAll("_", "-");
+// Capability tags as one string, separated by commas: what stored discover calls hold.
+const tags = (v: unknown, n: string) => (typeof v === "string" ? v.split(",").map((tag) => word(tag.trim(), n)) : bad(`${n} must be tags separated by commas`));
+const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,9})?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
+// Dates roll over (2026-02-31 is March 3), so the month and day must survive the calendar.
+const timestamp = (v: unknown, n: string) => {
+  const [, y, m, d] = (typeof v === "string" && RFC3339.exec(v)) || [];
+  const day = y ? new Date(Date.UTC(+y, +m! - 1, +d!)) : null;
+  return day && day.getUTCMonth() === +m! - 1 && day.getUTCDate() === +d! ? (v as string) : bad(`${n} must be an RFC 3339 time like 2026-10-20T17:00:00Z`);
+};
 const BID_STATUS = ["pending", "accepted_pending_escrow", "accepted", "rejected", "withdrawn"];
 const TASK_KIND = ["mine", "queue", "posted"];
 const MINE_STATUS = ["assigned", "in_progress", "under_review", "disputed", "remedied"];
@@ -66,6 +76,37 @@ const digest = (s: string) => createHash("sha256").update(s).digest("hex").slice
 const s = (description: string) => ({ type: "string", description });
 const obj = (properties: Schema["properties"], required: string[] = []): Schema => ({ type: "object", properties, required, additionalProperties: false });
 // Every page option a list takes: the cursor to continue from, and the page size.
+// A post's completion criteria: the server's objective payout gate. Code checks each one's
+// shape and passes it as one --criterion of JSON it writes; never a criteria file.
+const CHECK_TYPES = ["json_schema", "regex", "count", "http_status", "file_exists"];
+const MAX_CRITERIA = 10;
+const CRITERION = ["description", "check_type", "check_expression", "expected_value", "target_artifact_pattern"];
+function criteria(v: unknown): string[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length < 1 || v.length > MAX_CRITERIA) bad(`criteria must be a list of 1 to ${MAX_CRITERIA}`);
+  return (v as unknown[]).map((c) => {
+    if (c === null || typeof c !== "object" || Object.keys(c).some((k) => !CRITERION.includes(k))) bad(`each criterion is { ${CRITERION.join(", ")} }`);
+    const r = c as Record<string, unknown>;
+    return `--criterion=${JSON.stringify({
+      description: text(r.description, "criterion description", 500),
+      check_type: among(CHECK_TYPES)(r.check_type, "check_type"),
+      check_expression: text(r.check_expression, "check_expression", 2000),
+      expected_value: text(r.expected_value, "expected_value", 2000),
+      target_artifact_pattern: r.target_artifact_pattern == null ? null : text(r.target_artifact_pattern, "target_artifact_pattern", 200),
+    })}`;
+  });
+}
+const criterionList = {
+  type: "array",
+  description: `optional checks the delivery must pass before payout, at most ${MAX_CRITERIA}`,
+  items: obj({
+    description: s("what the check proves"),
+    check_type: { type: "string", enum: CHECK_TYPES },
+    check_expression: s("the check itself: a JSON schema, a regex, a glob such as *.csv, a path"),
+    expected_value: s('the result that passes, e.g. "true" or "200"'),
+    target_artifact_pattern: s("optional glob naming the artifact file it checks, e.g. results.json"),
+  }, ["description", "check_type", "check_expression", "expected_value"]),
+};
 const PAGE = { cursor: s("next_cursor from the previous page, to read the next one"), limit: { type: "number", description: "page size, 1-100" } };
 const page = (i: Record<string, unknown>) => [...opt("cursor", i.cursor, cursor), ...opt("limit", i.limit, limit)];
 
@@ -149,7 +190,7 @@ export const TOOLS: Record<string, ToolSpec> = {
     }),
     args: (i) => [
       "discover", ...opt("status", i.status, oneOf(DISCOVER_STATUS)), ...opt("assignment-type", i.assignment_type, oneOf(ASSIGNMENT)),
-      ...(i.capability === undefined ? [] : String(i.capability).split(",").map((tag) => `--capability=${word(tag.trim(), "capability")}`)),
+      ...(i.capability === undefined ? [] : tags(i.capability, "capability").map((tag) => `--capability=${tag}`)),
       ...opt("budget-min", i.budget_min, money), ...opt("budget-max", i.budget_max, money), ...page(i),
     ],
   },
@@ -236,14 +277,53 @@ export const TOOLS: Record<string, ToolSpec> = {
   },
 
   // A post commits no budget, which is paid later through escrow_sign; it charges the
-  // platform's submission fee, so that fee is what it counts against the limits.
+  // platform's submission fee, so that fee is what it counts against the limits. The CLI
+  // signs only that fee transfer, for open and direct tasks alike (post.rs, 0.19.8).
+  // --yes acknowledges the CLI's own oversized-budget gate (confirm_above_budget). The
+  // kit decides that here: the post spends only the fee, and the budget is spent later
+  // by escrow_sign, which counts the bid's price against this agent's own limits.
+  // The key stays title and description, as stored calls and their actions hold it.
   post_task: {
     kind: "money",
-    description: "Post a new task for others to bid on. Posting costs the platform's submission fee; you pay a bid's price later, when you fund its escrow.",
-    schema: obj({ title: s("short title"), description: s("what you need done"), budget: s('the most you will pay, e.g. "40.00"'), pickup_deadline_hours: { type: "number", description: "hours until someone must pick it up: 1, 4, 12, 24 or 72" } }, ["title", "description", "budget", "pickup_deadline_hours"]),
-    args: (i) => ["post", `--title=${text(i.title, "title", 200)}`, `--description=${text(i.description, "description")}`, `--budget=${money(i.budget, "budget")}`, `--pickup-deadline-hours=${hours(i.pickup_deadline_hours, "pickup_deadline_hours")}`, "--yes"],
+    description: "Post a new task: an open auction anyone qualified can bid on, or a direct task for one agent you name. Posting costs the platform's submission fee; you pay a bid's price later, when you fund its escrow. The same title and description post once.",
+    schema: obj({
+      title: s("short title"),
+      description: s("what you need done"),
+      budget: s('the most you will pay, e.g. "40.00"'),
+      pickup_deadline_hours: { type: "number", description: "hours until someone must pick it up: 1, 4, 12, 24 or 72" },
+      capabilities: s("optional capability tags the worker must have, separated by commas"),
+      criteria: criterionList,
+      execution_deadline: s("optional time the work must be done by, RFC 3339 such as 2026-10-20T17:00:00Z; at most 7 days ahead"),
+      venue: s("optional settlement venue chain_key from platform config; the default venue when omitted"),
+      assignment_type: { type: "string", enum: ASSIGNMENT, description: "open (the default) or direct, which needs direct_agent_id" },
+      direct_agent_id: s("the agent UUID a direct task is for"),
+    }, ["title", "description", "budget", "pickup_deadline_hours"]),
+    args: (i) => {
+      if ((i.assignment_type === "direct") !== (i.direct_agent_id !== undefined)) bad("direct_agent_id goes with assignment_type direct, and only with it");
+      return [
+        "post", `--title=${text(i.title, "title", 200)}`, `--description=${text(i.description, "description")}`, `--budget=${money(i.budget, "budget")}`, `--pickup-deadline-hours=${hours(i.pickup_deadline_hours, "pickup_deadline_hours")}`,
+        ...opt("capabilities", i.capabilities, (v, n) => tags(v, n).join(",")), ...criteria(i.criteria), ...opt("execution-deadline", i.execution_deadline, timestamp),
+        ...opt("venue", i.venue, word), ...opt("assignment-type", i.assignment_type, oneOf(ASSIGNMENT)), ...(i.direct_agent_id === undefined ? [] : [`--direct-agent-id=${uuid(i.direct_agent_id, "direct_agent_id")}`]), "--yes",
+      ];
+    },
     key: (i) => `post:${digest(`${text(i.title, "title", 200)}\n${text(i.description, "description")}`)}`,
     amount: "submissionFee",
+  },
+  // A direct task the agent refused or let lapse sits at unassigned until its poster
+  // names another agent or opens it to bids.
+  task_reassign: {
+    kind: "write",
+    description: "Give a direct task of yours that sits unassigned (its agent refused or let it lapse) to another agent. Its escrow flow starts again.",
+    schema: obj({ task_id: s("task UUID"), agent_id: s("the new agent's UUID") }, ["task_id", "agent_id"]),
+    args: (i) => ["task", "reassign", `--agent-id=${uuid(i.agent_id, "agent_id")}`, "--", uuid(i.task_id, "task_id")],
+    key: (i) => `reassign:${uuid(i.task_id, "task_id")}:${uuid(i.agent_id, "agent_id")}`,
+  },
+  task_open: {
+    kind: "write",
+    description: "Turn a direct task of yours that sits unassigned into an open auction anyone qualified can bid on.",
+    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
+    args: (i) => ["task", "open", "--", uuid(i.task_id, "task_id")],
+    key: (i) => `open:${uuid(i.task_id, "task_id")}`,
   },
   // bid_accept and bid_reject run on the bid alone but keep task_id in their schema:
   // stored conversations hold calls with it, and recovery must still accept them.
@@ -305,7 +385,7 @@ export function prepare(tool: string, input: unknown): { spec: ToolSpec; args: s
     if (!Object.hasOwn(spec.schema.properties, k)) bad(`${tool} has no field ${k}`);
     // UUID case is not marketplace identity. Normalize before both key construction
     // and the policy reads, so a fresh model call cannot vary casing to run twice.
-    if (k === "task_id" || k === "bid_id") i[k] = uuid(i[k], k).toLowerCase();
+    if (k === "task_id" || k === "bid_id" || k === "agent_id") i[k] = uuid(i[k], k).toLowerCase();
   }
   return { spec, args: spec.args(i), key: spec.key ? spec.key(i) : null, files: spec.files ? spec.files(i) : [], input: i };
 }

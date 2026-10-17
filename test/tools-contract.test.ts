@@ -28,6 +28,10 @@ describe("tools match the server contract", () => {
     expect(TOOLS.bid_list!.schema.properties.status!.enum).toEqual(published);
   });
 
+  it("post_task's criteria offer exactly the check types CompletionCriterionInput publishes", () => {
+    expect(TOOLS.post_task!.schema.properties.criteria!.items!.properties.check_type!.enum).toEqual(enumAfter(yaml, /\n {4}CompletionCriterionInput:\n/));
+  });
+
   it("and the bid list's status filter publishes the same set", () => {
     expect(enumAfter(yaml, /- name: status\n\s+in: query[\s\S]*?Filter by bid status/)).toEqual(enumAfter(yaml, /\n {4}BidDetail:\n/));
   });
