@@ -301,6 +301,22 @@ it("a spec save ends one agent's stream under the shared cap and leaves the othe
   expect(await survivor.next()).toMatchObject({ event: "view", data: { operator: { orders: ["still going"] } } });
 });
 
+it("validates polling intervals at the console boundary before calling saveSpec", async () => {
+  const { agent } = fakeAgent();
+  const saved: unknown[] = [];
+  agent.saveSpec = async (spec) => { saved.push(spec); };
+  const { port } = await serve([agent]);
+  for (const pollIntervalMinutes of [0, -1, 1.5, 1441, "5", "", null]) {
+    const response = await call(port, "/api/agents/foo/spec", { method: "PUT", headers: auth, body: { ...agent.spec, pollIntervalMinutes } });
+    expect(response.status).toBe(400);
+    expect(response.text).toContain("pollIntervalMinutes must be a whole number from 1 to 1440");
+  }
+  expect(saved).toEqual([]);
+  const body = { ...agent.spec, pollIntervalMinutes: 7 };
+  expect((await call(port, "/api/agents/foo/spec", { method: "PUT", headers: auth, body })).status).toBe(204);
+  expect(saved).toEqual([body]);
+});
+
 it("moves up one port at a time past ports already in use", async () => {
   const first = await serve();
   const taken = createServer();

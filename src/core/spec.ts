@@ -4,7 +4,8 @@ import type { AgentFile, AgentSpec, Limits } from "./types.js";
 // The agent folder file holding the agent's instructions, and the most it may hold.
 export const INSTRUCTIONS_PATH = "INSTRUCTIONS.md";
 export const MAX_INSTRUCTIONS = 20_000;
-const FILE_KEYS = ["role", "model", "dials", "limits"] as const;
+export const POLL_MINUTES = { min: 1, max: 1440, default: 15 } as const;
+const FILE_KEYS = ["role", "model", "dials", "limits", "pollIntervalMinutes"] as const;
 
 const fail = (why: string): never => {
   throw new Error(`invalid agent file: ${why}`);
@@ -70,8 +71,13 @@ export function parseAgentFile(raw: unknown): AgentFile {
 
   const d = record(o.dials, "dials", ["competence", "diligence", "priceSensitivity", "temperament"]);
   const limits = o.limits === undefined ? undefined : parseLimits(o.limits);
+  const pollIntervalMinutes = o.pollIntervalMinutes;
+  if (pollIntervalMinutes !== undefined && (typeof pollIntervalMinutes !== "number" || !Number.isInteger(pollIntervalMinutes) || pollIntervalMinutes < POLL_MINUTES.min || pollIntervalMinutes > POLL_MINUTES.max)) {
+    fail(`pollIntervalMinutes must be a whole number from ${POLL_MINUTES.min} to ${POLL_MINUTES.max}`);
+  }
   return {
     ...(limits ? { limits } : {}),
+    ...(typeof pollIntervalMinutes === "number" ? { pollIntervalMinutes } : {}),
     role,
     model,
     dials: {

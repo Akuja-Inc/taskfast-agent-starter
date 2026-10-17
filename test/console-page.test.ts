@@ -597,6 +597,50 @@ it("keeps a pending composer focus away from the Briefing tab's instructions fie
   expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: true }]);
 });
 
+it("shows the default or saved polling interval in Briefing and saves it with the spec", async () => {
+  for (const interval of [undefined, 1, 1440]) {
+    const requests: unknown[] = [];
+    const page = bootPage((_path, init) => {
+      requests.push(JSON.parse(String((init as RequestInit).body)));
+      return new Promise<never>(() => {});
+    });
+    page.setView({ ...demoView(), spec: { ...demoView().spec, pollIntervalMinutes: interval, dials: { temperament: 'patient' } } });
+    page.ui.tab = 'briefing'; page.render();
+    const input = nodes(page.app).find((node) => node.getAttribute('id') === 'poll-interval')!;
+    expect(input).toBeDefined();
+    expect(input.getAttribute('value')).toBe(String(interval ?? 15));
+    expect(input.getAttribute('min')).toBe('1');
+    expect(input.getAttribute('max')).toBe('1440');
+    expect(input.getAttribute('step')).toBe('1');
+    expect(input.getAttribute('aria-describedby')).toBe('poll-interval-help');
+    input.listeners.change[0]({ target: { value: '7' } });
+    nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save & reopen')!.listeners.click[0]({});
+    expect(requests).toEqual([expect.objectContaining({ pollIntervalMinutes: 7 })]);
+  }
+});
+
+it("names an active host polling override without changing the saved interval", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), host: { pollIntervalMs: 500 }, spec: { ...demoView().spec, pollIntervalMinutes: 7, dials: { temperament: 'patient' } } });
+  page.ui.tab = 'briefing'; page.render();
+  expect(nodes(page.app).find((node) => node.getAttribute('id') === 'poll-interval')!.getAttribute('value')).toBe('7');
+  expect(page.app.textContent).toContain('Host override active: the current delay is 0.5 seconds. Saving does not change the override.');
+});
+
+it("rejects invalid polling drafts before sending a save request", () => {
+  for (const value of ['', '0', '-1', '1.5', '1441', 'NaN', 'Infinity']) {
+    const requests: unknown[] = [];
+    const page = bootPage((path) => { requests.push(path); return new Promise<never>(() => {}); });
+    page.setView({ ...demoView(), spec: { ...demoView().spec, dials: { temperament: 'patient' } } });
+    page.ui.tab = 'briefing'; page.render();
+    const input = nodes(page.app).find((node) => node.getAttribute('id') === 'poll-interval')!;
+    input.listeners.change[0]({ target: { value } });
+    nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save & reopen')!.listeners.click[0]({});
+    expect(requests).toEqual([]);
+    expect(page.app.textContent).toContain('Check-for-work interval must be a whole number from 1 to 1440 minutes.');
+  }
+});
+
 it("pins queue prose below its mode even without a promotion button", () => {
   expect(PAGE).toContain('.queue-mode, .queue-text { grid-column: 1; }');
 });

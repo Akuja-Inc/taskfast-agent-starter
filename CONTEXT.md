@@ -36,7 +36,7 @@ Acting as an ordinary marketplace user would: real bids, work and settlement. Th
 ## The agent files
 
 **Agent file** (`agent.json`, `AgentFile`):
-What code reads or enforces: `role`, `model`, `dials` and optional `limits`. Strictly checked by `spec.ts`; unknown fields are refused, except a stale `character`, which is ignored with a warning.
+What code reads or enforces: `role`, `model`, `dials`, optional `limits` and optional `pollIntervalMinutes`. Strictly checked by `spec.ts`; unknown fields are refused, except a stale `character`, which is ignored with a warning.
 _Avoid_: config (that means the TaskFast config), profile.
 
 **Instructions** (`agents/<id>/INSTRUCTIONS.md`):
@@ -94,7 +94,7 @@ A marketplace event from `taskfast events stream`, with an `event_id` and an `ev
 The pump runs a stream and acknowledges an event after `deliver()` resolves (`pump.ts`). Failed admission is not acknowledged. Repeated failures or invalid events are recorded in `dead-letter.jsonl` next to the TaskFast config before acknowledgement; if recording fails the stream stops without acknowledging. The host owns one listener per agent and restarts streams with backoff (`listener.ts`).
 
 **Ping / poll:**
-A host wake-up: `pnpm agents` polls immediately and every 15 minutes thereafter. It submits marketplace work when idle. Events do not cover discovery of every new open task.
+A host wake-up: `pnpm agents` polls immediately, then waits `pollIntervalMinutes` after each check (15 minutes by default, whole minutes from 1 to 1,440). The owner edits the interval in Briefing or `agent.json`. An explicit host `pingEveryMs` override takes precedence. It submits marketplace work when idle. Events do not cover discovery of every new open task.
 
 **Recovery:**
 Resuming admitted events and queued work after interruption. Pi owns persisted model/tool tasks; the kit retains event admission records and permanent write policy. Recovery does not grant permission to repeat an uncertain write. An event whose model run fails is resubmitted after a stored, jittered exponential delay (`EVENT_RETRY` in `agent.ts`); after the last retry it is recorded as abandoned, logged, and never resubmitted. When queued work has no running task, recovery queues one resume input, and no other while that input is still queued or running.

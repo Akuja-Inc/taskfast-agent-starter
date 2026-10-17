@@ -1,7 +1,7 @@
 import { capabilitiesPage, CAPABILITIES_CSS, readCapabilityFolder } from "./console-capabilities-page.js";
 import { follow } from "./console-live.js";
 import { markdown } from "./console-markdown.js";
-import { MAX_INSTRUCTIONS } from "./core/spec.js";
+import { MAX_INSTRUCTIONS, POLL_MINUTES } from "./core/spec.js";
 
 // The page runs the same stream follower and markdown subset as the terminal UI.
 export const LIVE = follow.toString();
@@ -977,6 +977,16 @@ function briefingTab() {
   const number = (value) => value === "" ? undefined : Number(value);
   const limitText = (value) => value === undefined ? "no limit" : money(value);
   const limitChanges = ["perJobUsd", "dailyUsd"].filter((k) => (view.spec.limits || {})[k] !== (draft.limits || {})[k]);
+  function saveBriefing() {
+    const minutes = draft.pollIntervalMinutes ?? ${POLL_MINUTES.default};
+    if (!Number.isInteger(minutes) || minutes < ${POLL_MINUTES.min} || minutes > ${POLL_MINUTES.max}) {
+      ui.error = "Check-for-work interval must be a whole number from ${POLL_MINUTES.min} to ${POLL_MINUTES.max} minutes.";
+      render(true);
+      return;
+    }
+    if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits;
+    act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; });
+  }
   return el("div", { class: "page" },
     el("main", {},
       el("section", { class: "section" },
@@ -994,6 +1004,10 @@ function briefingTab() {
         band("INSTRUCTIONS.md and agent.json", "saving reopens only this agent; the others keep running"),
         el("div", { class: "card" },
         el("label", {}, "Instructions (INSTRUCTIONS.md): who the agent is, its business, goals and budget", el("textarea", { rows: 8, maxlength: ${MAX_INSTRUCTIONS}, onchange: (e) => set(["instructions"], e.target.value), text: draft.instructions })),
+        el("label", {}, "Check for work every (minutes)", el("input", { id: "poll-interval", type: "number", min: ${POLL_MINUTES.min}, max: ${POLL_MINUTES.max}, step: 1, required: true, "aria-describedby": "poll-interval-help", value: draft.pollIntervalMinutes ?? ${POLL_MINUTES.default}, onchange: (e) => set(["pollIntervalMinutes"], Number(e.target.value)) })),
+        el("div", { id: "poll-interval-help", class: "small" }, "Whole minutes from 1 to 1,440; default 15. The delay starts after each check. Shorter intervals may increase model usage. Marketplace events still arrive independently.",
+          view.host?.pollIntervalMs !== undefined && view.host.pollIntervalMs !== (view.spec.pollIntervalMinutes ?? ${POLL_MINUTES.default}) * 60000
+            ? el("div", { text: "Host override active: the current delay is " + view.host.pollIntervalMs / 1000 + " seconds. Saving does not change the override." }) : null),
         el("div", { class: "grid" },
           el("label", {}, "Temperament", el("select", { onchange: (e) => set(["dials", "temperament"], e.target.value) },
             ["patient", "brisk", "exacting", "easygoing", "curt"].map((t) => el("option", { value: t, selected: draft.dials.temperament === t, text: t })))),
@@ -1005,7 +1019,7 @@ function briefingTab() {
           limitChanges.map((k) => el("div", { class: "mono", text: (k === "dailyUsd" ? "Daily limit " : "Per job limit ") + limitText((view.spec.limits || {})[k]) + " → " + limitText((draft.limits || {})[k]) })),
           el("div", { class: "small", text: "Takes effect when the agent reopens. Spending already counted today still counts." })) : null,
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
-          el("button", { class: "primary", onclick: () => { if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits; act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; }); }, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
+          el("button", { class: "primary", onclick: saveBriefing, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
         el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
     el("aside", {}, el("section", { class: "section" },
