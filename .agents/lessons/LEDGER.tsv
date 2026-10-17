@@ -16,3 +16,4 @@ hand:4d74929bcd73	hand	2026-10-16T01:46:57Z	lesson	.agents/lessons/mcp-lifecycle
 hand:2ce57c29874e	hand	2026-10-16T02:26:34Z	lesson	.agents/lessons/capability-publication.md	Do not run crash recovery against an intentional capability reopen before its new registry opens.
 hand:f57239a947e2	hand	2026-10-16T16:55:53Z	lesson	.agents/lessons/taskfast-cli-error-codes.md	A refused submit with artifacts prints validation after earlier uploads landed; clear them before the next attempt.
 pr:84:cleanup-cancellation	pr	2026-10-16T17:43:56Z	agents_md	AGENTS.md	Gate each pre-reservation cleanup delete through the invocation-bound commit and abort signal so cancellation forbids subsequent writes.
+hand:72b12e763642	hand	2026-10-17T04:00:52Z	lesson	.agents/lessons/taskfast-cli-help.md	Capture taskfast help with --help under a scrubbed env: -h drops possible values and help echoes env var values.
