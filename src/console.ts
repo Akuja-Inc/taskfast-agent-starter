@@ -28,6 +28,8 @@ export interface Ledger {
 }
 export interface HostFacts {
   unlockFile: boolean;
+  // Actual host delay, including an embedding override. Absent for other hosts.
+  pollIntervalMs?: number;
   stream: "starting" | "connected" | "reconnecting" | "restarting" | "auth failed";
   wallet?: unknown;
   tasks: Record<string, unknown>;
@@ -150,7 +152,7 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
     id, env, spec, operator, attention, events, queuedMessages,
     actions: policy.actions, spend: policy.spend, notes: policy.memory,
     prompt: marketplacePrompt(spec, policy.memory, operator.orders),
-    timeline, host: facts && { unlockFile: facts.unlockFile, stream: facts.stream, wallet: facts.wallet, tasks: facts.tasks },
+    timeline, host: facts && { unlockFile: facts.unlockFile, stream: facts.stream, wallet: facts.wallet, tasks: facts.tasks, ...(facts.pollIntervalMs === undefined ? {} : { pollIntervalMs: facts.pollIntervalMs }) },
   };
 }
 

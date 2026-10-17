@@ -16,7 +16,7 @@ import { UUID } from "./core/tools.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./core/agent.js";
 import { startListener } from "./core/listener.js";
 import { createAgentModels } from "./core/model.js";
-import { agentFile, hasStaleCharacter, INSTRUCTIONS_PATH, parseAgentFile, parseAgentSpec, STALE_CHARACTER } from "./core/spec.js";
+import { agentFile, hasStaleCharacter, INSTRUCTIONS_PATH, parseAgentFile, parseAgentSpec, POLL_MINUTES, STALE_CHARACTER } from "./core/spec.js";
 import { parseWalletPasswordFile } from "./core/cli.js";
 import { PASSWORD_PATH, folderFile, portableFile, providerSettings } from "./core/folder.js";
 import type { AgentSpec, Env, Runtime } from "./core/types.js";
@@ -39,6 +39,7 @@ export interface RunOptions {
   listen?: typeof startListener;
   signal: AbortSignal;
   log(line: string): void;
+  // Explicit embedding/test override. Takes precedence over each saved agent interval.
   pingEveryMs?: number;
 }
 
@@ -160,12 +161,13 @@ export async function runAgents(o: RunOptions): Promise<void> {
       throw error;
     }
   }
+  const pollIntervalMs = (spec: AgentSpec) => o.pingEveryMs ?? (spec.pollIntervalMinutes ?? POLL_MINUTES.default) * 60_000;
   async function poll(owned: Owned) {
     while (owned.active && !ended()) {
       try { await owned.agent.ping(); }
       catch (error) { o.log(`${owned.item.id}: ping failed: ${message(error)}`); }
       if (!owned.active || ended()) break;
-      await sleep(o.pingEveryMs ?? 900_000, undefined, { signal: owned.poll.signal }).catch(() => {});
+      await sleep(pollIntervalMs(owned.item.spec), undefined, { signal: owned.poll.signal }).catch(() => {});
     }
   }
   async function start(slot: Slot, generation: number, controller: AbortController, held = false): Promise<void> {
@@ -280,6 +282,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
       wallet: read(owned, ["wallet", "balance"], WALLET_TTL_MS, moves(seen)),
       tasks: Object.fromEntries(taskIds.filter((id) => UUID.test(id)).map((id) => [id, read(owned, ["task", "get", "--", id])])),
       deadLetters: readDeadLetters(join(dirname(item.runtime.configPath), "dead-letter.jsonl")),
+      pollIntervalMs: pollIntervalMs(item.spec),
     };
   }
   // Briefing saves and startup intents share one slot. Lock the intent before the

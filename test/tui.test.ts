@@ -317,6 +317,16 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
   expect(discarding.run("1", "q")).toEqual([{ kind: "quit" }]);
 });
 
+it("preserves a saved polling interval when the TUI edits and saves another field", () => {
+  const view = fixtureView();
+  view.spec.pollIntervalMinutes = 42;
+  const ui = setField({ ...initialUi(), tab: "briefing" }, view, "temperament", "curt");
+  const saving = keys(view, ui);
+  saving.run("ctrl+s");
+  expect(saving.run("y")).toEqual([{ kind: "call", method: "PUT", action: "spec", body: { ...view.spec, dials: { ...view.spec.dials, temperament: "curt" } } }]);
+  expect(ui.draft?.pollIntervalMinutes).toBe(42);
+});
+
 it("switches agents without a view and routes startup actions by state and generation", () => {
   const starting = { id: "slow", generation: 3, state: "starting", phase: "opening" } as const;
   const stopped = { id: "slow", generation: 3, state: "stopped", reason: "MCP failed\x1b[2J" } as const;

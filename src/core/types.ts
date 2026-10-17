@@ -22,6 +22,8 @@ export interface AgentFile {
   dials: Dials;
   // The agent's own spending limits, both optional. Without them nothing is checked.
   limits?: Limits;
+  // Delay after each host work check, in whole minutes (1..1440). Omitted means 15.
+  pollIntervalMinutes?: number;
 }
 
 // The whole agent: agent.json plus the user's own words from INSTRUCTIONS.md, which open

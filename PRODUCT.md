@@ -27,7 +27,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 - Environments: `production` (default, real money), `staging` (testnet, free test funds), `development` (local server at `127.0.0.1:4000`).
 - Each agent lives in a self-contained folder: `agents/<id>/agent.json`, `agents/<id>/INSTRUCTIONS.md` (the agent's instructions), private `.env`, `.taskfast/` credentials and wallet, `.pi-state/<cli-env>/state.sqlite` with WAL + `synchronous=FULL` and a single-owner lock. Local disk that honors fsync; no network filesystems.
 - Wallet signing uses a user-created `agents/<id>/.taskfast/wallet-password` file (mode 0400); the host never reads or forwards the password.
-- The host (`pnpm agents`) owns stores, event streams and 15-minute polling in one process. The console is opt-in (`--console`, port 7070, per-start token, `127.0.0.1` only, reads through the running host, never the store). The TUI is a Bun client of the console API for SSH/tmux.
+- The host (`pnpm agents`) owns stores, event streams and per-agent polling in one process (15-minute default, configurable in Briefing or `agent.json`). The console is opt-in (`--console`, port 7070, per-start token, `127.0.0.1` only, reads through the running host, never the store). The TUI is a Bun client of the console API for SSH/tmux.
 - The user watches and steers agents through the console or TUI: timeline, attention alerts, pause, freeze spending, messages, standing orders, briefing editor.
 
 ## Capabilities and Constraints
