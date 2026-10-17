@@ -15,6 +15,11 @@ const MAX_SCHEMA = 16 * 1024;
 const MAX_DESCRIPTION = 1024;
 const CONNECT_TIMEOUT_MS = 10_000;
 const CALL_TIMEOUT_MS = 30_000;
+// A 50 MB image, the server's upload limit, is about 70 MB of base64 in one JSON-RPC
+// message; Pi-mcp's default of 16 MiB would drop it and leave the call to time out.
+// ponytail: Pi-mcp 1.2.0's stdio reader copies its whole buffer per chunk, so a 50 MB
+// image takes about 23 s of the 30 s call timeout; revisit at the next Pi pin.
+const MAX_MESSAGE_BYTES = 80 * 1024 * 1024;
 
 export interface McpTools {
   tools: ToolRegistration[];
@@ -33,11 +38,11 @@ function transport(server: McpServer): McpTransport {
       command: server.command, args: server.args, cwd: server.cwd, inheritEnv: false,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...server.credentials },
       // Kept in a bounded buffer and never logged: a server may print its credentials.
-      stderr: "pipe", maxStderrBytes: 64 * 1024,
+      stderr: "pipe", maxStderrBytes: 64 * 1024, maxMessageBytes: MAX_MESSAGE_BYTES,
     });
   }
   // A redirect could carry the credential headers to another host, so none is followed.
-  return new StreamableHttpTransport({ url: server.url, headers: server.credentials, openGetStream: false, fetch: (input, init) => fetch(input, { ...init, redirect: "error" }) });
+  return new StreamableHttpTransport({ url: server.url, headers: server.credentials, openGetStream: false, maxMessageBytes: MAX_MESSAGE_BYTES, fetch: (input, init) => fetch(input, { ...init, redirect: "error" }) });
 }
 
 // A tool's input schema as Pi's validator takes it; anything but a bounded object schema is refused.

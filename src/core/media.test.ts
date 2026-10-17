@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { MAX_MEDIA_BYTES, saveMedia } from "./media.js";
+import { saveMedia } from "./media.js";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })));
@@ -33,11 +33,19 @@ it.each([
   ["bytes that are not the declared type", "image/png", JPEG.toString("base64"), "[image/png image omitted]"],
   ["invalid base64", "image/png", "not*base64", "[image/png image omitted]"],
   ["empty data", "image/png", "", "[image/png image omitted]"],
-  ["an image over 7 MiB", "image/png", Buffer.concat([PNG, Buffer.alloc(MAX_MEDIA_BYTES)]).toString("base64"), "[image/png image omitted: larger than 7 MiB]"],
+  ["unpadded base64", "image/png", PNG.toString("base64").replace(/=+$/, ""), "[image/png image omitted]"],
 ])("writes nothing for %s", (_n, type, data, line) => {
   const dir = agentDir();
   expect(saveMedia(dir, type, data)).toBe(line);
   expect(existsSync(join(dir, ".pi-state/media"))).toBe(false);
+});
+
+// The server, not the kit, decides how large an image may be.
+it("saves an image larger than the old 8,000,000-byte upload limit", () => {
+  const dir = agentDir();
+  const big = Buffer.concat([PNG, Buffer.alloc(9_000_000)]);
+  expect(saveMedia(dir, "image/png", big.toString("base64"))).toBe(`[image/png saved as media:${digest(big)}.png, ${big.length} bytes]`);
+  expect(statSync(join(dir, ".pi-state/media", `${digest(big)}.png`)).size).toBe(big.length);
 });
 
 it("refuses a symlinked media folder without saying why", () => {

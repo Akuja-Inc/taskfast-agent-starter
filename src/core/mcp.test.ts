@@ -108,6 +108,16 @@ it("saves a tool result's images in the agent folder before the model reads thei
   expect(bare.prompt).not.toContain("media");
 });
 
+// The server's upload limit decides an image's size, not Pi-mcp's 16 MiB message default.
+it("carries an image whose message is larger than Pi-mcp's default limit over stdio", async () => {
+  const dir = agentDir();
+  writeMcp(dir, { docs: local({ image: approve("image") }) });
+  const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
+  open.push(mcp);
+  const bytes = 13 * 1024 * 1024; // about 17.4 MiB as base64
+  expect(text(await call(mcp, "mcp_docs_image", { bytes }))).toMatch(new RegExp(`^\\[image/png saved as media:[0-9a-f]{16}\\.png, ${bytes} bytes\\]$`));
+}, 20_000);
+
 it("follows paged tool lists", async () => {
   const dir = agentDir();
   writeMcp(dir, { docs: local({ big: approve("big") }, { env: { FIXTURE_MODE: "MODE" } }) }, { MODE: "paged" });

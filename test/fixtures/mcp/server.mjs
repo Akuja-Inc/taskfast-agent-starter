@@ -19,7 +19,7 @@ export const TOOLS = [
   { name: "exit", description: "Ends the server process.", inputSchema: object() },
   { name: "delete", description: "Deletes a document.", inputSchema: object({ id: { type: "string" } }, ["id"]), annotations: { destructiveHint: true } },
   { name: "sample", description: "Asks the client for a model completion first.", inputSchema: object() },
-  { name: "image", description: "Answers with a PNG image block and the same image as an embedded resource.", inputSchema: object() },
+  { name: "image", description: "Answers with a PNG image block and the same image as an embedded resource; with `bytes`, one PNG of that size.", inputSchema: object({ bytes: { type: "number" } }) },
 ];
 // The smallest bytes the host accepts as a PNG: the signature and a few bytes after it.
 export const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("fixture")]).toString("base64");
@@ -55,6 +55,7 @@ export async function handle(message) {
     if (params.name === "slow") { await new Promise((done) => setTimeout(done, args.ms)); return reply(text("slow done")); }
     if (params.name === "fail") return reply({ ...text("the index is offline"), isError: true });
     if (params.name === "big") return reply(text("x".repeat(args.size)));
+    if (params.name === "image" && args.bytes) return reply({ content: [{ type: "image", mimeType: "image/png", data: Buffer.concat([Buffer.from(PNG, "base64"), Buffer.alloc(args.bytes - Buffer.from(PNG, "base64").length)]).toString("base64") }] });
     if (params.name === "image") return reply({ content: [{ type: "text", text: "Rendered:" }, { type: "image", mimeType: "image/png", data: PNG }, { type: "resource", resource: { uri: "file:///chart", mimeType: "image/png", blob: PNG } }] });
     if (params.name === "exit") { setTimeout(() => process.exit(0), 5); return reply(text("bye")); }
     if (params.name === "sample") {
