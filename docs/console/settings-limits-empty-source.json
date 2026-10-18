@@ -1,11 +1,11 @@
 {
-  "commit": "8c6ce43386d1e09584e34998fd99e06941b57635",
+  "commit": "b092dcee1b6961ac7fc403c9ad99b65532d56a0e",
   "beforeCommit": "7516c0a5acd5211ae0d159a497b85088996c34c4",
   "dirty": false,
   "sha256": {
-    "src/console-page.ts": "5edb3c98781707af140a94fd3097b26b2ca1e5e37dbc03265aff9e60a0c850ca",
+    "src/console-page.ts": "871fd0c9627ad35b5ac8d98881818c2d3b7241bb8e08ba0996dca02d093dc896",
     "docs/console/reads-host.mjs": "53d8e0ca5f9826f0834f15be3b53098fdb294bf7bb2fca47a0f2ef9972fc4bf8",
-    "docs/console/reads-capture.py": "61421c348fe8bd7bfdc3feb3b4f6480885e8c04683b0ffd064a851ce48e4858c"
+    "docs/console/reads-capture.py": "cc9e14b301bb483655bb9bddf6db7dce26e73eddf722715efd178f2ed41f09e6"
   },
   "capture": "Headless Chromium; desktop 1440x1000 and phone 390x844, light and dark, full page. Synthetic browser fixture only, no marketplace calls."
 }
