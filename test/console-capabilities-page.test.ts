@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -48,7 +48,7 @@ const browserPath = process.env.TASKFAST_BROWSER;
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
-async function browser(url: string) {
+async function browser(url: string, ready = "document.querySelector('nav') !== null") {
   const profile = mkdtempSync(join(tmpdir(), "taskfast-capabilities-browser-"));
   const process = spawn(browserPath!, ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   cleanup.push(async () => { process.kill("SIGTERM"); await new Promise<void>((resolve) => { if (process.exitCode !== null) resolve(); else process.once("exit", () => resolve()); }); rmSync(profile, { recursive: true, force: true }); });
@@ -91,9 +91,88 @@ async function browser(url: string) {
     }
     throw new Error("Browser condition failed: " + expression + "\n" + String(await evaluate("document.body.innerText")));
   }
-  await until("document.querySelector('nav') !== null");
+  await until(ready);
   return { evaluate, until, protocol };
 }
+
+async function tokenConsole() {
+  let token = 'a'.repeat(64);
+  const requests: (string | undefined)[] = [];
+  const server = createServer((req, res) => {
+    if (req.url === '/') { res.setHeader('content-type', 'text/html'); res.end(PAGE); return; }
+    if (req.url !== '/api/agents') { res.writeHead(404); res.end(); return; }
+    requests.push(req.headers.authorization);
+    res.setHeader('content-type', 'application/json');
+    if (req.headers.authorization !== 'Bearer ' + token) { res.writeHead(401); res.end(JSON.stringify({ error: 'Unauthorized' })); return; }
+    res.end(JSON.stringify({ env: 'local', agents: [] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  cleanup.push(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('No HTTP address');
+  return { url: 'http://127.0.0.1:' + address.port + '/', requests, replaceToken(next: string) { token = next; } };
+}
+
+async function captureTokenPage(page: Awaited<ReturnType<typeof browser>>, name: string) {
+  const directory = process.env.TASKFAST_TOKEN_CAPTURE_DIR;
+  if (!directory) return;
+  const result = await page.protocol('Page.captureScreenshot', { format: 'png' });
+  if (!result || typeof result !== 'object' || !('data' in result) || typeof result.data !== 'string') throw new Error('No screenshot data');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, name + '.png'), Buffer.from(result.data, 'base64'));
+}
+
+it.skipIf(!browserPath).each(['cold', 'already-open', 'replacement', 'refused'])("authenticates %s token links in Chromium", async (kind) => {
+  const fixture = await tokenConsole();
+  const first = 'a'.repeat(64), second = 'b'.repeat(64);
+  const unlock = "document.querySelector('input[type=password]') !== null";
+  const page = kind === 'already-open'
+    ? await browser(fixture.url, unlock)
+    : kind === 'refused'
+      ? await browser(fixture.url + '#token=' + second, unlock)
+      : await browser(fixture.url + '#token=' + first);
+  if (kind === 'already-open') {
+    expect(await page.evaluate("sessionStorage.getItem('token')")).toBeNull();
+    expect(fixture.requests).toEqual([]);
+  } else if (kind === 'refused') {
+    expect(fixture.requests).toContain('Bearer ' + second);
+    expect(await page.evaluate("sessionStorage.getItem('token')")).toBeNull();
+    expect(await page.evaluate('location.hash')).toBe('');
+  } else {
+    await expect.poll(() => fixture.requests).toContain('Bearer ' + first);
+    expect(await page.evaluate("sessionStorage.getItem('token')")).toBe(first);
+    expect(await page.evaluate('location.hash')).toBe('');
+  }
+  const expected = kind === 'replacement' ? second : first;
+  if (kind === 'replacement') fixture.replaceToken(second);
+  if (kind !== 'cold') await page.protocol('Page.navigate', { url: fixture.url + '#token=' + expected });
+  try {
+    await page.until("sessionStorage.getItem('token') === " + JSON.stringify(expected) + " && location.hash === '' && document.querySelector('nav') !== null && document.querySelector('input[type=password]') === null");
+  } catch (error) {
+    if (kind === 'already-open') await captureTokenPage(page, 'token-link-before');
+    throw error;
+  }
+  await expect.poll(() => fixture.requests).toContain('Bearer ' + expected);
+  expect(await page.evaluate("sessionStorage.getItem('token')")).toBe(expected);
+  expect(await page.evaluate('location.hash')).toBe('');
+  expect(await page.evaluate("document.querySelector('input[type=password]')")).toBeNull();
+  if (kind === 'already-open') await captureTokenPage(page, 'token-link-after');
+}, 30_000);
+
+it.skipIf(!browserPath)("ignores invalid token fragments on an already-open Chromium unlock page", async () => {
+  const fixture = await tokenConsole();
+  const page = await browser(fixture.url, "document.querySelector('input[type=password]') !== null");
+  await page.evaluate("window.originalDocument = document; window.hashChanges = 0; addEventListener('hashchange', () => { window.hashChanges++; });");
+  const hashes = ['#timeline', '#token=bad', '#token=' + 'A'.repeat(64), '#token=' + 'a'.repeat(64) + '&extra=1'];
+  for (const [index, hash] of hashes.entries()) {
+    await page.protocol('Page.navigate', { url: fixture.url + hash });
+    await page.until('window.hashChanges === ' + (index + 1));
+    expect(await page.evaluate('document === window.originalDocument')).toBe(true);
+    expect(await page.evaluate('location.hash')).toBe(hash);
+    expect(await page.evaluate("sessionStorage.getItem('token')")).toBeNull();
+    expect(await page.evaluate("document.querySelector('input[type=password]') !== null")).toBe(true);
+  }
+  expect(fixture.requests).toEqual([]);
+}, 30_000);
 
 const initial = (id: string): CapabilityView => ({ agentDir: "/fixture/agents/" + id, revision: "rev-1", activeRevision: "rev-1", skills: [], servers: [], credentials: [], activeSkills: [], activeServers: [], credentialChanges: [], pending: false, apply: { state: "idle" } });
 
