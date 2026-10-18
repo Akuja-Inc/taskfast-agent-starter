@@ -328,7 +328,9 @@ it.skipIf(!browserPath)("keeps stopped-agent removals reviewable after reload an
   let revision = 1;
   const server = createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");
-    if (req.url === "/") { res.setHeader("content-type", "text/html"); res.end(PAGE); return; }
+    // Match the real host's shell route when the browser reloads its canonical agent URL.
+    const pathname = new URL(req.url || "/", "http://console").pathname;
+    if (req.method === "GET" && (pathname === "/" || pathname === "/agents/stopped")) { res.setHeader("content-type", "text/html"); res.end(PAGE); return; }
     if (req.url === "/api/agents") { res.end(JSON.stringify({ env: "local", agents: [{ id: "stopped", name: "Stopped agent", state: "stopped", generation: 1 }] })); return; }
     const route = /^\/api\/agents\/stopped\/capabilities(?:\/([a-z-]+))?$/.exec(req.url || "");
     if (!route) { res.writeHead(404); res.end("{}"); return; }
@@ -360,9 +362,10 @@ it.skipIf(!browserPath)("keeps stopped-agent removals reviewable after reload an
   await page.evaluate("click('Manage'); click('Stage server removal');");
   await page.until("document.body.innerText.includes('Server archive: Saved on disk → Removed after apply')");
   expect(view.activeSkills).toEqual([]); expect(view.activeServers).toEqual([]); expect(view.activeRevision).toBeNull();
-  // Reload the real browser so no remembered UI baseline can manufacture the removal rows.
+  // Wait for the new document, not the old nav that can survive briefly after Page.reload returns.
+  await page.evaluate("window.capabilityReloadMarker=true");
   await page.protocol("Page.reload", {});
-  await page.until("document.querySelector('nav')!==null");
+  await page.until("window.capabilityReloadMarker!==true && document.querySelector('nav')!==null");
   await page.evaluate(helpers + "click('Capabilities');");
   await page.until("document.body.innerText.includes('Pending removal')");
   await page.evaluate("click('Review changes');");

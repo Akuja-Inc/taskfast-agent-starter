@@ -69,10 +69,22 @@ class FakeNode {
 }
 
 // Boot the page's inline script against the fake DOM and hand back its render functions.
-const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = () => new Promise<never>(() => {})) => {
+const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = () => new Promise<never>(() => {}), url = "/", saved: Record<string, string> = {}) => {
   const script = PAGE.match(/<script>\n("use strict";[\s\S]*?)<\/script>/)![1];
   const app = new FakeNode("div");
-  const storage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const values = new Map(Object.entries(saved));
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+  const location = new URL(url, "http://127.0.0.1");
+  const events = new Map<string, (event: unknown) => void>();
+  const entries: { url: string; state: unknown }[] = [{ url: location.href, state: null }];
+  let position = 0;
+  const history = {
+    replaceState(state: unknown, _unused: string, url: string) { location.href = new URL(url, location).href; entries[position] = { url: location.href, state }; },
+    pushState(state: unknown, _unused: string, url: string) { location.href = new URL(url, location).href; entries.splice(++position, entries.length, { url: location.href, state }); },
+    go(delta: number) { const next = position + delta; if (next < 0 || next >= entries.length) return; position = next; location.href = entries[position].url; events.get("popstate")?.({ state: entries[position].state }); },
+    back() { this.go(-1); }, forward() { this.go(1); }, get length() { return entries.length; },
+  };
+  let discard = true;
   const fakeDocument = {
     getElementById: () => app,
     createElement: (tag: string) => { const node = new FakeNode(tag); node.onFocus = () => { fakeDocument.activeElement = node; }; return node; },
@@ -86,22 +98,142 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   };
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
-    "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval", "innerHeight", "scrollY", "scrollBy",
-    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
+    "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval", "confirm", "innerHeight", "scrollY", "scrollBy",
+    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, selectTab, destination, navigate, capabilities, location, history, setDiscard(value) { confirm = () => value; }, acceptView(next) { view = next; render(); }, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
-    { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
-    () => {}, class { observe() {} disconnect() {} },
-    fetch, () => ({ matches: false }), () => 0, 800, 0, (_x: number, y: number) => { fakeDocument.scrollMoves.push(y); },
-  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; windowN: number; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
+    location, history,
+    (name: string, listener: (event: unknown) => void) => { events.set(name, listener); }, class { observe() {} disconnect() {} },
+    fetch, () => ({ matches: false }), () => 0, () => discard, 800, 0, (_x: number, y: number) => { fakeDocument.scrollMoves.push(y); },
+  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; location: URL; history: typeof history; selectTab: (tab: string) => void; setDiscard: (value: boolean) => void; acceptView: (view: unknown) => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; draft: string; tab: string; agent: string; capability: { screen: string; item: string; step: number }; specDraft: unknown; windowN: number; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
 const demoView = () => ({
   operator: { paused: true, frozen: false, messages: [], orders: [] }, queuedMessages: [],
   events: {}, attention: [], timeline: [], actions: {}, spend: {}, notes: [],
-  spec: { model: 'faux:test', instructions: 'You are Demo.', limits: { dailyUsd: 50 } },
+  spec: { role: 'poster', model: 'faux:test', instructions: 'You are Demo.', dials: { competence: 0.9, diligence: 0.9, priceSensitivity: 0.5, temperament: 'patient' }, limits: { dailyUsd: 50 } },
+});
+
+it("restores destination through token extraction and authentication without leaking it into navigation links", () => {
+  const page = bootPage(undefined, '/agents/shop?tab=briefing#token=' + 'a'.repeat(64));
+  expect(page.location.hash).toBe('');
+  expect(page.location.pathname + page.location.search).toBe('/agents/shop?tab=briefing');
+  expect(page.ui.agent).toBe('shop');
+  expect(page.ui.tab).toBe('briefing');
+  expect(page.history.length).toBe(1);
+  const links = page.header().flatMap((node) => node ? nodes(node) : []).filter((node) => node.tagName === 'A');
+  expect(links.every((link) => !link.getAttribute('href')?.includes('token'))).toBe(true);
+  const locked = bootPage(undefined, '/agents/shop?tab=briefing');
+  expect(locked.app.textContent).toContain('Unlock the console');
+  expect(locked.location.search).toBe('?tab=briefing');
+});
+
+it("tracks every panel toggle, page and agent switch in browser history", () => {
+  const page = bootPage(); page.setView(demoView()); page.render();
+  const roster = [{ id: 'shop', state: 'ready' }, { id: 'other', state: 'starting' }];
+  page.setRoster(roster);
+  const turn = { id: 'stable-turn', kind: 'event', at: 123, text: 'Event', event: { event: 'task.ready' }, replies: [{ text: 'Reading', calls: [{ id: 'call-1', name: 'task_get', arguments: {}, outcome: 'pending' }], tasks: [] }] };
+  const click = (root: FakeNode, cls: string) => nodes(root).find((node) => node.getAttribute('class')?.split(' ').includes(cls))!.listeners.click[0]({});
+  page.acceptView({ ...demoView(), timeline: [turn] });
+  click(page.app, 'calls-chip');
+  expect(page.location.search).toBe('?open=stable-turn%3Acall-1');
+  click(page.app, 'raw');
+  expect(page.ui.raw.has('stable-turn')).toBe(true);
+  expect(page.history.length).toBe(3);
+  page.selectTab('briefing');
+  expect(page.location.search).toContain('tab=briefing');
+  page.selectAgent('other');
+  expect(page.location.pathname).toBe('/agents/other');
+  page.history.back();
+  expect(page.location.pathname).toBe('/agents/shop');
+  expect(page.ui.open.has('stable-turn:call-1')).toBe(true);
+  page.history.back();
+  expect(page.ui.tab).toBe('timeline');
+  page.history.back();
+  expect(page.ui.raw.size).toBe(0);
+  expect(page.ui.open.size).toBe(1);
+  page.history.back();
+  expect(page.ui.open.size).toBe(0);
+  page.history.forward();
+  expect(page.ui.open.has('stable-turn:call-1')).toBe(true);
+});
+
+it("routes the Standing orders Briefing link through browser history", () => {
+  const page = bootPage(); page.setView(demoView()); page.render();
+  const link = nodes(page.app).find((node) => node.tagName === 'A' && node.textContent.includes('Edit in Briefing'))!;
+  expect(link.getAttribute('href')).toBe('/agents/shop?tab=briefing');
+  link.listeners.click[0]({ preventDefault() {} });
+  expect(page.ui.tab).toBe('briefing');
+  expect(page.location.search).toBe('?tab=briefing');
+  expect(page.history.length).toBe(2);
+  page.history.back();
+  expect(page.ui.tab).toBe('timeline');
+});
+
+it("cancels configuration navigation and history traversal without changing URL, draft or screen", () => {
+  const page = bootPage(); page.setView(demoView()); page.render();
+  page.selectTab('briefing');
+  const url = page.location.href;
+  page.ui.specDraft = { ...demoView().spec, instructions: 'Unsaved instructions' };
+  page.setDiscard(false);
+  page.selectAgent('other');
+  expect(page.location.href).toBe(url);
+  expect(page.ui.agent).toBe('shop');
+  page.history.back();
+  expect(page.location.href).toBe(url);
+  expect(page.ui.tab).toBe('briefing');
+  expect(page.ui.specDraft).toMatchObject({ instructions: 'Unsaved instructions' });
+  page.setDiscard(true);
+  page.history.back();
+  expect(page.ui.tab).toBe('timeline');
+  expect(page.ui.specDraft).toBeNull();
+});
+
+it("restores every panel and mounts older referenced turns without trusting visible row positions", () => {
+  const page = bootPage(undefined, '/agents/shop?open=old%3Acall&raw=old', { token: 'test' });
+  const timeline = Array.from({ length: 30 }, (_, i) => ({ id: i ? 'turn-' + i : 'old', kind: 'event', at: i, text: 'Event ' + i, event: { event: 'event-' + i }, replies: [{ text: 'Reply', calls: [{ id: i ? 'call-' + i : 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] }));
+  page.setRoster([{ id: 'shop', state: 'ready' }]);
+  page.acceptView({ ...demoView(), timeline });
+  expect(page.ui.windowN).toBe(30);
+  expect(page.app.textContent).toContain('event-0');
+  expect(page.app.querySelector('.calls')).not.toBeNull();
+  const url = page.location.href;
+  page.acceptView({ ...demoView(), timeline: timeline.slice(1) });
+  expect(page.app.textContent).toContain('Destination unavailable');
+  expect(page.app.querySelector('.calls')).toBeNull();
+  expect(page.location.href).toBe(url);
+});
+
+it("retains a linked action while its agent starts and resolves it when ready", () => {
+  const page = bootPage(undefined, '/agents/shop?open=stable%3Acall', { token: 'test' });
+  page.setRoster([{ id: 'shop', state: 'starting', phase: 'opening', generation: 1 }]);
+  expect(page.app.textContent).toContain('Starting agent');
+  expect(page.location.search).toBe('?open=stable%3Acall');
+  page.setRoster([{ id: 'shop', state: 'ready', generation: 1 }]);
+  page.acceptView({ ...demoView(), timeline: [{ id: 'stable', kind: 'poll', at: 1, text: 'Check', replies: [{ text: 'Read', calls: [{ id: 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] }] });
+  expect(page.app.querySelector('.calls')).not.toBeNull();
+  expect(page.location.search).toBe('?open=stable%3Acall');
+});
+
+it("refuses ambiguous linked panels instead of opening a different action", () => {
+  const page = bootPage(undefined, '/agents/shop?open=same%3Acall', { token: 'test' });
+  const turn = { id: 'same', kind: 'poll', at: 1, text: 'Check', replies: [{ text: 'Read', calls: [{ id: 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] };
+  page.setRoster([{ id: 'shop', state: 'ready' }]);
+  page.acceptView({ ...demoView(), timeline: [turn, structuredClone(turn)] });
+  expect(page.app.textContent).toContain('Destination unavailable');
+  expect(page.app.querySelector('.calls')).toBeNull();
+  expect(page.location.search).toBe('?open=same%3Acall');
+});
+
+it("keeps malformed destinations explicit and never selects a different page", () => {
+  const page = bootPage(undefined, '/agents/shop?tab=invalid', { token: 'test' });
+  page.setRoster([{ id: 'shop', state: 'ready' }]); page.acceptView(demoView());
+  expect(page.app.textContent).toContain('Destination unavailable');
+  expect(page.location.search).toBe('?tab=invalid');
+  page.selectTab('timeline');
+  expect(page.location.pathname + page.location.search).toBe('/agents/shop');
 });
 
 const pollingHistory = (count: number) => Array.from({ length: count }, (_, i) => ({
@@ -109,6 +241,21 @@ const pollingHistory = (count: number) => Array.from({ length: count }, (_, i) =
   replies: [{ text: '', tasks: [], calls: [{ id: 'read-' + i, name: 'task_list', arguments: { kind: 'open' }, outcome: 'ok', comparable: true, result: '{"tasks":[],"note":"<script>unsafe</script>"}' }] }, { text: 'No action <img src=x>.', tasks: [], calls: [] }],
 }));
 const openDetails = (details: FakeNode, open = true) => { details.open = open; details.listeners.toggle[0]({ target: details }); };
+
+it("reveals a linked tool panel inside a folded check without forcing a user-closed group open on live refresh", () => {
+  const page = bootPage(undefined, '/agents/shop?open=folded-2%3Aread-2', { token: 'test' });
+  const timeline = pollingHistory(4).map((turn, i) => ({ ...turn, id: 'folded-' + i }));
+  page.setRoster([{ id: 'shop', state: 'ready' }]);
+  page.acceptView({ ...demoView(), timeline });
+  const turn = page.app.querySelector('.turn[data-i="2"]')!;
+  expect(turn.closest('.poll-run')!.open).toBe(true);
+  expect(turn.closest('.poll-check')!.open).toBe(true);
+  expect(turn.querySelector('.calls')!.getClientRects()).toHaveLength(1);
+  openDetails(turn.closest('.poll-run')!, false);
+  page.acceptView({ ...demoView(), timeline: structuredClone(timeline) });
+  expect(page.app.querySelector('.poll-run')!.open).toBe(false);
+  expect(page.location.search).toBe('?open=folded-2%3Aread-2');
+});
 
 it("folds checks into a native disclosure with original counts, checked scope and safe results", () => {
   const page = bootPage();
@@ -965,7 +1112,7 @@ it("keeps historical call dots still and pulses only the newest turn's", () => {
   expect(PAGE).toMatch(/\.dot\.live \{[^}]*animation: dotpulse/);
   expect(PAGE).toMatch(/prefers-reduced-motion: reduce\) \{ \.dot\.live \{ animation: none/);
   // replyBlock gates the live class on the newest turn of the timeline.
-  expect(PAGE).toMatch(/replyBlock\(reply, key \+ "r" \+ r, index === view\.timeline\.length - 1\)/);
+  expect(PAGE.includes('replyBlock(reply, replyKey(turn, index, reply, r), index === view.timeline.length - 1)')).toBe(true);
   expect(PAGE).toMatch(/"dot " \+ cls \+ \(live \? " live" : ""\)/);
 });
 
