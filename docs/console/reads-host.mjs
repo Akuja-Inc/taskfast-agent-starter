@@ -56,6 +56,10 @@ const server = createServer(async (req, res) => {
   if (!action) { json(200, view()); return; }
   if (action === '/orders' && req.method === 'POST') { state.orders = [...state.orders, body.text]; publish(); json(204); return; }
   const order = /^\/orders\/(\d+)$/.exec(action);
+  if (order && req.method === 'PUT') {
+    if (state.orders[order[1]] !== body.expect) { publish(); json(409, { error: 'orders changed; refresh' }); return; }
+    state.orders = state.orders.map((text, at) => at === Number(order[1]) ? body.text : text); publish(); json(204); return;
+  }
   if (order && req.method === 'DELETE') {
     // The real stream delivers the other change too, so a refusal publishes the current list.
     if (state.orders[order[1]] !== body.expect) { publish(); json(409, { error: 'orders changed; refresh' }); return; }

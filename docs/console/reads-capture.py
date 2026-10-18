@@ -70,12 +70,25 @@ async def stale(page):
     await page.wait_for_timeout(300)
 
 
+async def editing(page):
+    """gh#123: the pencil opens an order's row as an input holding its raw markdown."""
+    await page.get_by_role('button', name='Edit order 1').click()
+    await expect(page.locator('#order-edit')).to_be_focused()
+
+
+async def saved(page):
+    await page.locator('#order-edit').fill('Keep every bid under **$15** and read the [style guide](https://example.com/style) first')
+    await page.get_by_role('button', name='Save', exact=True).click()
+    await expect(page.get_by_text('Order saved.')).to_be_visible()
+
+
 LIMITS = {'perJobUsd': 20, 'dailyUsd': 50}
 # name: (before ref, fixture state, check run on every shot, extra after-only shots)
 SCENARIOS = {
     'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, reads, {'raw': reads_raw}),
     'limits-empty': ('7516c0a', {'notes': NOTES}, None, {'money': money_hint, 'timeline': timeline}),
     'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {}),
+    'edit': ('6abac54', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'editing': editing, 'saved': saved}),
     'feedback': ('5ff0ae9', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'added': added, 'removed': removed, 'stale': stale}),
 }
 # Scenarios whose extra shots are compared before and after, not shown after only.
