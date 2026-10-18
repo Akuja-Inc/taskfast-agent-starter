@@ -81,3 +81,21 @@ python3 docs/console/reads-capture.py edit
 | Phone dark | ![before](settings-edit-before-phone-dark.png) | ![after](settings-edit-after-phone-dark.png) |
 | Editing | | ![light](settings-edit-editing-light.png) ![dark](settings-edit-editing-dark.png) |
 | Saved | | ![light](settings-edit-saved-light.png) ![dark](settings-edit-saved-dark.png) |
+
+## Edit and remove the agent's notes (#125)
+
+The agent's notes take the same pencil and X squares as orders. The block head says the agent adds them and the owner can edit or remove them. A note write waits until the agent finishes its current turn, and the status line says so while it waits. The capture host holds one write for three seconds to show that wait; the real host's wait is covered by `test/console-host.test.ts`. A removal offers Undo, which adds the note back at the end through the owner's write path.
+
+```bash
+python3 docs/console/reads-capture.py notes
+```
+
+| | Before | After |
+| --- | --- | --- |
+| Desktop light | ![before](settings-notes-before-desktop-light.png) | ![after](settings-notes-after-desktop-light.png) |
+| Desktop dark | ![before](settings-notes-before-desktop-dark.png) | ![after](settings-notes-after-desktop-dark.png) |
+| Phone light | ![before](settings-notes-before-phone-light.png) | ![after](settings-notes-after-phone-light.png) |
+| Phone dark | ![before](settings-notes-before-phone-dark.png) | ![after](settings-notes-after-phone-dark.png) |
+| Editing a note | | ![light](settings-notes-editing-light.png) ![dark](settings-notes-editing-dark.png) |
+| Waiting for the turn | | ![light](settings-notes-waiting-light.png) ![dark](settings-notes-waiting-dark.png) |
+| Removed with Undo | | ![light](settings-notes-removed-light.png) ![dark](settings-notes-removed-dark.png) |

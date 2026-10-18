@@ -55,6 +55,15 @@ const server = createServer(async (req, res) => {
   }
   if (!action) { json(200, view()); return; }
   if (action === '/orders' && req.method === 'POST') { state.orders = [...state.orders, body.text]; publish(); json(204); return; }
+  // Note writes wait as the real host does while a turn runs, long enough to capture the wait.
+  if (action.startsWith('/notes') && req.headers['x-fixture-hold']) await new Promise((resolve) => setTimeout(resolve, 3000));
+  if (action === '/notes' && req.method === 'POST') { state.notes = [...state.notes, body.text]; publish(); json(204); return; }
+  const note = /^\/notes\/(\d+)$/.exec(action);
+  if (note && (req.method === 'PUT' || req.method === 'DELETE')) {
+    if (state.notes[note[1]] !== body.expect) { publish(); json(409, { error: 'notes changed; refresh' }); return; }
+    state.notes = req.method === 'PUT' ? state.notes.map((text, at) => at === Number(note[1]) ? body.text : text) : state.notes.filter((_, at) => at !== Number(note[1]));
+    publish(); json(204); return;
+  }
   const order = /^\/orders\/(\d+)$/.exec(action);
   if (order && req.method === 'PUT') {
     if (state.orders[order[1]] !== body.expect) { publish(); json(409, { error: 'orders changed; refresh' }); return; }

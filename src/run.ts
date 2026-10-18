@@ -453,7 +453,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
           const { item, agent } = owned;
           if (!agent.operator || !agent.status || !agent.transcript || !agent.changes) return [];
           const changes = agent.changes;
-          return [{ id: item.id, spec: item.spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript, changes: (listener: () => void) => {
+          return [{ id: item.id, spec: item.spec, agent: { operator: agent.operator, status: agent.status, transcript: agent.transcript, quiesce: agent.quiesce, changes: (listener: () => void) => {
             const off = changes(listener);
             owned.updates.add(listener);
             return () => { owned.updates.delete(listener); off(); };

@@ -1068,7 +1068,7 @@ it("pins queue prose below its mode even without a promotion button", () => {
 });
 
 // gh#122: Settings shows what the agent reads, in the order the model reads it.
-const removeSquares = (page: { app: FakeNode }) => page.app.querySelectorAll('.row-actions button').filter((button) => button.getAttribute('aria-label')!.startsWith('Remove'));
+const removeSquares = (page: { app: FakeNode }) => page.app.querySelectorAll('.reads-block')[2].querySelectorAll('.row-actions button').filter((button) => button.getAttribute('aria-label')!.startsWith('Remove'));
 const readsView = () => ({ ...demoView(), prompt: 'You are Demo.\nYour notes:\n1: Note <script>x</script>\nYour operator\'s standing orders:\n- Keep **bold** [docs](https://example.com/a)', notes: ['Note <script>x</script>', 'Second note'], operator: { ...demoView().operator, orders: ['Keep **bold** [docs](https://example.com/a)', '<script>alert(1)</script>'] } });
 it("shows instructions, notes, then standing orders, and the exact prompt behind a disclosure", () => {
   const page = bootPage(); page.setView(readsView()); page.ui.tab = 'settings'; page.render();
@@ -1572,4 +1572,58 @@ it("cancels an order edit with Escape or Cancel without sending anything", () =>
   nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Cancel')!.listeners.click[0]({});
   expect(page.app.querySelector('#order-edit')).toBeNull();
   expect(calls).toEqual([]);
+});
+
+// gh#125: the owner edits and removes the agent's notes; each write waits for the agent's turn to end.
+const notesPage = (notes: string[], answer: () => Promise<Response>) => {
+  const calls: [string, string, unknown][] = [];
+  const page = bootPage(async (path: unknown, init?: unknown) => {
+    const { method = 'GET', body } = (init ?? {}) as RequestInit;
+    if (path === '/api/agents') return new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }));
+    calls.push([method, String(path), body ? JSON.parse(String(body)) : undefined]);
+    return answer();
+  });
+  page.setView({ ...demoView(), notes }); page.ui.tab = 'settings'; page.render();
+  const block = () => page.app.querySelectorAll('.reads-block')[1];
+  return { page, calls, block, notice: () => block().querySelector('.note-notice')! };
+};
+
+it("edits a note in place, saying it waits for the agent's turn to end", async () => {
+  let answer = (_: Response) => {};
+  const { page, calls, block, notice } = notesPage(['Use US spelling'], () => new Promise((resolve) => { answer = resolve; }));
+  expect(block().textContent).toContain('the agent adds these, you can edit or remove them');
+  expect(block().querySelectorAll('.row-actions button').map((button) => button.getAttribute('aria-label'))).toEqual(['Edit note 1', 'Remove note 1']);
+  block().querySelector('.row-actions button')!.listeners.click[0]({});
+  const editor = page.app.querySelector('#note-edit')!;
+  expect(editor.getAttribute('value')).toBe('Use US spelling');
+  editor.listeners.input[0]({ target: { value: 'Use US spelling everywhere' } });
+  editor.closest('form')!.listeners.submit[0]({ preventDefault() {} });
+  expect(notice().textContent).toBe('Saves when the agent finishes its current turn.');
+  answer(new Response(null, { status: 204 }));
+  await settle();
+  expect(calls).toEqual([['PUT', '/api/agents/shop/notes/0', { expect: 'Use US spelling', text: 'Use US spelling everywhere' }]]);
+  expect(block().querySelectorAll('li').map((li) => li.textContent)).toEqual(['Use US spelling everywhere']);
+  expect(notice().textContent).toBe('Note saved. The agent reads it from its next turn.');
+  expect(page.document.activeElement!.getAttribute('aria-label')).toBe('Edit note 1');
+});
+
+it("removes a note with Undo through the owner's write path, and reports a note the agent changed meanwhile", async () => {
+  const answers = [new Response(null, { status: 204 }), new Response(null, { status: 204 }), new Response(JSON.stringify({ error: 'notes changed; refresh' }), { status: 409, headers: { 'content-type': 'application/json' } })];
+  const { page, calls, block, notice } = notesPage(['First', 'Second'], async () => answers.shift()!);
+  block().querySelectorAll('.row-actions button')[3].listeners.click[0]({});
+  await settle();
+  expect(notice().textContent).toContain('Note removed.');
+  expect(page.document.activeElement!.getAttribute('aria-label')).toBe('Remove note 1');
+  notice().querySelector('button')!.listeners.click[0]({});
+  await settle();
+  expect(block().querySelectorAll('li').map((li) => li.textContent)).toEqual(['First', 'Second']);
+  expect(notice().textContent).toBe('Note added back at the end of the list.');
+  block().querySelectorAll('.row-actions button')[1].listeners.click[0]({});
+  await settle();
+  expect(notice().textContent).toBe('Notes changed. The list now shows the current notes.');
+  expect(calls).toEqual([
+    ['DELETE', '/api/agents/shop/notes/1', { expect: 'Second' }],
+    ['POST', '/api/agents/shop/notes', { text: 'Second' }],
+    ['DELETE', '/api/agents/shop/notes/0', { expect: 'First' }],
+  ]);
 });

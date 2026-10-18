@@ -40,7 +40,9 @@ function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], sta
         withdraw: async (requestId: string) => { asked.push(["withdraw", requestId]); return withdrawResult; },
         setFrozen: record("setFrozen"), setPaused: record("setPaused"), message: record("message"),
         addOrder: record("addOrder"), removeOrder: record("removeOrder"), replaceOrder: record("replaceOrder"), markChecked: record("markChecked"), retryEvent: record("retryEvent"),
+        changeNote: async (at, text) => { asked.push(["changeNote", at, text]); return at && ["Use US spelling."][at.index] !== at.expect ? "changed" : "done"; },
       },
+      quiesce: async () => { asked.push(["quiesce"]); return async () => { asked.push(["release"]); }; },
     },
   };
   // Stands in for a store commit: every watcher hears it.
@@ -74,6 +76,8 @@ it.each([
   { method: "POST", path: "messages", next: "ready" },
   { method: "DELETE", path: "orders/0", next: "starting" },
   { method: "PUT", path: "orders/0", next: "starting" },
+  { method: "PUT", path: "notes/0", next: "starting" },
+  { method: "DELETE", path: "notes/0", next: "starting" },
   { method: "PUT", path: "spec", next: "ready" },
 ] as const)("rejects $method $path whose body spans a transition to $next", async ({ method, path, next }) => {
   const fake = fakeAgent({ state: { ...initialOperator(), orders: ["old order"] } });
@@ -87,7 +91,7 @@ it.each([
     observed();
     return [{ id: "foo", generation, ...(state === "ready" ? { state } : { state, phase: "waiting-for-close" as const }) }];
   } });
-  const body = JSON.stringify(path === "spec" ? fake.agent.spec : path.startsWith("orders") ? { expect: "old order", text: "new order" } : { requestId: "chunked-1", text: "Do work" });
+  const body = JSON.stringify(path === "spec" ? fake.agent.spec : /^(orders|notes)/.test(path) ? { expect: "old order", text: "new order" } : { requestId: "chunked-1", text: "Do work" });
   let finish!: () => void;
   const response = new Promise<number>((resolve, reject) => {
     const req = request({ host: "127.0.0.1", port: server.port, path: `/api/agents/foo/${path}`, method,
@@ -620,6 +624,40 @@ it("removes an order only when the rendered text still matches", async () => {
   expect(JSON.parse(stale.text)).toEqual({ error: "orders changed; refresh" });
   expect((await remove(1, { expect: "Be brief." })).status).toBe(204);
   expect(asked).toEqual([["removeOrder", 1]]);
+});
+
+// gh#125: the owner edits, removes and re-adds the agent's notes; each write waits for idle.
+it("changes a note only inside quiesce, refusing stale or malformed requests", async () => {
+  const { agent, asked } = fakeAgent();
+  const { port } = await serve([agent]);
+  const send = (method: string, path: string, body: unknown) => call(port, `/api/agents/foo/${path}`, { method, headers: { ...auth, "content-type": "application/json" }, body });
+  expect((await send("PUT", "notes/x", { expect: "Use US spelling.", text: "y" })).status).toBe(400);
+  expect((await send("DELETE", "notes/0", {})).status).toBe(400);
+  for (const text of ["", "   ", "x".repeat(4001), 7]) expect((await send("PUT", "notes/0", { expect: "Use US spelling.", text })).status).toBe(400);
+  expect((await send("POST", "notes", { text: "" })).status).toBe(400);
+  expect(asked).toEqual([]);
+  const stale = await send("DELETE", "notes/0", { expect: "Use UK spelling." });
+  expect(stale.status).toBe(409);
+  expect(JSON.parse(stale.text)).toEqual({ error: "notes changed; refresh" });
+  expect((await send("PUT", "notes/0", { expect: "Use US spelling.", text: "Use US spelling,\nalways." })).status).toBe(204);
+  expect((await send("DELETE", "notes/0", { expect: "Use US spelling." })).status).toBe(204);
+  expect((await send("POST", "notes", { text: "Use US spelling." })).status).toBe(204);
+  expect(asked).toEqual([
+    ["quiesce"], ["changeNote", { index: 0, expect: "Use UK spelling." }, null], ["release"],
+    ["quiesce"], ["changeNote", { index: 0, expect: "Use US spelling." }, "Use US spelling,\nalways."], ["release"],
+    ["quiesce"], ["changeNote", { index: 0, expect: "Use US spelling." }, null], ["release"],
+    ["quiesce"], ["changeNote", null, "Use US spelling."], ["release"],
+  ]);
+});
+
+it("rechecks readiness after waiting for idle and writes no note when the agent changed", async () => {
+  const fake = fakeAgent();
+  let generation = 1;
+  fake.agent.agent.quiesce = async () => { generation++; return async () => { fake.asked.push(["release"]); }; };
+  const { port } = await serve([fake.agent], { roster: () => [{ id: "foo", generation, state: "ready" as const }] });
+  const response = await call(port, "/api/agents/foo/notes/0", { method: "DELETE", headers: { ...auth, "content-type": "application/json" }, body: { expect: "Use US spelling." } });
+  expect(response.status).toBe(409);
+  expect(fake.asked).toEqual([["release"]]);
 });
 
 // gh#123: replacing an order's text in place leaves no turn without the rule.

@@ -57,7 +57,7 @@ async function launch(dir: string, options: Partial<RunOptions> = {}) {
           state: async () => initialOperator(), events: async () => ({}), queued: async () => [],
           steer: async () => "not_found", withdraw: async () => "not_found",
           setFrozen: async () => {}, setPaused: async () => {}, message: async () => {}, addOrder: async () => {},
-          removeOrder: async () => {}, replaceOrder: async () => {}, markChecked: async () => {}, retryEvent: async () => {},
+          removeOrder: async () => {}, replaceOrder: async () => {}, changeNote: async () => "done" as const, markChecked: async () => {}, retryEvent: async () => {},
         },
       };
     },

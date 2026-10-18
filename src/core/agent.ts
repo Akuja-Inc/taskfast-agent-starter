@@ -90,6 +90,10 @@ export interface OperatorControls {
   withdraw(requestId: string): Promise<WithdrawResult>;
   addOrder(order: string): Promise<void>;
   removeOrder(index: number): Promise<void>;
+  // The owner's write to the agent's notes: replace or remove the note at `at` when it
+  // still holds `expect`, or append when `at` is null. Call it only inside quiesce(), so a
+  // turn's numbering never moves under the agent's forget.
+  changeNote(at: { index: number; expect: string } | null, text: string | null): Promise<"done" | "changed">;
   // Replaces one order's text in place, in one commit, so no turn runs without it.
   replaceOrder(index: number, order: string): Promise<void>;
   markChecked(id: string): Promise<void>;
@@ -360,6 +364,36 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       try { await recover(); }
       catch (error) { log(`recovery: ${String(error)}`); }
     };
+    const quiesce = async (signal: AbortSignal): Promise<() => Promise<void>> => {
+      signal.throwIfAborted();
+      if (closed) throw new Error("the agent is closed");
+      schedulingHolds++;
+      let released = false;
+      const release = async () => {
+        if (released) return;
+        released = true;
+        schedulingHolds--;
+        if (!closed) { await recoverLogged(); await recoverLogged(); }
+      };
+      let onAbort = () => {};
+      const cancelled = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(signal.reason ?? new Error("waiting cancelled"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      });
+      try {
+        // Join admissions already in flight before observing idle. No timeout or
+        // cancellation path signals Pi or an in-flight marketplace operation.
+        await Promise.race([(async () => {
+          await recovering;
+          await operatorLine;
+          await conversation.waitForIdle(context);
+        })(), cancelled]);
+        signal.throwIfAborted();
+        return release;
+      } catch (error) { await release(); throw error; }
+      finally { signal.removeEventListener("abort", onAbort); }
+    };
     const operator: OperatorControls = {
       state: async () => (await owner.snapshot(Operator, context)) ?? initialOperator(),
       setFrozen: async (frozen) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).frozen = frozen; }, context); },
@@ -467,6 +501,16 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           if (index < state.orders.length) state.orders[index] = order.replace(/[\r\n]+/g, " ");
         }, context);
       },
+      changeNote: (at, text) => conversation.commit(async (tx) => {
+        const state = await tx.doc(Policy);
+        if (at && state.memory[at.index] !== at.expect) return "changed" as const;
+        // One prompt line per note, as orders keep it.
+        const note = text?.replace(/[\r\n]+/g, " ") ?? null;
+        if (!at) state.memory.push(note as string);
+        else if (note === null) state.memory.splice(at.index, 1);
+        else state.memory[at.index] = note;
+        return "done" as const;
+      }, context),
       events: async () => (await owner.snapshot(Events, context))?.events ?? {},
       retryEvent: async (eventId) => {
         await conversation.commit(async (tx) => {
@@ -499,36 +543,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         if (!closed) { await recoverLogged(); await recoverLogged(); }
       },
       waitForIdle: () => conversation.waitForIdle(context),
-      quiesce: async (signal) => {
-        signal.throwIfAborted();
-        if (closed) throw new Error("the agent is closed");
-        schedulingHolds++;
-        let released = false;
-        const release = async () => {
-          if (released) return;
-          released = true;
-          schedulingHolds--;
-          if (!closed) { await recoverLogged(); await recoverLogged(); }
-        };
-        let onAbort = () => {};
-        const cancelled = new Promise<never>((_resolve, reject) => {
-          onAbort = () => reject(signal.reason ?? new Error("waiting cancelled"));
-          signal.addEventListener("abort", onAbort, { once: true });
-          if (signal.aborted) onAbort();
-        });
-        try {
-          // Join admissions already in flight before observing idle. No timeout or
-          // cancellation path signals Pi or an in-flight marketplace operation.
-          await Promise.race([(async () => {
-            await recovering;
-            await operatorLine;
-            await conversation.waitForIdle(context);
-          })(), cancelled]);
-          signal.throwIfAborted();
-          return release;
-        } catch (error) { await release(); throw error; }
-        finally { signal.removeEventListener("abort", onAbort); }
-      },
+      quiesce,
       close: async () => {
         if (closed) return;
         closed = true;

@@ -16,7 +16,7 @@ import { CapabilityError, type CapabilityManager } from "./capabilities.js";
 export interface ConsoleAgent {
   id: string;
   spec: AgentSpec;
-  agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript" | "changes">;
+  agent: Pick<MarketplaceAgent, "operator" | "status" | "transcript" | "changes"> & Partial<Pick<MarketplaceAgent, "quiesce">>;
   // Writes an already-checked agent.json and INSTRUCTIONS.md and reopens this agent with them.
   saveSpec?(spec: AgentSpec): Promise<void>;
   // What only the host knows, with server reads for the given task IDs. `seen` is the
@@ -270,6 +270,26 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
         case "not_found": return send(res, 404, { error: "Queued message not found." });
         default: { const exhaustive: never = result; throw new Error(`unknown withdraw result: ${exhaustive}`); }
       }
+    }
+    // The owner's writes to the agent's notes: PUT replaces and DELETE removes note N, and
+    // POST appends (Undo). Each waits until the agent is idle and holds new turns until it
+    // commits, so the numbering a turn's forget reads never moves under it.
+    if (action === "notes" && (req.method === "POST" ? arg === undefined : (req.method === "PUT" || req.method === "DELETE") && arg !== undefined)) {
+      if (arg !== undefined && !/^\d+$/.test(arg)) return send(res, 400, { error: "note index must be a whole number" });
+      const body = await readJson(req);
+      const expected = field(body, "expect"), text = field(body, "text");
+      if (arg !== undefined && typeof expected !== "string") return send(res, 400, { error: "expect must be the current note text" });
+      if (req.method !== "DELETE" && !words(text)) return send(res, 400, { error: `text must be 1-${MAX_TEXT} characters` });
+      if (!stillReady() || !item.agent.quiesce) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
+      // A client that leaves stops the wait; nothing is written without an answer.
+      const leave = new AbortController();
+      res.on("close", () => leave.abort());
+      const release = await item.agent.quiesce(leave.signal);
+      try {
+        if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
+        const result = await controls.changeNote(arg === undefined ? null : { index: Number(arg), expect: expected as string }, req.method === "DELETE" ? null : text as string);
+        return result === "done" ? send(res, 204, "") : send(res, 409, { error: "notes changed; refresh" });
+      } finally { await release(); }
     }
     // DELETE removes an order and PUT replaces its text in place.
     if ((req.method === "DELETE" || req.method === "PUT") && action === "orders" && arg !== undefined) {
