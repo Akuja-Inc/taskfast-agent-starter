@@ -45,7 +45,7 @@ function handle(id: string, calls: string[]): AgentHandle {
     changes: () => () => {},
     operator: {
       state: async () => initialOperator(), events: async () => ({}), queued: async () => [], steer: async () => "not_found", withdraw: async () => "not_found",
-      setFrozen: async () => {}, setPaused: async () => {}, message: async () => {}, addOrder: async () => {}, removeOrder: async () => {}, replaceOrder: async () => {}, markChecked: async () => {}, retryEvent: async () => {},
+      setFrozen: async () => {}, setPaused: async () => {}, message: async () => {}, addOrder: async () => {}, removeOrder: async () => {}, replaceOrder: async () => {}, changeNote: async () => "done" as const, markChecked: async () => {}, retryEvent: async () => {},
     },
   };
 }
@@ -592,6 +592,65 @@ it("streams a real store's commits, and closes its streams before the store at r
   });
   expect(order).toEqual(["open me", "unwatch me", "close me", "open me", "unwatch me", "close me"]);
 });
+
+// gh#125: an owner's note write waits for the agent's turn to end, then checks what the
+// agent changed in that turn, and an edited note survives a reopen into the next prompt.
+it("holds an owner's note removal until the turn ends, refuses it when the turn changed the notes, and keeps an edit across a reopen", async () => {
+  const dir = folders("me");
+  const faux = fauxProvider({ models: [{ id: "test" }] });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  let entered = () => {}, release = () => {};
+  const inTurn = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const prompts: string[] = [];
+  faux.setResponses([
+    // The opening ping: the agent writes two notes.
+    fauxAssistantMessage([fauxToolCall("remember", { note: "Alpha" }), fauxToolCall("remember", { note: "Beta" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Noted."),
+    // An event's turn holds here, then forgets note 1, which moves Beta to number 1.
+    async () => { entered(); await gate; return fauxAssistantMessage([fauxToolCall("forget", { index: 1 })], { stopReason: "toolUse" }); },
+    fauxAssistantMessage("Forgot."),
+    // The ping after the reopen reads the edited note.
+    (context) => { prompts.push(JSON.stringify(context)); return fauxAssistantMessage("Read."); },
+  ]);
+  let deliver: ((event: MarketEvent) => Promise<void>) | undefined;
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    listen: (options) => { deliver = options.deliver; return { close: async () => {} }; },
+    openAgent: async ({ spec, runtime, storePath }) => openMarketplaceAgent({
+      spec: { ...spec, model: "faux:test" }, runtime, storePath, models, recoverEveryMs: 60_000,
+      command: async () => ({ outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } }),
+    }),
+  }, async (link) => {
+    const notes = async () => ((await (await get(link!, "/api/agents/me")).json()) as { notes: string[] }).notes;
+    const send = (method: string, path: string, body: unknown) => fetch(new URL(path, link), { method, body: JSON.stringify(body), headers: { authorization: `Bearer ${link!.hash.slice(7)}`, "content-type": "application/json" } });
+    await expect.poll(notes).toEqual(["Alpha", "Beta"]);
+    await deliver!({ event_id: "hold-1", event: "message_received" });
+    await inTurn;
+    // The prompt numbered Beta 2. The owner removes it while the turn runs.
+    let answered = false;
+    const removal = send("DELETE", "/api/agents/me/notes/1", { expect: "Beta" }).then((response) => { answered = true; return response; });
+    // A failure here must still end the held turn, or the host never closes.
+    try {
+      await sleep(200);
+      expect(answered).toBe(false);
+      expect(await notes()).toEqual(["Alpha", "Beta"]);
+    } finally { release(); }
+    const refused = await removal;
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "notes changed; refresh" });
+    expect(await notes()).toEqual(["Beta"]);
+    expect((await send("PUT", "/api/agents/me/notes/0", { expect: "Beta", text: "Beta,\nedited" })).status).toBe(204);
+    expect(await notes()).toEqual(["Beta, edited"]);
+    // Saving the spec closes and reopens the agent on the same store.
+    expect((await put(link!, "/api/agents/me/spec", example("brisk-poster"))).status).toBe(204);
+    await expect.poll(async () => (await roster(link!))[0]?.state).toBe("ready");
+    await expect.poll(() => prompts.length).toBe(1);
+    expect(prompts[0]).toContain("1: Beta, edited");
+    expect(await notes()).toEqual(["Beta, edited"]);
+  });
+}, 30_000);
 
 it("keeps the host running when an agent cannot reopen", async () => {
   const dir = folders("me", "you");

@@ -104,8 +104,8 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .row-actions { flex: none; margin-left: auto; display: inline-flex; gap: 16px; }
 .row-actions .sq { position: relative; min-height: 28px; padding: 0; border: none; border-radius: 0; }
 .row-actions .sq::before { content: ""; position: absolute; inset: -8px; }
-.order-edit { flex: 1; }
-.order-edit input { flex: 1 1 280px; width: auto; }
+.row-edit { flex: 1; }
+.row-edit input { flex: 1 1 280px; width: auto; }
 .reads-raw > summary { min-height: 44px; padding: 12px 18px; cursor: pointer; }
 .reads-raw > pre { margin: 0 18px 16px; }
 .note { padding: 12px 16px; border-radius: 2px; background: var(--warn-bg); border: 1px solid var(--warn); color: var(--ink); font-size: 14px; }
@@ -198,8 +198,8 @@ textarea::placeholder { color: var(--muted); }
 .queue-actions button { justify-content: center; }
 @media (max-width: 640px) { .queue-row { grid-template-columns: minmax(0, 1fr); } .queue-actions { grid-column: 1; grid-row: 3; flex-direction: row; flex-wrap: wrap; } }
 .queue-error { grid-column: 1 / -1; }
-.queue-error:empty, .queue-notice:empty, .order-notice:empty { display: none; }
-.order-notice { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.queue-error:empty, .queue-notice:empty, .list-notice:empty { display: none; }
+.list-notice { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 button:disabled, button[aria-disabled="true"] { cursor: wait; opacity: .6; }
 .startup { overflow-wrap: anywhere; }
 .startup-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -383,20 +383,29 @@ async function act(method, action, body) {
   // A 409 says the operator acted on stale state (the orders changed): show the reason over fresh data.
   catch (error) { ui.error = error.message; if (error.status === 409) await refresh(); else render(); }
 }
-// Orders apply from the agent's next turn, apart from Save & reopen, so a change reports
-// beside the list rather than in the page error. done() applies a success to the shown
-// list at once, sets its notice and may name the control to focus next.
-async function changeOrders(method, action, body, done) {
+// Orders and the owner's note writes apply from the agent's next turn, apart from Save &
+// reopen, so a change reports beside its list rather than in the page error. done()
+// applies a success to the shown list at once, sets its notice and may name the control
+// to focus next.
+const LISTS = {
+  orders: { one: "order", One: "Order", changed: "Orders changed. The list now shows the current orders." },
+  notes: { one: "note", One: "Note", changed: "Notes changed. The list now shows the current notes." },
+};
+async function changeList(kind, method, action, body, done) {
   let focus = null;
+  // A note write waits until the agent is idle: say so in place, without a rebuild.
+  const line = kind === "notes" && document.querySelector(".note-notice");
+  if (line) line.textContent = "Saves when the agent finishes its current turn.";
   try { await api(method, "/api/agents/" + encodeURIComponent(ui.agent) + "/" + action, body); focus = done(); }
-  // A 409 says the list was stale (another tab or the TUI changed it): show the current one.
+  // A 409 says the list was stale (another tab, the TUI or the agent changed it): show the current one.
   catch (error) {
-    ui.orderNotice = { text: error.status === 409 ? "Orders changed. The list now shows the current orders." : error.message };
-    if (error.status === 409) ui.editingOrder = null;
+    ui.listNotice = { kind, text: error.status === 409 ? LISTS[kind].changed : error.message };
+    if (error.status === 409) ui.editingRow = null;
   }
   await refresh();
   render(true);
-  (focus && document.querySelector(focus) || document.querySelector("#order-input"))?.focus({ preventScroll: true });
+  // With no row left to take it, focus goes to the add input, or to the last note.
+  (focus && document.querySelector(focus) || document.querySelector(kind === "orders" ? "#order-input" : '[data-focus="note-x:' + (view.notes.length - 1) + '"]'))?.focus({ preventScroll: true });
 }
 ${LIVE}
 ${MARKDOWN}
@@ -425,10 +434,10 @@ function navigate(next, traversed = false) {
   if (leaving) {
     if (settingsDirty() && !confirm("Discard unsaved Settings edits?")) return false;
     if (!capabilities.leave()) return false;
-    ui.specDraft = null; ui.orderDraft = ""; ui.editingOrder = null;
+    ui.specDraft = null; ui.orderDraft = ""; ui.editingRow = null;
   }
   if (next.agent !== ui.agent) {
-    ui.orderNotice = null;
+    ui.listNotice = null;
     drafts.set(ui.agent, { draft: ui.draft, attempt: ui.attempt, messageError: ui.messageError });
     Object.assign(ui, drafts.get(next.agent) || { draft: "", attempt: null, messageError: "" });
     ui.agent = next.agent;
@@ -1229,16 +1238,52 @@ function settingsTab() {
     el("div", { class: "reads-body" }, body));
   const rows = (items, row, empty = "None yet.") => items.length ? el("ol", { class: "reads-list" }, items.map((item, index) => el("li", {}, el("div", { class: "reads-row" }, row(item, index))))) : el("div", { class: "small", text: empty });
   const limits = view.spec.limits || {};
-  const addOrder = (text, notice, added = () => {}) => changeOrders("POST", "orders", { text }, () => {
-    view.operator.orders = [...view.operator.orders, text];
-    ui.orderNotice = { text: notice };
+  const items = (kind) => kind === "orders" ? view.operator.orders : view.notes;
+  const setItems = (kind, next) => { if (kind === "orders") view.operator.orders = next; else view.notes = next; };
+  const addItem = (kind, text, notice, added = () => {}) => changeList(kind, "POST", kind, { text }, () => {
+    setItems(kind, [...items(kind), text]);
+    ui.listNotice = { kind, text: notice };
     added();
   });
-  // Opens an order's row for editing, or closes it and hands focus back to its pencil.
-  const editOrder = (editing, index) => {
-    ui.editingOrder = editing;
+  // Opens a row for editing, or closes it and hands focus back to its pencil.
+  const editRow = (kind, editing, index) => {
+    ui.editingRow = editing && { kind, ...editing };
     render(true);
-    document.querySelector(editing ? "#order-edit" : '[data-focus="order-edit:' + index + '"]')?.focus({ preventScroll: true });
+    document.querySelector(editing ? "#" + LISTS[kind].one + "-edit" : '[data-focus="' + LISTS[kind].one + '-edit:' + index + '"]')?.focus({ preventScroll: true });
+  };
+  // Numbered orders or notes: each row's text with its pencil and X squares, or its edit form.
+  const editableRows = (kind, content, empty) => rows(items(kind), (item, index) => {
+    const { one, One } = LISTS[kind], n = index + 1;
+    const editing = ui.editingRow && ui.editingRow.kind === kind && ui.editingRow.index === index ? ui.editingRow : null;
+    if (editing) return el("form", { class: "inline row-edit", onsubmit: (e) => {
+      e.preventDefault();
+      const text = editing.text.trim();
+      // The edit pins the text it started from, so a list that moved under it answers 409.
+      if (text) changeList(kind, "PUT", kind + "/" + index, { expect: editing.expect, text }, () => {
+        setItems(kind, items(kind).map((at, i) => i === index ? text : at));
+        ui.editingRow = null;
+        ui.listNotice = { kind, text: One + " saved. The agent reads it from its next turn." };
+        return '[data-focus="' + one + '-edit:' + index + '"]';
+      });
+    } },
+      el("input", { id: one + "-edit", type: "text", maxlength: 4000, "aria-label": One + " " + n, value: editing.text, oninput: (e) => { editing.text = e.target.value; }, onkeydown: (e) => { if (e.key === "Escape") { e.preventDefault(); editRow(kind, null, index); } } }),
+      el("button", { type: "submit", class: "primary", text: "Save" }),
+      el("button", { type: "button", onclick: () => editRow(kind, null, index), text: "Cancel" }));
+    return [content(item), el("span", { class: "row-actions" },
+      el("button", { class: "sq", "data-focus": one + "-edit:" + index, "aria-label": "Edit " + one + " " + n, title: "Edit " + one + " " + n, onclick: () => editRow(kind, { index, expect: item, text: item }, index) }, pict("pencil", 13)),
+      // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
+      el("button", { class: "sq", "data-focus": one + "-x:" + index, "aria-label": "Remove " + one + " " + n, title: "Remove " + one + " " + n, onclick: () => changeList(kind, "DELETE", kind + "/" + index, { expect: item }, () => {
+        setItems(kind, items(kind).filter((_, at) => at !== index));
+        ui.listNotice = { kind, text: One + " removed.", undo: item };
+        return '[data-focus="' + one + '-x:' + index + '"]';
+      }) }, pict("x", 13)))];
+  }, empty);
+  // Each list's polite status line, with Undo after a removal.
+  const notice = (kind) => {
+    const shown = ui.listNotice && ui.listNotice.kind === kind ? ui.listNotice : null;
+    return el("div", { class: "small list-notice " + LISTS[kind].one + "-notice", role: "status", "aria-live": "polite" }, shown && shown.text,
+      shown && shown.undo !== undefined ? [" Undo adds it back at the end of the list. ",
+        el("button", { type: "button", onclick: () => addItem(kind, shown.undo, LISTS[kind].One + " added back at the end of the list.") }, "Undo")] : null);
   };
   // A sample or a typed draft: the hint follows the draft without rebuilding the focused input.
   const draftOrder = (text, input) => {
@@ -1254,43 +1299,18 @@ function settingsTab() {
           block("you", "Your instructions", "applies after Save & reopen",
             el("div", { class: "md" }, markdown(view.spec.instructions).map(mdBlock)),
             el("a", { href: "#instructions-editor", onclick: (e) => { e.preventDefault(); const editor = document.querySelector("#instructions-editor"); editor.scrollIntoView({ block: "center" }); editor.focus({ preventScroll: true }); } }, "Edit instructions")),
-          block("agent", "The agent's notes", "the agent adds and drops these",
-            rows(view.notes, (note) => el("span", { text: note }))),
+          block("agent", "The agent's notes", "the agent adds these, you can edit or remove them",
+            editableRows("notes", (note) => el("span", { text: note })), notice("notes")),
           block("you", "Your standing orders", "apply from the next turn, only you can change them",
-            rows(op.orders, (order, index) => ui.editingOrder && ui.editingOrder.index === index
-              ? el("form", { class: "inline order-edit", onsubmit: (e) => {
-                e.preventDefault();
-                const text = ui.editingOrder.text.trim();
-                // The edit pins the text it started from, so a list that moved under it answers 409.
-                if (text) changeOrders("PUT", "orders/" + index, { expect: ui.editingOrder.expect, text }, () => {
-                  view.operator.orders = view.operator.orders.map((at, i) => i === index ? text : at);
-                  ui.editingOrder = null;
-                  ui.orderNotice = { text: "Order saved. The agent reads it from its next turn." };
-                  return '[data-focus="order-edit:' + index + '"]';
-                });
-              } },
-                el("input", { id: "order-edit", type: "text", maxlength: 4000, "aria-label": "Order " + (index + 1), value: ui.editingOrder.text, oninput: (e) => { ui.editingOrder.text = e.target.value; }, onkeydown: (e) => { if (e.key === "Escape") { e.preventDefault(); editOrder(null, index); } } }),
-                el("button", { type: "submit", class: "primary", text: "Save" }),
-                el("button", { type: "button", onclick: () => editOrder(null, index), text: "Cancel" }))
-              : [el("span", {}, inlineMarkdown(order)),
-              el("span", { class: "row-actions" }, el("button", { class: "sq", "data-focus": "order-edit:" + index, "aria-label": "Edit order " + (index + 1), title: "Edit order " + (index + 1), onclick: () => editOrder({ index, expect: order, text: order }, index) }, pict("pencil", 13)),
-              // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
-              el("button", { class: "sq", "data-focus": "order-x:" + index, "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => changeOrders("DELETE", "orders/" + index, { expect: order }, () => {
-                view.operator.orders = view.operator.orders.filter((_, at) => at !== index);
-                ui.orderNotice = { text: "Order removed.", undo: order };
-                return '[data-focus="order-x:' + index + '"]';
-              }) }, pict("x", 13)))],
-              "None yet. Anything you add here is the last thing the agent reads before it acts."),
+            editableRows("orders", (order) => el("span", {}, inlineMarkdown(order)), "None yet. Anything you add here is the last thing the agent reads before it acts."),
             op.orders.length ? null : el("div", { class: "samples" }, el("span", { class: "samples-label", text: "Try:" }),
               ORDER_SAMPLES[view.spec.role].map((sample) => el("button", { type: "button", class: "sample", onclick: () => draftOrder(sample, document.querySelector("#order-input")), text: sample }))),
-            el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) addOrder(text, "Order added. The agent reads it from its next turn.", () => { ui.orderDraft = ""; }); } },
+            el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) addItem("orders", text, "Order added. The agent reads it from its next turn.", () => { ui.orderDraft = ""; }); } },
               // 4,000 characters, the server's limit for an order.
               el("label", {}, "Add at the end of what the agent reads", el("input", { id: "order-input", type: "text", maxlength: 4000, value: ui.orderDraft, oninput: (e) => draftOrder(e.target.value) })),
               el("button", { type: "submit", class: "primary", text: "Add" })),
             el("div", { id: "order-money", class: "small", hidden: !mentionsMoney(ui.orderDraft), text: "Orders guide the agent. Nothing enforces them. The cap that holds is in Limits, at the side." }),
-            el("div", { class: "small order-notice", role: "status", "aria-live": "polite" }, ui.orderNotice && ui.orderNotice.text,
-              ui.orderNotice && ui.orderNotice.undo !== undefined ? [" Undo adds it back at the end of the list. ",
-                el("button", { type: "button", onclick: () => addOrder(ui.orderNotice.undo, "Order added back at the end of the list.") }, "Undo")] : null)),
+            notice("orders")),
           el("details", { class: "reads-raw", open: ui.promptOpen, ontoggle: (e) => { ui.promptOpen = e.target.open; } },
             el("summary", { text: "Show the exact text the model reads" }), el("pre", { text: view.prompt })))),
       el("section", { class: "section" },
