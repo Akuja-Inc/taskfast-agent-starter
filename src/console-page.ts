@@ -1241,10 +1241,9 @@ function settingsTab() {
   }
   // The Limits card's own confirm: only the two limits change, checked against the limits it rendered.
   async function saveLimits() {
-    const next = Object.fromEntries(LIMITS.map(([key]) => [key, ui.limitsDraft[key]]).filter(([, value]) => value !== undefined));
-    const body = { ...view.spec, expectLimits: limits };
-    delete body.limits;
-    if (Object.keys(next).length) body.limits = next;
+    // JSON drops an undefined limit, so a cleared one is simply absent.
+    const { perJobUsd, dailyUsd } = ui.limitsDraft, body = { ...view.spec, limits: { perJobUsd, dailyUsd }, expectLimits: limits };
+    if (perJobUsd === undefined && dailyUsd === undefined) delete body.limits;
     try {
       await api("PUT", "/api/agents/" + encodeURIComponent(ui.agent) + "/spec", body);
       ui.limitsDraft = null;
