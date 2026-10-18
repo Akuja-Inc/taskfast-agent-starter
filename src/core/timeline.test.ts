@@ -27,6 +27,28 @@ const transcript: Message[] = [
   fauxAssistantMessage("Answered."),
 ];
 
+it("marks only a successful final model reply as a completed turn", () => {
+  for (const stopReason of ["stop", "toolUse", "length", "error", "aborted"] as const) {
+    const messages: Message[] = [user("Check your marketplace work", 1000), fauxAssistantMessage("Checked.", { stopReason })];
+    expect(buildTimeline(messages)[0].complete).toBe(stopReason === "stop");
+    expect(buildTimeline([...messages, fauxAssistantMessage([], { stopReason: "toolUse" })])[0].complete).toBe(false);
+  }
+  expect(buildTimeline([user("Check your marketplace work", 1000)])[0].complete).toBe(false);
+});
+
+it("allows comparison only for an unambiguous successful single-text result", () => {
+  const check = (content: ToolResultMessage["content"], isError = false) => buildTimeline([
+    user("Check your marketplace work", 1000),
+    fauxAssistantMessage([fauxToolCall("task_list", {}, { id: "read" })], { stopReason: "toolUse" }),
+    { ...result("read", "task_list", ""), content, isError },
+    fauxAssistantMessage("No changes."),
+  ])[0].replies[0].calls[0];
+  expect(check([{ type: "text", text: '{"tasks":[]}' }]).comparable).toBe(true);
+  expect(check([{ type: "text", text: '{"tasks":[]}' }, { type: "text", text: "[warn] Output truncated" }]).comparable).toBe(false);
+  expect(check([{ type: "text", text: '{"tasks":[]}' }], true).comparable).toBe(false);
+  expect(check([{ type: "text", text: '{"error":"refused"}' }]).comparable).toBe(false);
+});
+
 it("groups a transcript into turns by what started them, with each reply's tool calls and tasks", () => {
   const turns = buildTimeline(transcript);
   expect(turns.map((turn) => [turn.kind, turn.at])).toEqual([["poll", 1000], ["operator", 2000], ["event", 3000]]);

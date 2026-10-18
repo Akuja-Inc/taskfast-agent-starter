@@ -4,10 +4,10 @@ import { UUID } from "./tools.js";
 
 // What the console shows: each input the agent received, then its replies.
 export type TurnKind = "poll" | "event" | "operator" | "resume" | "other";
-export interface Turn { kind: TurnKind; at: number; text: string; event?: unknown; replies: Reply[] }
+export interface Turn { kind: TurnKind; at: number; text: string; event?: unknown; replies: Reply[]; complete?: boolean }
 export interface Reply { text: string; calls: Call[]; tasks: TaskRef[] }
 export type Outcome = "ok" | "failed" | "uncertain" | "pending";
-export interface Call { id: string; name: string; arguments: unknown; outcome: Outcome; result?: string; error?: string }
+export interface Call { id: string; name: string; arguments: unknown; outcome: Outcome; result?: string; error?: string; comparable?: boolean }
 export interface TaskRef { id: string; via: string }
 
 const EVENT_PREFIX = "Marketplace event:\n";
@@ -43,6 +43,10 @@ function settle(call: Call, message: ToolResultMessage): void {
   const repeated = typeof skipped === "string" && skipped.startsWith("outcome unknown") ? skipped : undefined;
   const problem = field(value, "uncertain") ?? field(value, "failed") ?? field(value, "refused") ?? field(value, "error");
   call.outcome = field(value, "uncertain") !== undefined || repeated !== undefined ? "uncertain" : message.isError || problem !== undefined ? "failed" : "ok";
+  // Extra diagnostics or non-text parts may mean truncation or omitted information.
+  // Preserve the existing display result, but never use it to prove equivalence.
+  call.comparable = call.outcome === "ok" && parts.length === 1 &&
+    (typeof message.content === "string" || message.content.length === 1);
   if (call.outcome === "ok") call.result = body;
   else call.error = typeof problem === "string" ? problem : repeated ?? body;
 }
@@ -60,12 +64,13 @@ export function buildTimeline(messages: readonly Message[]): Turn[] {
   const calls = new Map<string, { call: Call; reply: Reply }>();
   for (const message of messages) {
     if (message.role === "user") {
-      turns.push({ ...classify(text(message.content)), at: message.timestamp, replies: [] });
+      turns.push({ ...classify(text(message.content)), at: message.timestamp, replies: [], complete: false });
       continue;
     }
     const turn = turns.at(-1);
     if (!turn) continue;
     if (message.role === "assistant") {
+      turn.complete = message.stopReason === "stop";
       const reply: Reply = { text: message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join(""), calls: [], tasks: [] };
       for (const part of message.content) {
         if (part.type !== "toolCall") continue;
