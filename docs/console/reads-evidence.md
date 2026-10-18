@@ -47,3 +47,20 @@ The terminal UI captures come from [docs/tui/orders-capture.py](../tui/orders-ca
 | --- | --- | --- |
 | Empty orders | ![before](../tui/orders-empty-before.png) | ![after](../tui/orders-empty-after.png) |
 | Order naming $5 | ![before](../tui/orders-money-before.png) | ![after](../tui/orders-money-after.png) |
+
+## Order feedback (#121)
+
+Each order change now reports in a status line inside the orders block. Adding an order says so and keeps focus on the cleared input; the before page kept the old list while the input held focus. Removing one offers Undo, which adds it back at the end of the list. A stale removal says the list changed and shows the current orders beside the list, where the before page put a page-wide error. The capture runs add, remove and a stale remove on the same page, in that order.
+
+```bash
+python3 docs/console/reads-capture.py feedback
+```
+
+| | Before | After |
+| --- | --- | --- |
+| Added, light | ![before](settings-feedback-added-before-light.png) | ![after](settings-feedback-added-after-light.png) |
+| Added, dark | ![before](settings-feedback-added-before-dark.png) | ![after](settings-feedback-added-after-dark.png) |
+| Removed with Undo, light | ![before](settings-feedback-removed-before-light.png) | ![after](settings-feedback-removed-after-light.png) |
+| Removed with Undo, dark | ![before](settings-feedback-removed-before-dark.png) | ![after](settings-feedback-removed-after-dark.png) |
+| Stale remove, light | ![before](settings-feedback-stale-before-light.png) | ![after](settings-feedback-stale-after-light.png) |
+| Stale remove, dark | ![before](settings-feedback-stale-before-dark.png) | ![after](settings-feedback-stale-after-dark.png) |
