@@ -40,7 +40,8 @@ const server = createServer(async (req, res) => {
   if (req.headers.authorization !== `Bearer ${token}`) { json(401, { error: 'synthetic token required' }); return; }
   let text = ''; for await (const chunk of req) text += chunk;
   const body = text ? JSON.parse(text) : undefined;
-  if (req.url === '/fixture/state' && req.method === 'POST') { state = { orders: [], notes: [], limits: {}, ...body }; publish(); json(204); return; }
+  // A quiet change stands for another tab's edit the page has not seen yet.
+  if (req.url.startsWith('/fixture/state') && req.method === 'POST') { state = { orders: [], notes: [], limits: {}, ...body }; if (!req.url.endsWith('?quiet')) publish(); json(204); return; }
   if (req.url === '/api/agents') { json(200, { env: 'local', agents: [{ id: 'editor', role: 'worker', state: 'ready', generation: 1 }] }); return; }
   const match = /^\/api\/agents\/editor(\/.*)?$/.exec(req.url);
   if (!match) { json(404, { error: 'unknown fixture agent' }); return; }
@@ -53,6 +54,13 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (!action) { json(200, view()); return; }
+  if (action === '/orders' && req.method === 'POST') { state.orders = [...state.orders, body.text]; publish(); json(204); return; }
+  const order = /^\/orders\/(\d+)$/.exec(action);
+  if (order && req.method === 'DELETE') {
+    // The real stream delivers the other change too, so a refusal publishes the current list.
+    if (state.orders[order[1]] !== body.expect) { publish(); json(409, { error: 'orders changed; refresh' }); return; }
+    state.orders = state.orders.filter((_, at) => at !== Number(order[1])); publish(); json(204); return;
+  }
   json(404, { error: 'unsupported fixture request' });
 });
 server.listen(0, '127.0.0.1', () => process.stdout.write(`http://127.0.0.1:${server.address().port}/agents/editor?tab=settings#token=${token}\n`));

@@ -1453,3 +1453,90 @@ it("renders a reply's markdown table node by node and keeps near-tables as text"
   // The peek row reads the table's words without the pipes.
   expect(lastSaid({ replies: [{ text: "| Bid | `t-1` |\n| --- | --- |" }] })).toBe("Bid t-1");
 });
+
+// gh#121: orders apply on the agent's next turn, apart from Save & reopen, so they carry their own feedback.
+const ordersPage = (orders: string[], answer: (method: string, path: string, body: unknown) => Response) => {
+  const calls: [string, string, unknown][] = [];
+  const page = bootPage(async (path: unknown, init?: unknown) => {
+    const { method = 'GET', body } = (init ?? {}) as RequestInit;
+    if (path === '/api/agents') return new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }));
+    const parsed = body ? JSON.parse(String(body)) : undefined;
+    calls.push([method, String(path), parsed]);
+    return answer(method, String(path), parsed);
+  });
+  page.setView({ ...demoView(), operator: { ...demoView().operator, orders } }); page.ui.tab = 'settings'; page.render();
+  return { page, calls, notice: () => page.app.querySelector('.order-notice')! };
+};
+const ok = () => new Response(null, { status: 204 });
+
+it("reports an added order beside the list, clears the input and keeps focus there", async () => {
+  const { page, calls, notice } = ordersPage([], ok);
+  const input = page.app.querySelector('#order-input')!;
+  expect(input.getAttribute('maxlength')).toBe('4000');
+  input.listeners.input[0]({ target: { value: 'Skip phone jobs' } });
+  input.focus();
+  input.closest('form')!.listeners.submit[0]({ preventDefault() {} });
+  await settle();
+  expect(calls).toEqual([['POST', '/api/agents/shop/orders', { text: 'Skip phone jobs' }]]);
+  expect(notice().getAttribute('role')).toBe('status');
+  expect(notice().textContent).toBe('Order added. The agent reads it from its next turn.');
+  expect(page.app.querySelector('#order-input')!.getAttribute('value')).toBe('');
+  expect(page.app.querySelectorAll('.reads-block')[2].querySelectorAll('li').map((li) => li.textContent)).toEqual(['Skip phone jobs']);
+  expect(page.document.activeElement).toBe(page.app.querySelector('#order-input'));
+});
+
+it("offers Undo after a removal, moves focus to the next row, and Undo adds the order back at the end", async () => {
+  const { page, calls, notice } = ordersPage(['First', 'Second', 'Third'], ok);
+  page.app.querySelectorAll('.row-actions button')[1].listeners.click[0]({});
+  await settle();
+  expect(calls).toEqual([['DELETE', '/api/agents/shop/orders/1', { expect: 'Second' }]]);
+  expect(notice().textContent).toContain('Order removed.');
+  expect(notice().textContent).toContain('back at the end of the list');
+  expect(page.document.activeElement!.getAttribute('aria-label')).toBe('Remove order 2');
+  expect(page.app.querySelectorAll('.reads-block')[2].querySelectorAll('li').map((li) => li.textContent)).toEqual(['First', 'Third']);
+  notice().querySelector('button')!.listeners.click[0]({});
+  await settle();
+  expect(calls[1]).toEqual(['POST', '/api/agents/shop/orders', { text: 'Second' }]);
+  expect(page.app.querySelectorAll('.reads-block')[2].querySelectorAll('li').map((li) => li.textContent)).toEqual(['First', 'Third', 'Second']);
+  expect(notice().textContent).toBe('Order added back at the end of the list.');
+});
+
+it("moves focus to the add input when the last order is removed", async () => {
+  const { page } = ordersPage(['Only'], ok);
+  page.app.querySelector('.row-actions button')!.listeners.click[0]({});
+  await settle();
+  expect(page.document.activeElement).toBe(page.app.querySelector('#order-input'));
+});
+
+it("shows a stale remove beside the list and redraws the current orders", async () => {
+  const { page, notice } = ordersPage(['Old'], () => new Response(JSON.stringify({ error: 'orders changed; refresh' }), { status: 409, headers: { 'content-type': 'application/json' } }));
+  page.app.querySelector('.row-actions button')!.listeners.click[0]({});
+  // Another tab changed the orders; the stream brings the current list.
+  page.setView({ ...demoView(), operator: { ...demoView().operator, orders: ['Newer'] } });
+  await settle();
+  expect(notice().textContent).toBe('Orders changed. The list now shows the current orders.');
+  expect(page.app.querySelectorAll('.reads-block')[2].querySelectorAll('li').map((li) => li.textContent)).toEqual(['Newer']);
+  expect(page.app.querySelector('.error')).toBeNull();
+});
+
+it("shows a refused add's reason beside the list and keeps the draft", async () => {
+  const { page, notice } = ordersPage([], () => new Response(JSON.stringify({ error: 'text must be 1-4000 characters' }), { status: 400, headers: { 'content-type': 'application/json' } }));
+  page.app.querySelector('#order-input')!.listeners.input[0]({ target: { value: 'Too long' } });
+  page.app.querySelector('#order-input')!.closest('form')!.listeners.submit[0]({ preventDefault() {} });
+  await settle();
+  expect(notice().textContent).toBe('text must be 1-4000 characters');
+  expect(page.app.querySelector('#order-input')!.getAttribute('value')).toBe('Too long');
+});
+
+it("asks before leaving Settings with an order typed but not added", () => {
+  const page = bootPage(); page.setView(demoView()); page.render(); page.selectTab('settings');
+  page.app.querySelector('#order-input')!.listeners.input[0]({ target: { value: 'Half-typed order' } });
+  page.setDiscard(false);
+  page.selectTab('timeline');
+  expect(page.ui.tab).toBe('settings');
+  page.setDiscard(true);
+  page.selectTab('timeline');
+  expect(page.ui.tab).toBe('timeline');
+  page.selectTab('settings');
+  expect(page.app.querySelector('#order-input')!.getAttribute('value')).toBe('');
+});
