@@ -47,13 +47,39 @@ async def timeline(page):
     await expect(page.get_by_text('Edit in Settings')).to_be_visible()
 
 
+async def added(page):
+    """gh#121: each order change reports beside the list."""
+    await page.locator('#order-input').fill('Reply to every message within the hour')
+    await page.locator('#order-input').press('Enter')
+    await expect(page.get_by_text('Reply to every message within the hour').first).to_be_visible()
+    await page.wait_for_timeout(300)
+
+
+async def removed(page):
+    await page.get_by_role('button', name='Remove order 2').click()
+    await expect(page.get_by_text('Skip jobs that need a phone call')).to_have_count(0)
+    await page.wait_for_timeout(300)
+
+
+async def stale(page):
+    base = page.url.split('/agents/')[0]
+    response = await page.context.request.post(base + '/fixture/state?quiet', headers={'authorization': 'Bearer ' + TOKEN}, data=json.dumps({'orders': ['Changed in another tab'], 'notes': NOTES}))
+    assert response.status == 204
+    await page.get_by_role('button', name='Remove order 1').click()
+    await expect(page.get_by_text('Changed in another tab').first).to_be_visible()
+    await page.wait_for_timeout(300)
+
+
 LIMITS = {'perJobUsd': 20, 'dailyUsd': 50}
 # name: (before ref, fixture state, check run on every shot, extra after-only shots)
 SCENARIOS = {
     'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, reads, {'raw': reads_raw}),
     'limits-empty': ('7516c0a', {'notes': NOTES}, None, {'money': money_hint, 'timeline': timeline}),
     'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {}),
+    'feedback': ('5ff0ae9', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'added': added, 'removed': removed, 'stale': stale}),
 }
+# Scenarios whose extra shots are compared before and after, not shown after only.
+COMPARED = {'feedback'}
 
 
 async def capture(link, mode, scenario):
@@ -74,10 +100,11 @@ async def capture(link, mode, scenario):
                 if check:
                     await check(page, mode)
                 await page.screenshot(path=str(OUT / f'settings-{scenario}-{mode}-{size}-{theme}.png'), full_page=True)
-                if mode == 'after' and size == 'desktop':
+                if size == 'desktop' and (mode == 'after' or scenario in COMPARED):
                     for name, extra in extras.items():
                         await extra(page)
-                        await page.screenshot(path=str(OUT / f'settings-{scenario}-{name}-{theme}.png'), full_page=True)
+                        shot = f'{name}-{mode}' if scenario in COMPARED else name
+                        await page.screenshot(path=str(OUT / f'settings-{scenario}-{shot}-{theme}.png'), full_page=True)
                 assert not errors, errors
                 await context.close()
         await browser.close()
