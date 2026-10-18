@@ -64,10 +64,9 @@ it.each([{}, { environment: null }, { environment: "" }, { environment: "develop
   expect(existsSync(join(dir, "me", ".pi-state"))).toBe(false);
 });
 
-it("accepts the CLI's production alias without treating absent environments as production", async () => {
+it("accepts the CLI's production alias", async () => {
   const dir = temporary();
   folder(dir, "alias", { environment: "production" });
-  folder(dir, "unknown", {});
   const stop = new AbortController();
   const opened: string[] = [];
   await runAgents({ agentsDir: dir, env: "prod", signal: stop.signal, log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async ({ id }) => {

@@ -97,7 +97,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     if (!("environment" in config) || config.environment === null) throw new Error("no environment in .taskfast/config.json; set it explicitly with taskfast config set environment prod|staging|local in this folder after checking the account");
     // CLI v0.20.0 accepts production as an alias on load, but writes prod.
     const env = config.environment === "production" ? "prod" : config.environment;
-    if (env !== "prod" && env !== "staging" && env !== "local") throw new Error("invalid environment in .taskfast/config.json; expected prod, staging or local");
+    if (!(Object.values(ENVIRONMENTS) as unknown[]).includes(env)) throw new Error("invalid environment in .taskfast/config.json; expected prod, staging or local");
     if (env !== o.env) throw new Error(`configured for ${env}, selected ${o.env}`);
     return { configPath, config };
   }
@@ -106,12 +106,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
   const excluded: string[] = [];
   const ids = discovered.filter((id) => {
     try { selectedConfig(id); return true; }
-    catch (error) {
-      const reason = `${id}: ${message(error)}`;
-      excluded.push(reason);
-      o.log(`${id}: skipped: ${message(error)}`);
-      return false;
-    }
+    catch (error) { excluded.push(`${id}: ${message(error)}`); o.log(`${id}: skipped: ${message(error)}`); return false; }
   });
   if (!ids.length) throw new Error(`no agents match ${o.env}: ${excluded.join("; ")}`);
   // Re-read each folder only when its previous owner has finished closing. A bad
