@@ -1,11 +1,11 @@
 {
-  "commit": "3b48a6a446da7d1f1e25540ef340e8776d8a6059",
+  "commit": "201862a2a8c465d2a9aae5ca3b8c055a02b8605a",
   "beforeCommit": "7f0dc4403718d5641fd4a792685b9dcde88eff9b",
   "dirty": false,
   "sha256": {
-    "src/console-page.ts": "d2e8da160ddcdc0500af58b8dba1cf33d14c23bcf825c3025c8f50f5ef25de4e",
+    "src/console-page.ts": "37a016e89a352a1e1faf817b40768b2729822592e3d5df3801b87f41d5c6a864",
     "docs/follow-scroll/browser-host.mjs": "85f139046febbdadc5024254a7e0118cc03352b9f83deb348f06b05ccfd670e1",
-    "docs/follow-scroll/capture.py": "37773b4c922b5da3e7fb677cd44db7fe85f49af0988061a324e327857db44e81"
+    "docs/follow-scroll/capture.py": "01200cc5337d553f835ee32b27a7f8677fe3fb959770f329c84cbb760ab924ac"
   },
   "capture": "Headless Chromium; desktop 1440x1000, light theme. Synthetic browser fixture only, no marketplace calls."
 }
