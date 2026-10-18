@@ -116,20 +116,20 @@ const criterionList = {
 const PAGE = { cursor: s("next_cursor from the previous page, to read the next one"), limit: { type: "number", description: "page size, 1-100" } };
 const page = (i: Record<string, unknown>) => [...opt("cursor", i.cursor, cursor), ...opt("limit", i.limit, limit)];
 
-// Artifacts are files the kit writes: text the model writes, or an image an approved MCP
+// Artifacts are files the kit writes: text the model writes, or media an approved MCP
 // tool returned, which code saved under .pi-state/media and named by a media: handle.
 // Code stores each one under a folder it builds from the task and the bytes' digest, and
 // passes that path. The model names the file, because a task's criteria can require one
 // such as results.json; the name is one basename with an extension the server accepts,
 // so it cannot leave its folder. The CLI picks the upload's type from that extension, so
-// a media name must end in its handle's own image type.
+// a media name must end in its handle's own type.
 export const ARTIFACTS_PATH = ".pi-state/artifacts";
-const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.([a-z]+)$/;
+const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.([a-z0-9]+)$/;
 const TEXT_NAMES = ["txt", "md", "csv", "json", "xml", "html", "css", "js", "svg"];
-// Each image extension a name may end in, by the extension of its media file.
-const IMAGE_NAMES: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jpg", gif: "gif", webp: "webp" };
-const MEDIA_HANDLE = /^media:([0-9a-f]{16})\.(png|jpg|gif|webp)$/;
-const NAMES = [...TEXT_NAMES, ...Object.keys(IMAGE_NAMES)].map((ext) => `.${ext}`).join(", ");
+// Each binary extension a name may end in, by the extension of its media file.
+const MEDIA_NAMES: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jpg", gif: "gif", webp: "webp", mp4: "mp4", webm: "webm", mov: "mov" };
+const MEDIA_HANDLE = /^media:([0-9a-f]{16})\.(png|jpg|gif|webp|mp4|webm|mov)$/;
+const NAMES = [...TEXT_NAMES, ...Object.keys(MEDIA_NAMES)].map((ext) => `.${ext}`).join(", ");
 const MAX_ARTIFACTS = 5;
 const MAX_ARTIFACT_BYTES = 256 * 1024;
 function artifacts(v: unknown, task: string): ArtifactFile[] {
@@ -140,16 +140,16 @@ function artifacts(v: unknown, task: string): ArtifactFile[] {
     if (a === null || typeof a !== "object" || Object.keys(a).some((k) => k !== "name" && k !== "content" && k !== "media") || ("content" in a) === ("media" in a)) bad("each artifact is { name, content } or { name, media }");
     const { name, content, media } = a as Record<string, unknown>;
     const ext = typeof name === "string" ? ARTIFACT_NAME.exec(name)?.[1] : undefined;
-    if (!ext || !(TEXT_NAMES.includes(ext) || Object.hasOwn(IMAGE_NAMES, ext)) || names.has(name as string)) bad(`artifact name must be a unique file name like results.json or chart.png, ending in ${NAMES}`);
+    if (!ext || !(TEXT_NAMES.includes(ext) || Object.hasOwn(MEDIA_NAMES, ext)) || names.has(name as string)) bad(`artifact name must be a unique file name like results.json or chart.png, ending in ${NAMES}`);
     names.add(name as string);
     if (media !== undefined) {
       const handle = typeof media === "string" ? MEDIA_HANDLE.exec(media) : null;
       if (!handle) bad(`artifact ${name as string} media must be a handle a tool result gave you, like media:0123456789abcdef.png`);
       const [, hash, type] = handle!;
-      if (IMAGE_NAMES[ext!] !== type) bad(`artifact ${name as string} must end in .${type}${type === "jpg" ? " or .jpeg" : ""} to match its media`);
+      if (MEDIA_NAMES[ext!] !== type) bad(`artifact ${name as string} must end in .${type}${type === "jpg" ? " or .jpeg" : ""} to match its media`);
       return { path: `${ARTIFACTS_PATH}/${task}/${hash}/${name as string}`, media: `${MEDIA_PATH}/${hash}.${type}`, digest: hash! };
     }
-    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is an image: deliver it as { name, media } with a handle a tool result gave you`);
+    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is ${["mp4", "webm", "mov"].includes(ext!) ? "a video" : "an image"}: deliver it as { name, media } with a handle a tool result gave you`);
     const bytes = typeof content === "string" ? Buffer.byteLength(content) : 0;
     if (bytes < 1 || bytes > MAX_ARTIFACT_BYTES) bad(`artifact ${name as string} content must be 1 to ${MAX_ARTIFACT_BYTES} bytes of text`);
     return { path: `${ARTIFACTS_PATH}/${task}/${digest(content as string)}/${name as string}`, content: content as string };
@@ -158,11 +158,11 @@ function artifacts(v: unknown, task: string): ArtifactFile[] {
 const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
 const artifactList = {
   type: "array",
-  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or an image a tool result saved as media:<file> as { name, media }. You cannot make PNG, JPEG, GIF or WebP bytes yourself; deliver one only by its handle`,
+  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or an image or video a tool result saved as media:<file> as { name, media }. Video capture supports MP4, WebM and MOV up to 50 MiB per file. You cannot make binary media bytes yourself; deliver them only by handle`,
   items: obj({
     name: s(`file name a criterion may require, e.g. results.json or chart.png; ends in ${NAMES}`),
     content: s("the file's full text, for a text file"),
-    media: s("for an image, the handle a tool result gave you, e.g. media:0123456789abcdef.png"),
+    media: s("for an image or video, the handle a tool result gave you, e.g. media:0123456789abcdef.mp4"),
   }, ["name"]),
 };
 // The CLI uploads each file, then submits exactly those uploads.

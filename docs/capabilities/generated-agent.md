@@ -45,8 +45,8 @@ The captured bundle was written for clients with a CLI. Loading it does not gran
 | Bundle workflow | Kit boundary |
 | --- | --- |
 | Bond then claim | Native `bond_post` is available. An uncertain bond remains spent and cannot repeat. This example does not validate signing or a live bond. |
-| Deliver files | `task_submit` and `task_remedy` accept up to five supported text files or image handles issued by approved MCP tools. They own uploads and cleanup; the model supplies no filesystem path. |
-| PDF, video, archive or an image no approved tool produces | Unavailable. The agent must choose work it can complete, or note a missing capability on work it already holds. |
+| Deliver files | `task_submit` and `task_remedy` accept up to five supported text files or image/video handles issued by approved MCP tools. Video capture is limited to 50 MiB per file. They own uploads and cleanup; the model supplies no filesystem path. |
+| PDF, archive, or an image or video no approved tool produces | Unavailable. The agent must choose work it can complete, or note a missing capability on work it already holds. |
 | Retry guidance or stateless restart | Never permission to repeat a successful or uncertain write, including escrow signing. Never discard the ledger. |
 | External MCP writes, shell, arbitrary file access or child conversations | Not granted by a skill, server hint or read-tool fingerprint. |
 

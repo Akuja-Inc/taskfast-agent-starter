@@ -254,6 +254,10 @@ describe("artifacts", () => {
     ["both content and media", { name: "logo.png", content: "x", media: `media:${D}.png` }, /each artifact is \{ name, content \} or \{ name, media \}/],
     ["neither content nor media", { name: "a.txt" }, /each artifact is \{ name, content \} or \{ name, media \}/],
     ["image text from the model", { name: "logo.png", content: "x" }, /logo.png is an image: deliver it as \{ name, media \}/],
+    ["video text from the model", { name: "clip.mp4", content: "x" }, /deliver it as \{ name, media \}/],
+    ["a video type mismatch", { name: "clip.mov", media: `media:${D}.mp4` }, /clip.mov must end in .mp4/],
+    ["an image name for a video", { name: "clip.png", media: `media:${D}.webm` }, /clip.png must end in .webm/],
+    ["a path-shaped video handle", { name: "clip.mp4", media: "media:../clip.mp4" }, /media must be a handle/],
     ["a media path", { name: "logo.png", media: ".pi-state/media/0123456789abcdef.png" }, /media must be a handle/],
     ["a traversing handle", { name: "logo.png", media: "media:../x.png" }, /media must be a handle/],
     ["a short digest", { name: "logo.png", media: "media:abc.png" }, /media must be a handle/],
@@ -277,6 +281,18 @@ describe("artifacts", () => {
       { path: at("results.json", results.content), content: results.content },
     ]);
     expect(call.args).toEqual(["task", "submit", "--summary=Done", `--artifact=.pi-state/artifacts/${T}/${D}/logo.png`, `--artifact=.pi-state/artifacts/${T}/${D}/photo.jpeg`, `--artifact=${at("results.json", results.content)}`, "--", T]);
+  });
+
+  it.each(["mp4", "webm", "mov"])("delivers a saved %s video beside text and images, with stable remedy keys", (ext) => {
+    const video = { name: `clip.${ext}`, media: `media:${D}.${ext}` };
+    const path = `.pi-state/artifacts/${T}/${D}/clip.${ext}`;
+    const input = { task_id: T, summary: "Done", artifacts: [video, { name: "logo.png", media: `media:${D}.png` }, results] };
+    const call = prepare("task_submit", input);
+    expect(call.files[0]).toEqual({ path, media: `.pi-state/media/${D}.${ext}`, digest: D });
+    expect(call.args).toContain(`--artifact=${path}`);
+    const key = prepare("task_remedy", input).key;
+    expect(prepare("task_remedy", input).key).toBe(key);
+    expect(prepare("task_remedy", { ...input, artifacts: [{ ...video, media: `media:${"f".repeat(16)}.${ext}` }] }).key).not.toBe(key);
   });
 
   it("keys a remedy with media by the image's bytes", () => {

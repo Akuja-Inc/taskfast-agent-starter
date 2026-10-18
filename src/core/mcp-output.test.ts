@@ -58,6 +58,21 @@ it("hands direct and embedded images to the image callback and keeps its line", 
   expect(seen).toEqual(["image/png aW1n", "image/jpeg YmxvYg=="]);
 });
 
+it("captures video blob resources before Pi replaces them with placeholders, without following links", () => {
+  const seen: string[] = [];
+  const result: CallToolResult = { content: [
+    { type: "text", text: "Clips:" },
+    ...["video/mp4", "video/webm", "video/quicktime"].map((mimeType) => ({ type: "resource" as const, resource: { uri: "file:///clip", mimeType, blob: "Y2xpcA==" } })),
+    { type: "resource_link", uri: "https://example.com/clip.mp4", name: "clip.mp4", mimeType: "video/mp4" },
+    { type: "resource", resource: { uri: "file:///audio", mimeType: "audio/mpeg", blob: "YXVkaW8=" } },
+  ] };
+  const output = mcpOutput(result, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`));
+  expect(seen).toEqual(["video/mp4 Y2xpcA==", "video/webm Y2xpcA==", "video/quicktime Y2xpcA=="]);
+  expect(output).toContain("Clips:\n[video/mp4 saved]\n[video/webm saved]\n[video/quicktime saved]");
+  expect(output).toContain("audio/mpeg) omitted]");
+  expect(mcpOutput(result, [])).not.toContain("Y2xpcA==");
+});
+
 it("leaves an exact 32 KiB result intact and includes the marker within the cap", () => {
   const exact = "a".repeat(MAX_BYTES);
   expect(mcpOutput(textResult(exact), [])).toBe(exact);

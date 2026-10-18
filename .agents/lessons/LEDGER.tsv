@@ -28,3 +28,4 @@ hand:1511f5fa7f95	hand	2026-10-18T16:23:40Z	lesson	.agents/lessons/console-follo
 hand:76152dc02330	hand	2026-10-18T16:23:40Z	lesson	.agents/lessons/console-follow-scroll.md	body.away is rAF-stale within a frame; measure at-bottom from pre-rebuild geometry
 hand:fd2657a8465b	hand	2026-10-18T19:03:58Z	lesson	.agents/lessons/console-evidence-playwright-csp.md	After a full-page phone screenshot Chromium delivers mouse-up elsewhere; activate by keyboard in captures
 hand:563fe0a1882c	hand	2026-10-18T19:03:58Z	lesson	.agents/lessons/host-tests.md	A gated scripted model hangs host shutdown when an assertion throws first; release the gate in finally
+hand:56b9ed37651e	hand	2026-10-18T22:15:50Z	agents_md	AGENTS.md	Video capture must fit the base64 MCP message budget, not the server's larger video upload cap.
