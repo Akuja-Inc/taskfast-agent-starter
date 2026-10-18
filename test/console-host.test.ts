@@ -45,7 +45,7 @@ function handle(id: string, calls: string[]): AgentHandle {
     changes: () => () => {},
     operator: {
       state: async () => initialOperator(), events: async () => ({}), queued: async () => [], steer: async () => "not_found", withdraw: async () => "not_found",
-      setFrozen: async () => {}, setPaused: async () => {}, message: async () => {}, addOrder: async () => {}, removeOrder: async () => {}, markChecked: async () => {}, retryEvent: async () => {},
+      setFrozen: async () => {}, setPaused: async () => {}, message: async () => {}, addOrder: async () => {}, removeOrder: async () => {}, replaceOrder: async () => {}, markChecked: async () => {}, retryEvent: async () => {},
     },
   };
 }

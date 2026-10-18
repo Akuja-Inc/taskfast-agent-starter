@@ -297,6 +297,10 @@ it("edits the settings: orders, fields, and save only after y/n, with spending c
   expect(k.ui.editing).toBe("order");
   // gh#121: the server refuses a removal without the text the TUI showed at that index.
   expect(k.run("d")).toEqual([{ kind: "call", method: "DELETE", action: "orders/0", body: { expect: "Keep every job under $15." } }]);
+  // gh#123: enter on the orders panel edits the selected order on its own line.
+  const editing = keys(view);
+  editing.run("2", "enter");
+  expect(editing.ui.editing).toBe("orderEdit");
 
   let ui = setField(k.ui, view, "perJobUsd", "30");
   ui = setField(ui, view, "temperament", "curt");

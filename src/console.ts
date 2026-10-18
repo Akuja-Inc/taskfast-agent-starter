@@ -271,6 +271,19 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
         default: { const exhaustive: never = result; throw new Error(`unknown withdraw result: ${exhaustive}`); }
       }
     }
+    if (req.method === "PUT" && action === "orders" && arg !== undefined) {
+      if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
+      // Like removal, the edit pins the text the page rendered at that index.
+      const body = await readJson(req);
+      const expected = field(body, "expect"), text = field(body, "text");
+      if (typeof expected !== "string") return send(res, 400, { error: "expect must be the current order text" });
+      if (!words(text)) return send(res, 400, { error: `text must be 1-${MAX_TEXT} characters` });
+      if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
+      if ((await controls.state()).orders[Number(arg)] !== expected) return send(res, 409, { error: "orders changed; refresh" });
+      if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
+      await controls.replaceOrder(Number(arg), text);
+      return send(res, 204, "");
+    }
     if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
       if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
       // The page sends the text it rendered, so a stale render cannot remove the wrong order.

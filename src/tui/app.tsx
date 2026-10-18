@@ -25,7 +25,7 @@ const CODE = { fg: "#e9e7dc", bg: "#2a2d31" };
 const LABEL: Record<Field, string> = { temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
 export const HELP: [string, string][] = [
   ["1 / 2", "Timeline / Settings"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
-  ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Settings: edit the field)"],
+  ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Settings: edit the field or order)"],
   ["r", "raw event"], ["o", "open the task"], ["m", "write a message: Enter follow-up / Ctrl+S steer after this tool round"], ["s", "steer the selected queued follow-up (Tab to focus the queue)"], ["w", "withdraw the selected queued follow-up or steer"], ["p", "pause / resume"],
   ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "ready: run an abandoned event again; stopped: retry startup"], ["x", "starting: cancel startup (not a running agent)"],
   ["a", "show alerts (Settings: add a standing order)"], ["d", "Settings: delete the standing order"],
@@ -218,6 +218,7 @@ export function App(p: AppProps) {
       }
       if (effect.action.startsWith("steer/")) setNotice("Message set to Steer.");
       if (effect.method === "DELETE" && effect.action.startsWith("orders/")) setNotice("Order removed.");
+      if (effect.method === "PUT" && effect.action.startsWith("orders/")) setNotice("Order saved.");
       if (effect.action === "spec") {
         setUi({ ...ui(), draft: undefined });
         setNotice("Saved. Only this agent reopened.");
@@ -470,7 +471,10 @@ export function App(p: AppProps) {
                 <box flexDirection="column" flexGrow={1}>
                   <box flexDirection="column" border borderColor={ui().panel === "orders" ? ACCENT : MUTED} title=" Standing orders · a add · d delete " paddingX={1}>
                     <For each={s().sidebar.orders} fallback={<text fg={MUTED}>None yet. The agent reads these on every turn and can't remove them. Orders guide the agent. Nothing enforces them.</text>}>
-                      {(order, at) => <text>{`${ui().panel === "orders" && at() === ui().order ? "▶ " : "  "}${at() + 1}. ${order}`}</text>}
+                      {(order, at) => <Show when={ui().editing === "orderEdit" && at() === ui().order} fallback={<text>{`${ui().panel === "orders" && at() === ui().order ? "▶ " : "  "}${at() + 1}. ${order}`}</text>}>
+                        {/* Saving replaces the text in place; the server refuses it if the order moved. */}
+                        <input focused value={order} onSubmit={(text: unknown) => { if (String(text).trim()) void run({ kind: "call", method: "PUT", action: `orders/${at()}`, body: { expect: order, text: String(text).trim() } }); done(); }} />
+                      </Show>}
                     </For>
                     <Show when={ui().editing === "order"}>
                       <input focused placeholder="New standing order; enter adds it" onInput={(text: string) => setOrderDraft(text)} onSubmit={(text: unknown) => { void sendOrder(String(text)); setOrderDraft(""); done(); }} />
