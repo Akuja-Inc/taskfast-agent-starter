@@ -506,7 +506,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         if (at && state.memory[at.index] !== at.expect) return "changed" as const;
         // One prompt line per note, as orders keep it.
         const note = text?.replace(/[\r\n]+/g, " ") ?? null;
-        if (!at) state.memory.push(note ?? "");
+        if (!at) state.memory.push(note as string);
         else if (note === null) state.memory.splice(at.index, 1);
         else state.memory[at.index] = note;
         return "done" as const;
