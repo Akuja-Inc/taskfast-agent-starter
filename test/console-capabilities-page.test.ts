@@ -48,7 +48,7 @@ const browserPath = process.env.TASKFAST_BROWSER;
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
-async function browser(url: string) {
+async function browser(url: string, ready = "document.querySelector('nav') !== null") {
   const profile = mkdtempSync(join(tmpdir(), "taskfast-capabilities-browser-"));
   const process = spawn(browserPath!, ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   cleanup.push(async () => { process.kill("SIGTERM"); await new Promise<void>((resolve) => { if (process.exitCode !== null) resolve(); else process.once("exit", () => resolve()); }); rmSync(profile, { recursive: true, force: true }); });
@@ -91,9 +91,34 @@ async function browser(url: string) {
     }
     throw new Error("Browser condition failed: " + expression + "\n" + String(await evaluate("document.body.innerText")));
   }
-  await until("document.querySelector('nav') !== null");
+  await until(ready);
   return { evaluate, until, protocol };
 }
+
+async function tokenConsole(token: string) {
+  const requests: (string | undefined)[] = [];
+  const server = createServer((req, res) => {
+    if (req.url === '/') { res.setHeader('content-type', 'text/html'); res.end(PAGE); return; }
+    if (req.url !== '/api/agents') { res.writeHead(404); res.end(); return; }
+    requests.push(req.headers.authorization);
+    res.setHeader('content-type', 'application/json');
+    if (req.headers.authorization !== 'Bearer ' + token) { res.writeHead(401); res.end(JSON.stringify({ error: 'Unauthorized' })); return; }
+    res.end(JSON.stringify({ env: 'local', agents: [] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  cleanup.push(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('No HTTP address');
+  return { url: 'http://127.0.0.1:' + address.port + '/', requests };
+}
+
+it.skipIf(!browserPath)("authenticates a token link opened in an already-open Chromium tab", async () => {
+  const token = 'a'.repeat(64);
+  const fixture = await tokenConsole(token);
+  const page = await browser(fixture.url, "document.querySelector('input[type=password]') !== null");
+  await page.protocol('Page.navigate', { url: fixture.url + '#token=' + token });
+  await page.until("sessionStorage.getItem('token') === " + JSON.stringify(token) + " && location.hash === '' && document.querySelector('nav') !== null");
+  expect(fixture.requests).toContain('Bearer ' + token);
+}, 30_000);
 
 const initial = (id: string): CapabilityView => ({ agentDir: "/fixture/agents/" + id, revision: "rev-1", activeRevision: "rev-1", skills: [], servers: [], credentials: [], activeSkills: [], activeServers: [], credentialChanges: [], pending: false, apply: { state: "idle" } });
 

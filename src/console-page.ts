@@ -230,8 +230,12 @@ ${CAPABILITIES_CSS}
 "use strict";
 const app = document.getElementById("app");
 const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} }, drop: (k) => { try { sessionStorage.removeItem(k); } catch {} } };
-const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
+const tokenLink = /^#token=([0-9a-f]{64})$/;
+const fromLink = tokenLink.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
+// A token link in an open tab is same-document navigation, so startup above never sees it.
+// Reload rather than install in place: old requests' 401s could clear the new token.
+addEventListener("hashchange", () => { if (tokenLink.test(location.hash)) location.reload(); });
 let token = store.get("token");
 const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), folds: new Set(), checks: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
 let list = null, view = null;

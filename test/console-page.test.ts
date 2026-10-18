@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { LIVE, PAGE } from "../src/console-page.js";
 
 // The page script expects a browser. A tiny fake DOM is enough to boot it and inspect
@@ -69,7 +69,12 @@ class FakeNode {
 }
 
 // Boot the page's inline script against the fake DOM and hand back its render functions.
-const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = () => new Promise<never>(() => {})) => {
+const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = () => new Promise<never>(() => {}), browser: {
+  location?: { hash: string; host: string; pathname: string; reload(): void };
+  sessionStorage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+  history?: Pick<History, 'replaceState'>;
+  addEventListener?: (type: string, listener: () => void) => void;
+} = {}) => {
   const script = PAGE.match(/<script>\n("use strict";[\s\S]*?)<\/script>/)![1];
   const app = new FakeNode("div");
   const storage = { getItem: () => null, setItem() {}, removeItem() {} };
@@ -90,12 +95,53 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
     `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
   );
   return boot(
-    fakeDocument, FakeNode, storage, storage,
-    { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
-    () => {}, class { observe() {} disconnect() {} },
+    fakeDocument, FakeNode, browser.sessionStorage ?? storage, storage,
+    browser.location ?? { hash: "", host: "127.0.0.1", pathname: "/", reload() {} }, browser.history ?? { replaceState() {} },
+    browser.addEventListener ?? (() => {}), class { observe() {} disconnect() {} },
     fetch, () => ({ matches: false }), () => 0, 800, 0, (_x: number, y: number) => { fakeDocument.scrollMoves.push(y); },
   ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; windowN: number; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
+
+it("reloads automatically on a valid token hashchange without installing it in the old document", () => {
+  const location = { hash: '', host: '127.0.0.1', pathname: '/', reload: vi.fn() };
+  const sessionStorage = { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() };
+  const history = { replaceState: vi.fn() };
+  const listeners = new Map<string, () => void>();
+  bootPage(undefined, { location, sessionStorage, history, addEventListener: (type, listener) => { listeners.set(type, listener); } });
+  expect(listeners.has('hashchange')).toBe(true);
+  location.hash = '#token=' + 'b'.repeat(64);
+  listeners.get('hashchange')!();
+  expect(location.reload).toHaveBeenCalledTimes(1);
+  expect(sessionStorage.setItem).not.toHaveBeenCalled();
+  expect(sessionStorage.removeItem).not.toHaveBeenCalled();
+  expect(history.replaceState).not.toHaveBeenCalled();
+});
+
+it.each(['', '#timeline', '#token=bad', '#token=' + 'a'.repeat(63), '#token=' + 'a'.repeat(65), '#token=' + 'A'.repeat(64), '#token=' + 'g'.repeat(64), '#token=' + 'a'.repeat(64) + '&extra=1'])("ignores an unrelated or malformed hashchange: %s", (hash) => {
+  const location = { hash: '', host: '127.0.0.1', pathname: '/', reload: vi.fn() };
+  const listeners = new Map<string, () => void>();
+  bootPage(undefined, { location, addEventListener: (type, listener) => { listeners.set(type, listener); } });
+  location.hash = hash;
+  listeners.get('hashchange')?.();
+  expect(location.reload).not.toHaveBeenCalled();
+});
+
+it("accepts a startup token, strips its fragment and authenticates the roster request", async () => {
+  const token = 'a'.repeat(64);
+  const location = { hash: '#token=' + token, host: '127.0.0.1', pathname: '/', reload: vi.fn() };
+  const saved = new Map<string, string>();
+  const sessionStorage = { getItem: (key: string) => saved.get(key) ?? null, setItem: (key: string, value: string) => { saved.set(key, value); }, removeItem: (key: string) => { saved.delete(key); } };
+  const history = { replaceState: vi.fn(() => { location.hash = ''; }) };
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ env: 'local', agents: [] })));
+  const page = bootPage(fetch, { location, sessionStorage, history });
+  await settle();
+  expect(saved.get('token')).toBe(token);
+  expect(location.hash).toBe('');
+  expect(history.replaceState).toHaveBeenCalledWith(null, '', '/');
+  expect(fetch).toHaveBeenCalledWith('/api/agents', expect.objectContaining({ headers: { authorization: 'Bearer ' + token } }));
+  expect(page.app.querySelector('input[type="password"]')).toBeNull();
+  expect(location.reload).not.toHaveBeenCalled();
+});
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
 const demoView = () => ({

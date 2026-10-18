@@ -20,3 +20,4 @@ hand:72b12e763642	hand	2026-10-17T04:00:52Z	lesson	.agents/lessons/taskfast-cli-
 hand:358154807d6c	hand	2026-10-17T16:21:52Z	lesson	.agents/lessons/polling-tests.md	The host uses promise timers; test polling at that boundary and assert cancellation on reopen.
 hand:919146a45455	hand	2026-10-17T23:56:01Z	agents_md	AGENTS.md	CLI --env overrides the saved association; select by config.environment before opening resources rather than retargeting every folder.
 hand:afb306eb501b	hand	2026-10-18T00:33:53Z	lesson	.agents/lessons/timeline-folding.md	Equal server responses cannot prove equal agent commentary; preserve changed reply text when folding polling turns.
+hand:94aba593741f	hand	2026-10-18T01:21:34Z	check	https://github.com/Akuja-Inc/taskfast-agent-starter/issues/110	Token fragment navigation can reuse the existing document; exercise already-open tabs in browser authentication regressions.
