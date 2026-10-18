@@ -1,11 +1,13 @@
 import { capabilitiesPage, CAPABILITIES_CSS, readCapabilityFolder } from "./console-capabilities-page.js";
 import { follow } from "./console-live.js";
 import { markdown } from "./console-markdown.js";
+import { foldPolls } from "./console-polling.js";
 import { MAX_INSTRUCTIONS, POLL_MINUTES } from "./core/spec.js";
 
 // The page runs the same stream follower and markdown subset as the terminal UI.
 export const LIVE = follow.toString();
 const MARKDOWN = markdown.toString();
+const FOLD_POLLS = foldPolls.toString();
 
 // The console's single page. Kept as a module because the TypeScript build copies no
 // HTML. Everything from the server or the marketplace is set as text, never as markup.
@@ -99,6 +101,20 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .raw-chev { display: inline-flex; color: var(--muted); }
 .head[aria-expanded="true"] .raw-chev { transform: rotate(180deg); }
 .turn > .body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.poll-run { border: 1px solid var(--hairline); border-radius: 2px; background: var(--panel); min-width: 0; }
+.poll-run > summary, .poll-check > summary { list-style: none; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 18px; cursor: pointer; scroll-margin-top: var(--under-band); }
+.poll-run summary::-webkit-details-marker { display: none; }
+.poll-run summary .raw-chev { margin-left: auto; flex: none; }
+.poll-run[open] > summary > .raw-chev, .poll-check[open] > summary > .raw-chev { transform: rotate(180deg); }
+.poll-heading { min-width: 0; flex: 1; }
+.poll-title { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.poll-meta, .poll-scope { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.poll-check { border-top: 1px solid var(--hairline); }
+.poll-check > summary { flex-wrap: wrap; background: var(--ground); }
+.poll-check > .turn { border: none; border-top: 1px solid var(--hairline); border-radius: 0; }
+.call-result { flex-basis: 100%; min-width: 0; }
+.band .msg { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .band { flex-wrap: wrap; } .poll-run > summary, .poll-check > summary { padding: 12px; } }
 .small { font-size: 13px; color: var(--muted); }
 .head-msg { flex: 1 1 300px; font-size: 15px; color: var(--ink); }
 .reply { display: flex; flex-direction: column; gap: 6px; }
@@ -217,7 +233,7 @@ const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { 
 const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
+const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), folds: new Set(), checks: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
 let list = null, view = null;
 const drafts = new Map(), startupRequests = new Map();
 const selected = () => list && list.agents.find((a) => a.id === ui.agent);
@@ -232,7 +248,7 @@ function selectAgent(id) {
   ui.agent = id;
   Object.assign(ui, drafts.get(id) || { draft: "", attempt: null, messageError: "" });
   store.set("agent", id);
-  ui.open.clear(); ui.raw.clear(); ui.specDraft = null; ui.error = "";
+  ui.open.clear(); ui.raw.clear(); ui.folds.clear(); ui.checks.clear(); ui.specDraft = null; ui.error = "";
   view = null;
   syncSelection(); render(true); refresh();
 }
@@ -306,7 +322,7 @@ function jsonBlock(key, value) {
   const label = state === "done" ? "Copied" : state === "failed" ? "Copy failed" : "Copy";
   return el("div", { class: "json" },
     el("pre", { text }),
-    el("button", { class: "copy" + (state ? " " + state : ""), type: "button", "aria-label": state ? label : "Copy JSON", onclick: async () => {
+    el("button", { class: "copy" + (state ? " " + state : ""), "data-focus": "copy:" + key, type: "button", "aria-label": state ? label : "Copy JSON", onclick: async () => {
       const ok = await copyText(text);
       ui.copied = { key, state: ok ? "done" : "failed" };
       render();
@@ -339,6 +355,7 @@ async function act(method, action, body) {
 }
 ${LIVE}
 ${MARKDOWN}
+${FOLD_POLLS}
 const capabilities = (${capabilitiesPage.toString()})({ el, api, readFolder: ${readCapabilityFolder.toString()} });
 function selectTab(tab) {
   if (tab === ui.tab) return;
@@ -381,6 +398,8 @@ function syncSelection() {
   following.stop();
   if (detailRequest) detailRequest.abort();
   detailRequest = null; view = null;
+  ui.open.clear(); ui.raw.clear(); ui.folds.clear(); ui.checks.clear();
+  ui.windowN = 12; timelineLength = 0; toEnd = true;
   following = { key, up: false, stop: () => {} };
   if (key) following.stop = follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token,
     (next) => { if (selectionKey() !== key || following.key !== key) return; view = next; following.up = true; render(); },
@@ -585,10 +604,10 @@ const countOf = (calls, outcome) => calls.filter((c) => c.outcome === outcome).l
 const headText = (turn) => turn.kind === "event" ? ((turn.event && turn.event.event) || "event") + (turn.event && turn.event.task_id ? " · task " + turn.event.task_id : "") : turn.text;
 function turnCard(turn, index) {
   const [cls, glyph, origin] = TAG[turn.kind];
-  const key = "t" + index;
+  const key = turnIdentity(turn, index);
   const isEvent = turn.kind === "event";
-  return el("article", { class: "card turn", "data-i": index },
-    el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },
+  return el("article", { class: "card turn", "data-i": index, "data-timeline-anchor": "turn:" + turnIdentity(turn, index) },
+    el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "data-focus": "raw:" + key, "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),
       el("span", { class: "sr-only", text: origin + ":" }),
       el("span", { class: "small mono", title: turn.at ? new Date(turn.at).toLocaleString() : "", text: rel(turn.at) }),
@@ -606,16 +625,17 @@ function replyBlock(reply, key, live) {
   return el("div", { class: "reply" },
     el("div", { style: "display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start" },
       reply.text ? el("div", { class: "reply-text" }, el("span", { class: "sq agent" }, pict("agent", 16)), el("span", { class: "sr-only", text: "Agent: " }), el("div", { class: "md" }, markdown(reply.text).map(mdBlock))) : el("span", { style: "flex:1 1 360px", class: "small", text: reply.calls.length ? "(tool calls only)" : "(empty reply: the model returned no text, possibly an error)" }),
-      reply.calls.length ? el("button", { class: "calls-chip", "aria-expanded": String(ui.open.has(key)), "aria-label": reply.calls.length + (reply.calls.length === 1 ? " tool call" : " tool calls") + (failed ? ", " + failed + " failed" : "") + (uncertain ? ", " + uncertain + " uncertain" : ""), onclick: () => toggle(ui.open, key) },
+      reply.calls.length ? el("button", { class: "calls-chip", "data-focus": "calls:" + key, "aria-expanded": String(ui.open.has(key)), "aria-label": reply.calls.length + (reply.calls.length === 1 ? " tool call" : " tool calls") + (failed ? ", " + failed + " failed" : "") + (uncertain ? ", " + uncertain + " uncertain" : ""), onclick: () => toggle(ui.open, key) },
         pict("cli", 13),
         el("span", { class: "num", text: reply.calls.length }),
         failed ? dot("bad", failed, "failed") : null,
         uncertain ? dot("warn", uncertain, "uncertain") : null) : null),
-    ui.open.has(key) ? el("div", { class: "calls" }, reply.calls.map((call) => el("div", { class: "call " + call.outcome },
+    ui.open.has(key) ? el("div", { class: "calls" }, reply.calls.map((call, c) => el("div", { class: "call " + call.outcome },
       el("span", { class: "sq cli", style: "width:20px;height:20px" }, pict("cli", 12)),
       el("span", { class: "name", text: call.name + " " + JSON.stringify(call.arguments) }),
       el("span", { style: "color:" + (call.outcome === "ok" ? "var(--ok)" : "var(--warn)"), text: call.outcome }),
-      call.error ? el("div", { style: "flex-basis:100%;white-space:pre-wrap;color:var(--soft)", text: call.error }) : null))) : null,
+      call.error ? el("div", { style: "flex-basis:100%;white-space:pre-wrap;color:var(--soft)", text: call.error }) : null,
+      call.result !== undefined ? el("div", { class: "call-result" }, el("div", { class: "small", text: "Result" }), jsonBlock(key + "c" + c, call.result)) : null))) : null,
     reply.tasks.map(taskCard));
 }
 
@@ -630,7 +650,48 @@ function hue(turn) {
   return countOf(calls, "uncertain") ? "warn" : countOf(calls, "failed") ? "bad" : turn.kind;
 }
 const rank = (turn) => RANK[hue(turn)];
-function timelineTurns() {
+// Keep identities tied to the original run start, not the clipped window or run end.
+function turnIdentity(turn, index) {
+  const call = turn.replies.flatMap((reply) => reply.calls)[0];
+  return encodeURIComponent(JSON.stringify([ui.agent, generationOf(selected()), turn.at, call ? call.id : [turn.kind, turn.text, turn.event, turn.at ? null : index]]));
+}
+function timelineRows() {
+  const from = Math.max(0, view.timeline.length - ui.windowN);
+  return foldPolls(view.timeline).flatMap((row) => row.kind === "turn"
+    ? row.index < from ? [] : [row]
+    : row.to <= from ? [] : [{ ...row, start: row.from, from: Math.max(from, row.from) }]);
+}
+function rememberDisclosure(node, set, key) {
+  node.addEventListener("toggle", (event) => {
+    // Ignore nested toggles and the queued toggle event from a replaced node.
+    if (event.target !== node || !app.contains(node)) return;
+    if (node.open) set.add(key); else set.delete(key);
+    onScroll();
+  });
+  return node;
+}
+const checkedAt = (at) => at ? new Date(at).toLocaleString() : "Unknown time";
+function pollRun(row) {
+  const tl = view.timeline, key = turnIdentity(tl[row.start], row.start), count = row.to - row.from;
+  const first = tl[row.from], last = tl[row.to - 1];
+  const summary = el("summary", { "data-focus": "fold:" + key, "data-timeline-anchor": "fold:" + key, "data-i": row.from },
+    el("span", { class: "sq", "aria-hidden": "true" }, pict("clock", 16)),
+    el("span", { class: "poll-heading" },
+      el("span", { class: "poll-title" }, el("strong", { text: "No changes" }), el("span", { class: "num", text: count + (count === 1 ? " check" : " checks") })),
+      el("span", { class: "poll-meta small mono", text: checkedAt(first.at) + " – " + checkedAt(last.at) + " · Last checked " + rel(last.at) }),
+      el("span", { class: "poll-scope small", text: row.scope.join(", ") + " unchanged" })),
+    el("span", { class: "raw-chev", "aria-hidden": "true" }, icon(GLYPH.chevron, 15)));
+  return rememberDisclosure(el("details", { class: "poll-run", open: ui.folds.has(key) }, summary,
+    tl.slice(row.from, row.to).map((turn, offset) => {
+      const index = row.from + offset, checkKey = turnIdentity(turn, index);
+      return rememberDisclosure(el("details", { class: "poll-check", open: ui.checks.has(checkKey) },
+        el("summary", { "data-focus": "check:" + checkKey, "data-timeline-anchor": "check:" + checkKey, "data-i": index },
+          el("span", { class: "mono small", text: checkedAt(turn.at) }), el("span", { text: "Check-in" }),
+          el("span", { class: "raw-chev", "aria-hidden": "true" }, icon(GLYPH.chevron, 15))),
+        turnCard(turn, index)), ui.checks, checkKey);
+    })), ui.folds, key);
+}
+function timelineTurns(rows = timelineRows()) {
   const tl = view.timeline, from = Math.max(0, tl.length - ui.windowN);
   const earlier = from + (from === 1 ? " earlier turn" : " earlier turns");
   const size = Math.ceil(from / 12), groups = [];
@@ -652,30 +713,33 @@ function timelineTurns() {
       document.querySelector('.tick[data-i="' + (i + d) + '"]').focus();
     };
     // markRail() picks the one current mark, which is also the rail's one tab stop.
-    return el("button", { class: "tick " + turn.kind + (h === turn.kind ? "" : " " + h), "data-i": i, tabindex: "-1", "aria-current": "false", "aria-label": (where ? where + " · " : "") + who + ", " + rel(turn.at), onclick: () => jumpTo(i), onkeydown },
+    return el("button", { class: "tick " + turn.kind + (h === turn.kind ? "" : " " + h), "data-i": i, "data-focus": "tick:" + turnIdentity(turn, i), tabindex: "-1", "aria-current": "false", "aria-label": (where ? where + " · " : "") + who + ", " + rel(turn.at), onclick: () => jumpTo(i), onkeydown },
       el("span", { class: "peek" }, where ? el("span", { class: "small", text: where }) : null, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
   };
   return el("div", { class: "railed" },
     el("div", { class: "turns" },
       from ? el("div", { class: "card earlier" }, el("span", { class: "small", text: earlier }),
         el("button", { onclick: () => showFrom(from - 20), text: "Show " + Math.min(20, from) + " more" })) : null,
-      tl.slice(from).map((t, k) => turnCard(t, from + k))),
+      rows.map((row) => row.kind === "turn" ? turnCard(tl[row.index], row.index) : pollRun(row))),
     el("nav", { class: "rail", "aria-label": "Jump to a turn" },
       from ? el("div", { class: "rail-earlier", title: earlier + ", not loaded" }, groups.map(([pick, a, b]) => tick(pick, [a, b]))) : null,
       tl.slice(from).map((t, k) => tick(from + k))));
 }
 // Mount turns from index i onward, keeping the reader's place.
 function showFrom(i) {
-  const fromBottom = document.documentElement.scrollHeight - scrollY;
   ui.windowN = view.timeline.length - Math.max(0, i);
   render();
-  scrollTo(0, document.documentElement.scrollHeight - fromBottom);
 }
 function jumpTo(i) {
   // A turn that was not mounted is far away: go there at once rather than glide.
   const far = i < view.timeline.length - ui.windowN;
-  if (far) showFrom(i);
-  document.querySelector('.turn[data-i="' + i + '"]').scrollIntoView({ block: "start", behavior: far ? "auto" : smooth() });
+  const row = foldPolls(view.timeline).find((row) => row.kind === "unchanged" && row.from <= i && i < row.to);
+  if (row) {
+    ui.folds.add(turnIdentity(view.timeline[row.from], row.from));
+    ui.checks.add(turnIdentity(view.timeline[i], i));
+  }
+  if (far) showFrom(i); else if (row) render();
+  document.querySelector('.turn[data-i="' + i + '"]')?.scrollIntoView({ block: "start", behavior: far ? "auto" : smooth() });
   markRail(i);
 }
 function markRail(i) {
@@ -712,11 +776,38 @@ let scrollFrame = 0, toEnd = true;
 addEventListener("scroll", () => { scrollFrame ||= requestAnimationFrame(onScroll); }, { passive: true });
 function onScroll() {
   scrollFrame = 0;
-  const turns = [...document.querySelectorAll(".turn[data-i]")];
+  const turns = visibleTimeline();
   if (!turns.length) return document.body.classList.remove("away");
   const at = turns.find((t) => t.getBoundingClientRect().bottom > 120) || turns[turns.length - 1];
   markRail(Number(at.dataset.i));
   document.body.classList.toggle("away", turns[turns.length - 1].getBoundingClientRect().bottom > innerHeight + 120);
+}
+
+// Summaries stand in for hidden originals. Expanded cards participate only when
+// they have layout boxes, so closed details never steal the rail's current mark.
+function visibleTimeline() {
+  return [...document.querySelectorAll("[data-timeline-anchor]")].filter((node) => node.getClientRects().length);
+}
+function readingAnchor() {
+  const visible = visibleTimeline();
+  const node = visible.find((node) => node.getBoundingClientRect().bottom > 120);
+  return node ? { key: node.getAttribute("data-timeline-anchor"), top: node.getBoundingClientRect().top } : null;
+}
+function restoreReading(anchor) {
+  if (!anchor) return;
+  const node = visibleTimeline().find((node) => node.getAttribute("data-timeline-anchor") === anchor.key);
+  if (node) scrollBy(0, node.getBoundingClientRect().top - anchor.top);
+}
+// A completing check can move the focused tool control into a new fold. Reveal
+// that original before restoring focus, without reopening a summary just closed.
+function revealFocusedControl(node) {
+  for (let parent = node?.parentElement; parent; parent = parent.parentElement) {
+    if ((!parent.matches(".poll-run") && !parent.matches(".poll-check")) || parent.children[0] === node) continue;
+    parent.open = true;
+    const focus = parent.querySelector("summary").getAttribute("data-focus");
+    if (focus.startsWith("fold:")) ui.folds.add(focus.slice(5));
+    else if (focus.startsWith("check:")) ui.checks.add(focus.slice(6));
+  }
 }
 
 function readiness() {
@@ -934,13 +1025,13 @@ function updateQueuedMessages() {
 function timelineTab() {
   const op = view.operator;
   const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + view.queuedMessages.length;
-  const n = view.timeline.length;
+  const n = view.timeline.length, rows = timelineRows(), groups = rows.filter((row) => row.kind === "unchanged").length;
   return el("div", { class: "page" },
     el("main", {},
       op.paused ? el("div", { class: "note", role: "status" }, el("strong", { text: "Paused. " }), "New events are still received and stored, so nothing is lost. " + waiting + " waiting; they run in order when you resume. Check-ins are skipped while paused.") : null,
       attention(),
-      band("Timeline", n + (n === 1 ? " turn" : " turns") + (n > ui.windowN ? " · showing the newest " + ui.windowN : "")),
-      n ? timelineTurns() : el("div", { class: "small", text: "No turns yet." }),
+      band("Timeline", n + (n === 1 ? " turn" : " turns") + " · " + Math.min(n, ui.windowN) + " loaded · " + groups + (groups === 1 ? " unchanged group" : " unchanged groups")),
+      n ? timelineTurns(rows) : el("div", { class: "small", text: "No turns yet." }),
       queuedMessages(),
       el("form", { class: "card composer", onsubmit: (e) => {
         e.preventDefault();
@@ -1040,7 +1131,7 @@ function unlock() {
     el("p", { class: "small", text: "Requests without this token, or from a page not served here, are refused. That stops other websites open in your browser from steering the agent or spending money. A new token is issued each time the host starts." }));
 }
 
-let renderedSelection = null;
+let renderedSelection = null, timelineLength = 0;
 function render(force = false) {
   const entry = selected();
   const current = [token, ui.agent, stateOf(entry), generationOf(entry), entry?.phase, entry?.reason, !!view].join("/");
@@ -1083,6 +1174,12 @@ function render(force = false) {
   const taHadFocus = activeTag === "TEXTAREA";
   if (!changed && taHadFocus && ui.draft && ui.tab === "timeline") return;
   if (taHadFocus) ui.focusComposer = true;
+  const focused = !changed && document.activeElement?.getAttribute("data-focus");
+  const anchor = !changed && timeline && !toEnd ? readingAnchor() : null;
+  // Preserve the mounted start as new turns arrive, including an opened check at
+  // the window boundary. Explicit earlier loading remains measured in originals.
+  if (!changed && timeline) ui.windowN += Math.max(0, view.timeline.length - timelineLength);
+  timelineLength = timeline ? view.timeline.length : 0;
   renderedSelection = current;
   app.replaceChildren(...(!token ? [unlock()] :
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null,
@@ -1093,7 +1190,11 @@ function render(force = false) {
   if (toEnd && view && ui.tab === "timeline") { toEnd = false; toNewest("auto"); }
   updateMessageStatus();
   measureComposer();
+  const restored = focused && [...document.querySelectorAll("[data-focus]")].find((node) => node.getAttribute("data-focus") === focused);
+  if (restored) revealFocusedControl(restored);
+  restoreReading(anchor);
   onScroll();
+  if (restored) { restored.focus({ preventScroll: true }); ui.focusComposer = false; }
   // Only the composer's own textarea: a bare "textarea" query can land on a Briefing
   // field. Restored focus keeps the reader's scroll position; a deliberate ask
   // (draftInto) scrolls the composer into view.
