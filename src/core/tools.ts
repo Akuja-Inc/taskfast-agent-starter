@@ -516,7 +516,7 @@ export const TOOLS: Record<string, ToolSpec> = {
   },
 
   remember: { kind: "memory", description: "Keep a note for later turns.", schema: obj({ note: s("the note") }, ["note"]), args: (i) => (text(i.note, "note"), []) },
-  forget: { kind: "memory", description: "Drop one of your notes by its number.", schema: obj({ index: { type: "number", description: "note number" } }, ["index"]), args: (i) => (Number.isInteger(i.index) && (i.index as number) >= 0 ? [] : bad("index must be a non-negative integer")) },
+  forget: { kind: "memory", description: "Drop one of your notes by its number.", schema: obj({ index: { type: "number", description: "note number, from 1" } }, ["index"]), args: (i) => (Number.isInteger(i.index) && (i.index as number) >= 1 ? [] : bad("index must be a note number from 1")) },
 };
 
 // Validates a tool call from the model. Returns the command args and action key, or

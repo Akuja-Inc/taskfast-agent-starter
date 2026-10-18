@@ -141,7 +141,8 @@ export function marketplacePolicy(o: PolicyOptions) {
           if (tool === "remember") {
             state.memory.push(input.note as string);
           } else {
-            state.memory = state.memory.filter((_, index) => index !== input.index);
+            // Notes number from 1, as the prompt shows them.
+            state.memory = state.memory.filter((_, index) => index !== (input.index as number) - 1);
           }
           return { ok: true };
         });

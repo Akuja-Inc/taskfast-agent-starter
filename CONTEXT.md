@@ -123,7 +123,7 @@ One permanent record per action key in session-scoped `Policy`. Never evicted. S
 The CLI result: `ok`; `failed` (known refusal before acting); or `uncertain` (may have reached the server). Success records `done`. Only `failed` is retryable and releases committed spending; uncertain writes never repeat and count as spent. A money command that can move funds after its own preflight has no known refusal: any failure of it records `uncertain`. A refused submit or remedy with files stays `failed` and retryable, but may already have uploaded them; code deletes the agent's own uploads on the task before the next submit with files.
 
 **Notes** (`memory` field):
-Short notes retained by policy between model runs using `remember` and `forget`.
+Short notes retained by policy between model runs using `remember` and `forget`. The prompt and the console number them from 1, and `forget` takes that number.
 _Avoid_: memory alone; it is also a tool kind.
 
 **Operator controls** (`taskfast.operator`, `operator.ts`):
