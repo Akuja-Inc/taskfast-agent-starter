@@ -12,7 +12,7 @@ The follow decision is measured from live geometry before each render rebuilds t
 | Push with no new turns | No scroll | same test, queue-only push |
 | Push while scrolled up | Reading anchor held, jump button stays visible | `holds the reading anchor when a turn arrives while the reader is scrolled up` |
 | Operator sends from any position | Sent message scrolls into view; composer focus restores with `preventScroll` (#30 unchanged) | `scrolls an admitted send into view from any position while focus restores without scrolling` |
-| Deep link to a tool-call or raw-event panel | Opens at that panel, not at the bottom (#108, #109 unchanged) | `opens a linked panel at that panel, not at the bottom` |
+| Deep link to a tool-call or raw-event panel | Opens at that panel, not at the bottom (#108, #109 unchanged) | `retains a linked action while its agent starts and resolves it when ready` |
 
 Run the focused reproduction:
 

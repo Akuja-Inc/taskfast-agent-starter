@@ -262,6 +262,8 @@ it("restores every panel and mounts older referenced turns without trusting visi
   expect(page.location.href).toBe(url);
 });
 
+const sendNote = (page: ReturnType<typeof bootPage>) => page.app.querySelector('.send-note')!;
+
 it("retains a linked action while its agent starts and resolves it when ready", () => {
   const page = bootPage(undefined, '/agents/shop?open=stable%3Acall', { token: 'test' });
   page.setRoster([{ id: 'shop', state: 'starting', phase: 'opening', generation: 1 }]);
@@ -271,6 +273,7 @@ it("retains a linked action while its agent starts and resolves it when ready", 
   page.acceptView({ ...demoView(), timeline: [{ id: 'stable', kind: 'poll', at: 1, text: 'Check', replies: [{ text: 'Read', calls: [{ id: 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] }] });
   expect(page.app.querySelector('.calls')).not.toBeNull();
   expect(page.location.search).toBe('?open=stable%3Acall');
+  expect(sendNote(page).scrollViews).toEqual([]);
 });
 
 it("refuses ambiguous linked panels instead of opening a different action", () => {
@@ -386,7 +389,6 @@ const eventTurns = (count: number) => Array.from({ length: count }, (_, i) => ({
   id: 'event-' + i, kind: 'event', at: 1_750_000_000_000 + i * 60_000, text: 'Event ' + i,
   event: { event: 'event-' + i }, replies: [{ text: 'Reply ' + i, calls: [], tasks: [] }],
 }));
-const sendNote = (page: ReturnType<typeof bootPage>) => page.app.querySelector('.send-note')!;
 
 it("follows a pushed turn while the reader is at the bottom, and ignores status-only pushes", () => {
   const page = bootPage();
@@ -432,14 +434,6 @@ it("scrolls an admitted send into view from any position while focus restores wi
   expect(restored).not.toBe(textarea);
   expect(restored.focusCalls.at(-1)).toEqual({ preventScroll: true });
   expect(page.ui.draft).toBe('');
-});
-
-it("opens a linked panel at that panel, not at the bottom", () => {
-  const page = bootPage(undefined, '/agents/shop?open=stable%3Acall', { token: 'test' });
-  page.setRoster([{ id: 'shop', state: 'ready', generation: 0 }]);
-  page.acceptView({ ...demoView(), timeline: [{ id: 'stable', kind: 'event', at: 1, text: 'Event', event: { event: 'task.ready' }, replies: [{ text: 'Reading', calls: [{ id: 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] }] });
-  expect(page.app.querySelector('.calls')).not.toBeNull();
-  expect(sendNote(page).scrollViews).toEqual([]);
 });
 
 it("marks closed groups and visible check-ins in the rail, never hidden original cards", () => {

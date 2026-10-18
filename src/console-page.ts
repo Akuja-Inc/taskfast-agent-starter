@@ -883,7 +883,7 @@ function visibleTimeline() {
   return [...document.querySelectorAll("[data-timeline-anchor]")].filter((node) => node.getClientRects().length);
 }
 // The reader is away when the newest mounted turn ends more than a band's height below the fold.
-const awayFromEnd = (turns) => turns.length > 0 && turns[turns.length - 1].getBoundingClientRect().bottom > innerHeight + 120;
+const awayFromEnd = (turns) => turns.at(-1)?.getBoundingClientRect().bottom > innerHeight + 120;
 function readingAnchor() {
   const visible = visibleTimeline();
   const node = visible.find((node) => node.getBoundingClientRect().bottom > 120);
@@ -1277,12 +1277,10 @@ function render(force = false) {
   if (taHadFocus) ui.focusComposer = true;
   const focused = !changed && document.activeElement?.getAttribute("data-focus");
   // Only real growth follows: a status or queue push renders without scrolling.
-  const grew = !changed && timeline && view.timeline.length > timelineLength;
-  const sent = followSent !== null;
   // At-bottom is measured fresh from the pre-rebuild geometry, not the away class: a
   // push in the same frame as the reader's scroll-away must not pull the page down.
   // A push follows only at the bottom; the operator's own send follows from anywhere.
-  const follow = !changed && timeline && !toEnd && (sent || (grew && !awayFromEnd(visibleTimeline())));
+  const follow = !changed && timeline && !toEnd && (followSent !== null || (view.timeline.length > timelineLength && !awayFromEnd(visibleTimeline())));
   // The render right after a follow holds the anchor once: restoring it would cancel
   // the follow's smooth scroll mid-flight.
   const hold = followed;
@@ -1304,7 +1302,7 @@ function render(force = false) {
   else if (follow) {
     // The send's echo moves the view; the render carrying it re-fires against the final
     // bottom, then the follow is done.
-    if (sent && view.timeline.length + "/" + view.queuedMessages.length !== followSent) followSent = null;
+    if (view.timeline.length + "/" + view.queuedMessages.length !== followSent) followSent = null;
     toNewest(smooth());
   }
   updateMessageStatus();

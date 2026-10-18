@@ -83,10 +83,7 @@ async def capture(link, before):
 
 
 for before in [True, False]:
-    env = {**os.environ}
-    env.pop('BEFORE_REF', None)
-    if before:
-        env['BEFORE_REF'] = BEFORE_REF
+    env = {k: v for k, v in os.environ.items() if k != 'BEFORE_REF'} | ({'BEFORE_REF': BEFORE_REF} if before else {})
     host = subprocess.Popen(['node', 'docs/follow-scroll/browser-host.mjs'], cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True)
     try:
         link = host.stdout.readline().strip()
