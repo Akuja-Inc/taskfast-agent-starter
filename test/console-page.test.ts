@@ -15,7 +15,13 @@ class FakeNode {
   selectionEnd = 0;
   style: Record<string, string> = {};
   dataset: Record<string, string> = {};
-  classList = { add() {}, remove() {}, toggle() {} };
+  classList = {
+    names: new Set<string>(),
+    add(...names: string[]) { for (const name of names) this.names.add(name); },
+    remove(...names: string[]) { for (const name of names) this.names.delete(name); },
+    toggle(name: string, force?: boolean) { const on = force ?? !this.names.has(name); if (on) this.names.add(name); else this.names.delete(name); return on; },
+    contains(name: string) { return this.names.has(name); },
+  };
   constructor(tag: string) { this.tagName = tag.toUpperCase(); }
   setAttribute(key: string, value: string) { this.attributes[key] = value; if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())] = value; }
   get open() { return this.hasAttribute('open'); }
@@ -57,7 +63,8 @@ class FakeNode {
   focusCalls: ({ preventScroll?: boolean } | null)[] = [];
   onFocus?: () => void;
   focus(options?: { preventScroll?: boolean }) { this.focusCalls.push(options ?? null); this.onFocus?.(); }
-  scrollIntoView() {}
+  scrollViews: ({ block?: string; behavior?: string } | undefined)[] = [];
+  scrollIntoView(options?: { block?: string; behavior?: string }) { this.scrollViews.push(options); }
   cloneNode() {
     const copy = new FakeNode(this.tagName);
     copy.attributes = { ...this.attributes };
@@ -372,6 +379,67 @@ it("refreshes a focused fold summary and keeps its scroll anchor when loading ol
   expect(page.document.activeElement?.textContent).toContain('19 checks');
   page.setView({ ...demoView(), timeline: pollingHistory(21) }); page.render();
   expect(page.document.activeElement?.textContent).toContain('20 checks');
+});
+
+// Event turns never fold, so every card stays a visible scroll anchor.
+const eventTurns = (count: number) => Array.from({ length: count }, (_, i) => ({
+  id: 'event-' + i, kind: 'event', at: 1_750_000_000_000 + i * 60_000, text: 'Event ' + i,
+  event: { event: 'event-' + i }, replies: [{ text: 'Reply ' + i, calls: [], tasks: [] }],
+}));
+const sendNote = (page: ReturnType<typeof bootPage>) => page.app.querySelector('.send-note')!;
+
+it("follows a pushed turn while the reader is at the bottom, and ignores status-only pushes", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), timeline: eventTurns(2) }); page.render();
+  expect(sendNote(page).scrollViews).toEqual([{ block: 'end', behavior: 'auto' }]);
+  page.setView({ ...demoView(), timeline: eventTurns(3) }); page.render();
+  expect(sendNote(page).scrollViews).toEqual([{ block: 'end', behavior: 'smooth' }]);
+  // A queue or status push adds no turn and must not move the page.
+  page.setView({ ...demoView(), timeline: eventTurns(3), queuedMessages: [{ requestId: 'q1', text: 'Queued', mode: 'followUp' }] }); page.render();
+  expect(sendNote(page).scrollViews).toEqual([]);
+});
+
+it("holds the reading anchor when a turn arrives while the reader is scrolled up", () => {
+  const page = bootPage();
+  page.setView({ ...demoView(), timeline: eventTurns(3) }); page.render();
+  const newest = page.app.querySelector('.turn[data-i="2"]')!;
+  newest.rect = { top: 900, bottom: 1000 };
+  page.onScroll();
+  expect(page.document.body.classList.contains('away')).toBe(true);
+  const moves = page.document.scrollMoves.length;
+  page.setView({ ...demoView(), timeline: eventTurns(4) }); page.render();
+  expect(sendNote(page).scrollViews).toEqual([]);
+  expect(page.document.scrollMoves.length).toBeGreaterThan(moves);
+});
+
+it("scrolls an admitted send into view from any position while focus restores without scrolling", async () => {
+  const roster = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] };
+  const page = bootPage((path, init) => {
+    if ((init as RequestInit | undefined)?.method === 'POST') return Promise.resolve(new Response(null, { status: 204 }));
+    if (path === '/api/agents') return Promise.resolve(new Response(JSON.stringify(roster)));
+    return new Promise<never>(() => {});
+  });
+  page.setView({ ...demoView(), timeline: eventTurns(3) }); page.render();
+  const textarea = page.app.querySelector('form.composer textarea')!;
+  textarea.focus(); textarea.value = 'Hello'; page.ui.draft = 'Hello';
+  const newest = page.app.querySelector('.turn[data-i="2"]')!;
+  newest.rect = { top: 900, bottom: 1000 };
+  page.onScroll();
+  expect(page.document.body.classList.contains('away')).toBe(true);
+  await page.submitMessage('followUp');
+  expect(sendNote(page).scrollViews).toEqual([{ block: 'end', behavior: 'smooth' }]);
+  const restored = page.app.querySelector('form.composer textarea')!;
+  expect(restored).not.toBe(textarea);
+  expect(restored.focusCalls.at(-1)).toEqual({ preventScroll: true });
+  expect(page.ui.draft).toBe('');
+});
+
+it("opens a linked panel at that panel, not at the bottom", () => {
+  const page = bootPage(undefined, '/agents/shop?open=stable%3Acall', { token: 'test' });
+  page.setRoster([{ id: 'shop', state: 'ready', generation: 0 }]);
+  page.acceptView({ ...demoView(), timeline: [{ id: 'stable', kind: 'event', at: 1, text: 'Event', event: { event: 'task.ready' }, replies: [{ text: 'Reading', calls: [{ id: 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] }] });
+  expect(page.app.querySelector('.calls')).not.toBeNull();
+  expect(sendNote(page).scrollViews).toEqual([]);
 });
 
 it("marks closed groups and visible check-ins in the rail, never hidden original cards", () => {

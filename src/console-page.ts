@@ -866,7 +866,7 @@ function measureComposer() {
 // render() rebuilds the page on every push, so scroll-driven marks are reapplied to
 // whatever is mounted. ponytail: linear scan of mounted turns per frame; the window
 // keeps that small unless the operator loads the whole history.
-let scrollFrame = 0, toEnd = true;
+let scrollFrame = 0, toEnd = true, followed = false, followSent = null;
 addEventListener("scroll", () => { scrollFrame ||= requestAnimationFrame(onScroll); }, { passive: true });
 function onScroll() {
   scrollFrame = 0;
@@ -874,7 +874,7 @@ function onScroll() {
   if (!turns.length) return document.body.classList.remove("away");
   const at = turns.find((t) => t.getBoundingClientRect().bottom > 120) || turns[turns.length - 1];
   markRail(Number(at.dataset.i));
-  document.body.classList.toggle("away", turns[turns.length - 1].getBoundingClientRect().bottom > innerHeight + 120);
+  document.body.classList.toggle("away", awayFromEnd(turns));
 }
 
 // Summaries stand in for hidden originals. Expanded cards participate only when
@@ -882,6 +882,8 @@ function onScroll() {
 function visibleTimeline() {
   return [...document.querySelectorAll("[data-timeline-anchor]")].filter((node) => node.getClientRects().length);
 }
+// The reader is away when the newest mounted turn ends more than a band's height below the fold.
+const awayFromEnd = (turns) => turns.length > 0 && turns[turns.length - 1].getBoundingClientRect().bottom > innerHeight + 120;
 function readingAnchor() {
   const visible = visibleTimeline();
   const node = visible.find((node) => node.getBoundingClientRect().bottom > 120);
@@ -982,6 +984,11 @@ async function submitMessage(mode) {
     }
     const saved = drafts.get(attempt.agent);
     if (saved && saved.attempt === attempt && saved.draft === attempt.draft) drafts.set(attempt.agent, { draft: "", attempt: null, messageError: "" });
+    // The operator's own send scrolls into view once it renders, from any position. The
+    // admission echo can render before or after this resolution, so the mark clears only
+    // when a render sees the view move past it. A send admitted while another agent is
+    // showing has nothing to follow.
+    if (view && ui.agent === attempt.agent) followSent = view.timeline.length + "/" + view.queuedMessages.length;
     await refresh();
   } catch (error) {
     const failure = "Message not confirmed. Retry keeps its ID and " + modeLabel(attempt.mode) + " mode. " + error.message;
@@ -1269,7 +1276,18 @@ function render(force = false) {
   if (!changed && taHadFocus && ui.draft && ui.tab === "timeline") return;
   if (taHadFocus) ui.focusComposer = true;
   const focused = !changed && document.activeElement?.getAttribute("data-focus");
-  const anchor = !changed && timeline && !toEnd ? readingAnchor() : null;
+  // Only real growth follows: a status or queue push renders without scrolling.
+  const grew = !changed && timeline && view.timeline.length > timelineLength;
+  const sent = followSent !== null;
+  // At-bottom is measured fresh from the pre-rebuild geometry, not the away class: a
+  // push in the same frame as the reader's scroll-away must not pull the page down.
+  // A push follows only at the bottom; the operator's own send follows from anywhere.
+  const follow = !changed && timeline && !toEnd && (sent || (grew && !awayFromEnd(visibleTimeline())));
+  // The render right after a follow holds the anchor once: restoring it would cancel
+  // the follow's smooth scroll mid-flight.
+  const hold = followed;
+  followed = !!follow;
+  const anchor = !changed && timeline && !toEnd && !follow && !hold ? readingAnchor() : null;
   // Preserve the mounted start as new turns arrive, including an opened check at
   // the window boundary. Explicit earlier loading remains measured in originals.
   if (!changed && timeline) ui.windowN += Math.max(0, view.timeline.length - timelineLength);
@@ -1282,7 +1300,13 @@ function render(force = false) {
   updateStartupStatus();
   if (activeTag === "SELECT" && changed) document.querySelector('select[aria-label="Agent"]')?.focus({ preventScroll: true });
   // The timeline opens at its newest turn, as a chat does.
-  if (toEnd && view && ui.tab === "timeline") { toEnd = false; toNewest("auto"); }
+  if (toEnd && view && ui.tab === "timeline") { toEnd = false; followSent = null; toNewest("auto"); }
+  else if (follow) {
+    // The send's echo moves the view; the render carrying it re-fires against the final
+    // bottom, then the follow is done.
+    if (sent && view.timeline.length + "/" + view.queuedMessages.length !== followSent) followSent = null;
+    toNewest(smooth());
+  }
   updateMessageStatus();
   measureComposer();
   const restored = focused && [...document.querySelectorAll("[data-focus]")].find((node) => node.getAttribute("data-focus") === focused);
