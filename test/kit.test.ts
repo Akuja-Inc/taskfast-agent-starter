@@ -40,7 +40,7 @@ describe("runAgents", () => {
     const dir = mkdtempSync(join(tmpdir(), "agents-"));
     mkdirSync(join(dir, "me", ".taskfast"), { recursive: true });
     copyExample("careful-worker", join(dir, "me"));
-    if (withConfig) writeFileSync(join(dir, "me", ".taskfast", "config.json"), "{}");
+    if (withConfig) writeFileSync(join(dir, "me", ".taskfast", "config.json"), JSON.stringify({ environment: "staging" }));
     mkdirSync(join(dir, "notes")); // no agent.json: not an agent
     return dir;
   }
@@ -113,7 +113,7 @@ describe("runAgents", () => {
     const dir = agents(true);
     mkdirSync(join(dir, "two", ".taskfast"), { recursive: true });
     copyExample("careful-worker", join(dir, "two"));
-    writeFileSync(join(dir, "two", ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, "two", ".taskfast", "config.json"), JSON.stringify({ environment: "staging" }));
     const stop = new AbortController();
     let release = () => {};
     const opening = new Promise<void>((resolve) => { release = resolve; });
@@ -139,7 +139,7 @@ describe("runAgents", () => {
     const dir = agents(true);
     mkdirSync(join(dir, "two", ".taskfast"), { recursive: true });
     copyExample("careful-worker", join(dir, "two"));
-    writeFileSync(join(dir, "two", ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, "two", ".taskfast", "config.json"), JSON.stringify({ environment: "staging" }));
     const stop = new AbortController();
     let release = () => {};
     const held = new Promise<void>((resolve) => { release = resolve; });
@@ -161,7 +161,7 @@ describe("runAgents", () => {
     const dir = agents(true);
     mkdirSync(join(dir, "two", ".taskfast"), { recursive: true });
     copyExample("careful-worker", join(dir, "two"));
-    writeFileSync(join(dir, "two", ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, "two", ".taskfast", "config.json"), JSON.stringify({ environment: "staging" }));
     for (const id of ["me", "two"]) writeFileSync(join(dir, id, ".taskfast", "wallet-password"), "simulated user-owned file", { mode: 0o400 });
     const opened: { id: string; storePath: string; file: string | undefined }[] = [];
     const stop = new AbortController();
@@ -178,7 +178,7 @@ describe("runAgents", () => {
     const real = target === "root" ? join(root, "outside") : join(dir, "me");
     mkdirSync(join(real, ".taskfast"), { recursive: true });
     copyExample("careful-worker", real);
-    writeFileSync(join(real, ".taskfast", "config.json"), "{}");
+    writeFileSync(join(real, ".taskfast", "config.json"), JSON.stringify({ environment: "staging" }));
     if (target === "root") { mkdirSync(dir); symlinkSync(real, join(dir, "me")); }
     else { mkdirSync(join(root, "outside")); symlinkSync(join(root, "outside"), join(real, ".pi-state")); }
     let opens = 0;
@@ -194,7 +194,7 @@ describe("runAgents", () => {
     const dir = join(root, "agents");
     mkdirSync(join(dir, "me", ".taskfast"), { recursive: true });
     copyExample("careful-worker", join(dir, "me"));
-    writeFileSync(join(dir, "me", ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, "me", ".taskfast", "config.json"), JSON.stringify({ environment: "staging" }));
     const prior = join(root, ".pi-state", "staging", "me", "state.sqlite");
     mkdirSync(join(prior, ".."), { recursive: true });
     writeFileSync(prior, "simulated permanent history");
@@ -219,7 +219,7 @@ describe("runAgents", () => {
     mkdirSync(join(dir, "nested"));
     symlinkSync(join(dir, "nested"), join(home, "parent-link"));
     const references: Record<string, unknown> = { external: outside, "absolute-inside": inside, escaped: "../other-wallet.json", linked: "linked-wallet.json", "cancelled-link": "parent-link/../other-wallet.json", empty: "", invalid: 42 };
-    writeFileSync(join(home, ".taskfast", "config.json"), JSON.stringify({ keystore_path: references[kind] }));
+    writeFileSync(join(home, ".taskfast", "config.json"), JSON.stringify({ environment: "staging", keystore_path: references[kind] }));
     let opens = 0;
     await expect(runAgents({ agentsDir: dir, env: "staging", signal: AbortSignal.abort(), log: () => {}, listen: () => ({ close: async () => {} }), openAgent: async () => {
       opens++;

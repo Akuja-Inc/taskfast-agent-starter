@@ -58,7 +58,7 @@ _Avoid_: character, persona.
 ## Where it runs
 
 **Environment:**
-The kit uses `production`, `staging`, `development`. The CLI equivalents are `prod`, `staging`, `local` (`ENVIRONMENTS` in `run.ts`). Use kit names with `pnpm ... --env`; CLI names with `taskfast --env` and in state paths. Production is the default and real money, not permission to run there.
+The kit uses `production`, `staging`, `development`. The CLI equivalents are `prod`, `staging`, `local` (`ENVIRONMENTS` in `run.ts`). Use kit names with `pnpm ... --env`; CLI names with `taskfast --env` and in state paths. Production is the default selection and real money, not permission to run there. The host selects folders by the explicit `environment` saved in their TaskFast config. It skips other environments and unpinned configs, and does not show skipped folders in the console dropdown.
 
 **Runtime options** (`Runtime`):
 The CLI environment, absolute TaskFast config path, and optional absolute wallet password-file path supplied by the host when opening an agent. The unlock path is not a model parameter or an agent-file field; only the CLI reads its contents. Marketplace identity is the TaskFast agent UUID and environment; moving the folder does not change it, but another account cannot use its ledger.

@@ -26,7 +26,7 @@ async function fixture(body: (kit: { url: URL; dir: string; agents: Map<string, 
   for (const id of ["a", "b"]) {
     copyExample("brisk-poster", join(dir, id));
     mkdirSync(join(dir, id, ".taskfast"));
-    writeFileSync(join(dir, id, ".taskfast", "config.json"), "{}");
+    writeFileSync(join(dir, id, ".taskfast", "config.json"), JSON.stringify({ environment: "local" }));
   }
   let first = true;
   const running = runAgents({

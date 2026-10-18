@@ -86,11 +86,33 @@ export async function runAgents(o: RunOptions): Promise<void> {
     const local = folderFile({ agentDir, path: PASSWORD_PATH, resource: "wallet unlock file" });
     return existsSync(local) ? local : walletPasswordFile;
   }
-  const ids = existsSync(o.agentsDir) ? readdirSync(o.agentsDir).filter((id) => existsSync(join(o.agentsDir, id, "agent.json"))) : [];
-  if (!ids.length) throw new Error(`no agents: put one in ${o.agentsDir}/<id>/ with agent.json and ${INSTRUCTIONS_PATH} (copy a folder from examples/)`);
+  function selectedConfig(id: string) {
+    const configPath = folderFile({ agentDir: resolve(o.agentsDir, id), path: ".taskfast/config.json", resource: "TaskFast config" });
+    if (!existsSync(configPath)) throw new Error(`no ${configPath}; run \`taskfast --env ${o.env} init\` in ${join(o.agentsDir, id)}`);
+    // JSON parser messages can quote credentials from this private file.
+    let config: unknown;
+    try { config = JSON.parse(readFileSync(configPath, "utf8")); }
+    catch { throw new Error("cannot read .taskfast/config.json as JSON"); }
+    if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("TaskFast config must be an object");
+    if (!("environment" in config) || config.environment === null) throw new Error("no environment in .taskfast/config.json; set it explicitly with taskfast config set environment prod|staging|local in this folder after checking the account");
+    // CLI v0.20.0 accepts production as an alias on load, but writes prod.
+    const env = config.environment === "production" ? "prod" : config.environment;
+    if (!(Object.values(ENVIRONMENTS) as unknown[]).includes(env)) throw new Error("invalid environment in .taskfast/config.json; expected prod, staging or local");
+    if (env !== o.env) throw new Error(`configured for ${env}, selected ${o.env}`);
+    return { configPath, config };
+  }
+  const discovered = existsSync(o.agentsDir) ? readdirSync(o.agentsDir).filter((id) => existsSync(join(o.agentsDir, id, "agent.json"))) : [];
+  if (!discovered.length) throw new Error(`no agents: put one in ${o.agentsDir}/<id>/ with agent.json and ${INSTRUCTIONS_PATH} (copy a folder from examples/)`);
+  const excluded: string[] = [];
+  const ids = discovered.filter((id) => {
+    try { selectedConfig(id); return true; }
+    catch (error) { excluded.push(`${id}: ${message(error)}`); o.log(`${id}: skipped: ${message(error)}`); return false; }
+  });
+  if (!ids.length) throw new Error(`no agents match ${o.env}: ${excluded.join("; ")}`);
   // Re-read each folder only when its previous owner has finished closing. A bad
   // folder stops that slot, never validation or marketplace work in its siblings.
   function load(id: string) {
+    const { configPath, config } = selectedConfig(id);
     const agentDir = resolve(o.agentsDir, id);
     const specPath = folderFile({ agentDir, path: "agent.json", resource: "agent specification" });
     const instructionsPath = folderFile({ agentDir, path: INSTRUCTIONS_PATH, resource: "agent instructions" });
@@ -101,13 +123,6 @@ export async function runAgents(o: RunOptions): Promise<void> {
     const spec = parseAgentSpec({ ...parsed, instructions: readFileSync(instructionsPath, "utf8") });
     const previous = [resolve(o.agentsDir, "..", ".pi-state", o.env, id, "state.sqlite"), resolve(".pi-state", o.env, id, "state.sqlite")];
     if (previous.some((path) => ["", ".owner", "-wal", "-shm"].some((suffix) => existsSync(path + suffix)))) throw new Error(`${id}: prior shared store exists; preserve it, do not start a blank ledger`);
-    const configPath = folderFile({ agentDir, path: ".taskfast/config.json", resource: "TaskFast config" });
-    if (!existsSync(configPath)) throw new Error(`${id}: no ${configPath}; run \`taskfast --env ${o.env} init\` in ${join(o.agentsDir, id)}`);
-    // JSON parser messages can quote credentials from this private file.
-    let config: unknown;
-    try { config = JSON.parse(readFileSync(configPath, "utf8")); }
-    catch { throw new Error(`${id}: cannot read .taskfast/config.json as JSON`); }
-    if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error(`${id}: TaskFast config must be an object`);
     if ("keystore_path" in config && config.keystore_path !== null) portableFile({ agentDir, path: config.keystore_path, resource: "wallet reference" });
     providerSettings(agentDir);
     const file = findUnlockFile(agentDir);
@@ -172,6 +187,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
   }
   async function start(slot: Slot, generation: number, controller: AbortController, held = false): Promise<void> {
     if (slot.cleanupFailed) throw new Error("previous cleanup failed; restart the host after checking ownership");
+    selectedConfig(slot.entry.id);
     // Recover an interrupted publication only on first opening in this host. A
     // deliberate apply leaves its journal live until the new registry has opened.
     if (!slot.recovered) {
@@ -293,6 +309,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
     slot.editing = true;
     const work = async () => {
       const item = owned.item;
+      selectedConfig(item.id);
       try {
         await createAgentModels(spec.model, { agentDir: item.agentDir, settings: providerSettings(item.agentDir) });
       } catch (error) { throw new Error(`agent file rejected, nothing was saved: ${message(error)}`); }
@@ -477,8 +494,22 @@ export async function runAgents(o: RunOptions): Promise<void> {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { values } = parseArgs({ options: { env: { type: "string", default: "production" }, "wallet-password-file": { type: "string" }, console: { type: "boolean", default: false }, "console-port": { type: "string", default: "7070" } } });
+async function main(): Promise<void> {
+  const { values } = parseArgs({ options: { help: { type: "boolean", short: "h" }, env: { type: "string", default: "production" }, "wallet-password-file": { type: "string" }, console: { type: "boolean", default: false }, "console-port": { type: "string", default: "7070" } } });
+  if (values.help) {
+    process.stdout.write(`Usage: pnpm agents [options]
+
+Run only agents associated with the selected TaskFast environment.
+  --env production|staging|development  Select production (default), staging or development
+  --console                            Open the local browser console
+  --console-port <port>                 Console port (default 7070)
+  --wallet-password-file <path>         Fallback for folders without their own unlock file
+  --help, -h                           Show this help without opening agents
+
+Production is real money. Mismatched agents are skipped, not retargeted.
+`);
+    return;
+  }
   const file = values["wallet-password-file"];
   if (file !== undefined && !file) throw new Error("--wallet-password-file needs a path");
   const portText = values["console-port"];
@@ -490,3 +521,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   process.once("SIGTERM", () => stop.abort());
   await runAgents({ agentsDir: "agents", env: taskfastEnv(values.env), ...(file === undefined ? {} : { walletPasswordFile: resolve(file) }), ...(values.console ? { console: { port } } : {}), signal: stop.signal, log: (line) => process.stdout.write(`${line}\n`) });
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

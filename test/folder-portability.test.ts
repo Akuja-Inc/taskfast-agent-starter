@@ -71,7 +71,7 @@ it("restores a stopped complete agent archive with private resources, event hist
     writeFileSync(join(source, "agent.json"), JSON.stringify({ role: "poster", model: "ollama:portable-model", dials: { competence: 0.9, diligence: 0.9, priceSensitivity: 0.5, temperament: "patient" }, limits: { perJobUsd: 4, dailyUsd: 4 } }));
     writeFileSync(join(source, "INSTRUCTIONS.md"), "You are Editor, who runs Editing. Careful copy editing.\n\nWhat you want right now: Post the guide once.\n");
     writeFileSync(join(source, ".env"), `OLLAMA_API_KEY=synthetic-model-key\nOLLAMA_BASE_URL=http://127.0.0.1:${address.port}/v1\n`, { mode: 0o600 });
-    writeFileSync(join(source, ".taskfast", "config.json"), JSON.stringify({ api_key: "synthetic-marketplace-key", agent_id: agentId, keystore_path: ".taskfast/wallet.json" }), { mode: 0o600 });
+    writeFileSync(join(source, ".taskfast", "config.json"), JSON.stringify({ environment: "local", api_key: "synthetic-marketplace-key", agent_id: agentId, keystore_path: ".taskfast/wallet.json" }), { mode: 0o600 });
     writeFileSync(join(source, ".taskfast", "wallet.json"), JSON.stringify({ encrypted: "synthetic ciphertext" }), { mode: 0o600 });
     writeFileSync(join(source, ".taskfast", "wallet-password"), "synthetic unlock\n", { mode: 0o400 });
     const cli = join(root, "taskfast");
