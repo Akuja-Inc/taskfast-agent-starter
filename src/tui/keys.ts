@@ -7,7 +7,7 @@ import type { AgentSpec } from "../core/types.js";
 import { screen } from "./screen.js";
 
 export interface Ui {
-  tab: "timeline" | "briefing";
+  tab: "timeline" | "settings";
   agent: number;
   panel: "timeline" | "attention" | "queue" | "orders" | "fields";
   // Never fall back to an index when a selected message leaves during a refresh.
@@ -27,7 +27,7 @@ export interface Ui {
   // Which line has the keyboard. The message composer also handles Ctrl+S.
   editing?: "message" | "order" | Field;
   messageText: string;
-  // Briefing: selected order and field, and the agent file being edited.
+  // Settings: selected order and field, and the agent file being edited.
   order: number;
   field: number;
   draft?: AgentSpec;
@@ -69,7 +69,7 @@ export function withdrawnSelection(ui: Ui, requestId: string, before: ConsoleVie
   return { ...ui, panel: next ? "queue" : "timeline", queuedRequestId: next?.requestId };
 }
 
-// The agent.json fields the briefing edits, in the order it lists them. INSTRUCTIONS.md is
+// The agent.json fields the settings page edits, in the order it lists them. INSTRUCTIONS.md is
 // multi-line text, so only the web console edits it.
 export const FIELDS = ["temperament", "perJobUsd", "dailyUsd", "competence", "diligence", "priceSensitivity"] as const;
 export type Field = typeof FIELDS[number];
@@ -138,7 +138,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     const from = at < 0 ? (by < 0 ? queue.length : -1) : at;
     return { ...ui, queuedRequestId: queue[clamp(from + by, queue.length)]?.requestId };
   };
-  const move = (by: number) => (ui.tab === "briefing"
+  const move = (by: number) => (ui.tab === "settings"
     ? (ui.panel === "orders" ? { ...ui, order: clamp(ui.order + by, view.operator.orders.length) } : { ...ui, field: clamp(ui.field + by, FIELDS.length) })
     : ui.panel === "queue" ? moveQueue(by)
     : ui.panel === "attention" ? { ...ui, alert: clamp(ui.alert + by, drawn.attention.length) } : { ...ui, reply: clamp(ui.reply + by, items.length) });
@@ -146,13 +146,13 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     case "q": return { ui, effect: { kind: "quit" } };
     case "?": return { ui: { ...ui, help: true } };
     case "1": return { ui: { ...ui, tab: "timeline", panel: "timeline" } };
-    case "2": return { ui: { ...ui, tab: "briefing", panel: "orders" } };
+    case "2": return { ui: { ...ui, tab: "settings", panel: "orders" } };
     case "<": case ">": {
       const index = (ui.agent + (key === ">" ? 1 : -1) + agents) % agents;
       return { ui: initialUi(index), effect: { kind: "agent", index } };
     }
     case "tab": {
-      if (ui.tab === "briefing") return { ui: { ...ui, panel: ui.panel === "orders" ? "fields" : "orders" } };
+      if (ui.tab === "settings") return { ui: { ...ui, panel: ui.panel === "orders" ? "fields" : "orders" } };
       const panel = PANELS[(PANELS.indexOf(ui.panel) + 1) % PANELS.length];
       return { ui: { ...ui, panel, ...(panel === "queue" ? { sidebar: true, queuedRequestId: ui.queuedRequestId ?? queue[0]?.requestId } : {}) } };
     }
@@ -163,9 +163,9 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
     case "p": return { ui, effect: call("POST", "paused", { value: !view.operator.paused }) };
     case "f": return view.operator.frozen ? { ui, effect: call("POST", "frozen", { value: false }) } : { ui: { ...ui, confirm: { kind: "freeze" } } };
     case "m": return { ui: { ...ui, tab: "timeline", editing: "message" } };
-    case "escape": return { ui: { ...ui, editing: undefined, draft: ui.tab === "briefing" ? undefined : ui.draft } };
+    case "escape": return { ui: { ...ui, editing: undefined, draft: ui.tab === "settings" ? undefined : ui.draft } };
   }
-  if (ui.tab === "briefing") {
+  if (ui.tab === "settings") {
     if (key === "a") return { ui: { ...ui, editing: "order" } };
     if (key === "d" && view.operator.orders.length) return { ui, effect: call("DELETE", `orders/${clamp(ui.order, view.operator.orders.length)}`) };
     if (key === "enter" && ui.panel === "fields") return { ui: { ...ui, editing: FIELDS[ui.field] } };

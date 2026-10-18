@@ -99,7 +99,7 @@ it("stages for the original agent, rejects stale revisions and retains drafts ac
   }, true);
 });
 
-it("finishes the marketplace write, serializes Briefing and reopens only the changed agent with its ledger intact", async () => {
+it("finishes the marketplace write, serializes Settings and reopens only the changed agent with its ledger intact", async () => {
   await fixture(async ({ url, dir, agents, calls, writing, started }) => {
     await vi.waitFor(() => expect(started()).toBe(true));
     const initial = await view(url);
@@ -110,8 +110,8 @@ it("finishes the marketplace write, serializes Briefing and reopens only the cha
     await before.operator.setPaused(true);
     await before.operator.setFrozen(true);
     await before.deliver(event);
-    const briefing = await fetch(new URL("/api/agents/a/spec", url), { method: "PUT", headers: { authorization: `Bearer ${url.hash.slice(7)}`, "content-type": "application/json" }, body: JSON.stringify({}) });
-    expect(briefing.status).not.toBe(204);
+    const settings = await fetch(new URL("/api/agents/a/spec", url), { method: "PUT", headers: { authorization: `Bearer ${url.hash.slice(7)}`, "content-type": "application/json" }, body: JSON.stringify({}) });
+    expect(settings.status).not.toBe(204);
     expect(calls.filter((line) => line === "open a")).toHaveLength(1);
     writing.release();
     await vi.waitFor(async () => expect((await view(url)).apply.state).toBe("succeeded"), { timeout: 10_000 });

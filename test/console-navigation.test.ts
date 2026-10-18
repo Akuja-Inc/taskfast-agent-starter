@@ -27,6 +27,11 @@ describe("console destination URLs", () => {
   ])("keeps invalid destinations explicit: %s%s", (path, query) => {
     expect(routes.read(path, query).invalid).toBe(true);
   });
+  it("names the Settings page and still reads an address saved under its old name", () => {
+    expect(routes.read("/agents/alice", "?tab=settings")).toEqual({ ...routes.empty(), agent: "alice", tab: "settings" });
+    expect(routes.read("/agents/alice", "?tab=briefing")).toEqual({ ...routes.empty(), agent: "alice", tab: "settings" });
+    expect(routes.href({ ...routes.empty(), agent: "alice", tab: "settings" })).toBe("/agents/alice?tab=settings");
+  });
   it("reads a root bootstrap without inventing an agent", () => {
     expect(routes.read("/", "")).toEqual(routes.empty());
   });

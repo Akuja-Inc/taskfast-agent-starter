@@ -161,7 +161,7 @@ it("only answers this machine's own pages, and only with the token", async () =>
   expect(Object.keys(allowed.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
 });
 
-it.each(["/agents/foo", "/agents/foo?tab=briefing", "/agents/copy%20editor", "/agents/%E6%96%87%E5%AD%97", "/agents/nobody?tab=timeline"])("serves the same token-free shell on direct GET and refresh of %s", async (path) => {
+it.each(["/agents/foo", "/agents/foo?tab=settings", "/agents/copy%20editor", "/agents/%E6%96%87%E5%AD%97", "/agents/nobody?tab=timeline"])("serves the same token-free shell on direct GET and refresh of %s", async (path) => {
   const { port } = await serve();
   const root = await call(port, "/");
   for (let refresh = 0; refresh < 2; refresh++) {
@@ -196,7 +196,7 @@ it("serves a fully expanded transcript-window URL beyond Node's default 16 KiB h
   expect(page.text).not.toContain(token);
 });
 
-it.each(["/", "/agents/foo?tab=briefing", "/agents/nobody"])("keeps Host, Origin and method protections on the shell at %s", async (path) => {
+it.each(["/", "/agents/foo?tab=settings", "/agents/nobody"])("keeps Host, Origin and method protections on the shell at %s", async (path) => {
   const { port } = await serve();
   expect((await call(port, path, { headers: { host: `rebound.example:${port}` } })).status).toBe(403);
   expect((await call(port, path, { headers: { origin: "https://elsewhere.example" } })).status).toBe(403);
@@ -210,7 +210,7 @@ it.each(["/", "/agents/foo?tab=briefing", "/agents/nobody"])("keeps Host, Origin
 });
 
 it.each([
-  "/agents", "/agents/", "/agents/foo/", "/agents/foo/bar", "/agents/foo/bar?tab=briefing",
+  "/agents", "/agents/", "/agents/foo/", "/agents/foo/bar", "/agents/foo/bar?tab=settings",
   "/agents/foo%2fbar", "/agents/foo%2Fbar", "/agents/foo%5cbar", "/agents/foo%5Cbar", "/agents/foo\\bar",
   "/agents/.", "/agents/..", "/agents/%2e", "/agents/%2E%2E", "/agents/.%2e",
   "/agents/foo/../..", "/agents/foo/%2e%2e/%2e%2e", "/agents/%", "/agents/%2", "/agents/%GG", "/agents/%C0%AF",
