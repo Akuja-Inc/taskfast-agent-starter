@@ -82,12 +82,32 @@ async def saved(page):
     await expect(page.get_by_text('Order saved.')).to_be_visible()
 
 
+async def note_editing(page):
+    """gh#125: the agent's notes take the same pencil and X squares as orders."""
+    await page.get_by_role('button', name='Edit note 1').click()
+    await page.locator('#note-edit').fill('The Halvorsen guide uses Oxford commas and US spelling')
+
+
+async def note_waiting(page):
+    # The fixture holds this one write, as the host does while the agent's turn runs.
+    await page.route('**/api/agents/editor/notes/0', lambda route: route.continue_(headers={**route.request.headers, 'x-fixture-hold': '1'}))
+    await page.get_by_role('button', name='Save', exact=True).click()
+    await expect(page.get_by_text('Saves when the agent finishes its current turn.')).to_be_visible()
+
+
+async def note_removed(page):
+    await expect(page.get_by_text('Note saved.')).to_be_visible(timeout=10000)
+    await page.get_by_role('button', name='Remove note 2').click()
+    await expect(page.get_by_text('Note removed.')).to_be_visible()
+
+
 LIMITS = {'perJobUsd': 20, 'dailyUsd': 50}
 # name: (before ref, fixture state, check run on every shot, extra after-only shots)
 SCENARIOS = {
     'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, reads, {'raw': reads_raw}),
     'limits-empty': ('7516c0a', {'notes': NOTES}, None, {'money': money_hint, 'timeline': timeline}),
     'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {}),
+    'notes': ('9fb8b16', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'editing': note_editing, 'waiting': note_waiting, 'removed': note_removed}),
     'edit': ('6abac54', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'editing': editing, 'saved': saved}),
     'feedback': ('5ff0ae9', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'added': added, 'removed': removed, 'stale': stale}),
 }
