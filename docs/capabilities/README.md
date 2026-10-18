@@ -42,12 +42,16 @@ Every mutation carries a configuration revision. A conflicting browser or manual
 
 Configuration belongs to the agent folder, not one environment. Other environments read it when they next open that folder. Stop the agent before moving or archiving it, preserve its whole ledger and private capability files, and never run original and restored copies together. A copied folder does not install external executables or authorize access to remote services.
 
+## Generated-agent example and recovery
+
+Run the [offline generated-agent example](generated-agent.md) to exercise the CLI skill, an approved MCP read over each transport, compaction and stopped-folder relocation with the permanent ledger intact. That guide also maps supported CLI workflows and explains operator recovery without resetting state.
+
 ## Local validation
 
 Run the bounded tests first, then the repository gate and TUI smoke test:
 
 ```bash
-pnpm vitest run test/capabilities.test.ts test/console-capabilities-host.test.ts src/core/agent-quiesce.test.ts
+pnpm vitest run test/generated-capabilities.test.ts test/capabilities.test.ts test/console-capabilities-host.test.ts src/core/agent-quiesce.test.ts
 pnpm check
 pnpm tui:test
 ```
