@@ -1,10 +1,11 @@
+import { createHash } from "node:crypto";
 import type { Message, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { MESSAGE_PREFIX } from "./operator.js";
 import { UUID } from "./tools.js";
 
 // What the console shows: each input the agent received, then its replies.
 export type TurnKind = "poll" | "event" | "operator" | "resume" | "other";
-export interface Turn { kind: TurnKind; at: number; text: string; event?: unknown; replies: Reply[]; complete?: boolean }
+export interface Turn { id: string; kind: TurnKind; at: number; text: string; event?: unknown; replies: Reply[]; complete?: boolean }
 export interface Reply { text: string; calls: Call[]; tasks: TaskRef[] }
 export type Outcome = "ok" | "failed" | "uncertain" | "pending";
 export interface Call { id: string; name: string; arguments: unknown; outcome: Outcome; result?: string; error?: string; comparable?: boolean }
@@ -64,7 +65,9 @@ export function buildTimeline(messages: readonly Message[]): Turn[] {
   const calls = new Map<string, { call: Call; reply: Reply }>();
   for (const message of messages) {
     if (message.role === "user") {
-      turns.push({ ...classify(text(message.content)), at: message.timestamp, replies: [], complete: false });
+      // Hash the full originating input, never its display text, position or later replies.
+      const id = createHash("sha256").update(JSON.stringify([message.timestamp, message.content])).digest("hex");
+      turns.push({ id, ...classify(text(message.content)), at: message.timestamp, replies: [], complete: false });
       continue;
     }
     const turn = turns.at(-1);

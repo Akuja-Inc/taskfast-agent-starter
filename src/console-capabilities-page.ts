@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
+import type { ConsoleDestination } from "./console-navigation.js";
 import type { CapabilityApproval, CapabilityFile, CapabilityServerConfig, CapabilityTest, CapabilityView } from "./capability-types.js";
 
 /** Browser uploads keep their directory structure. The server validates the same bytes again. */
@@ -92,19 +93,32 @@ header nav { flex-wrap:wrap; max-width:100%; }
 @media(max-width:700px) { .cap-columns,.cap-form-grid,.cap-comparison { grid-template-columns:minmax(0,1fr); } .cap-form-grid > .cap-wide { grid-column:auto; } .cap-binding { grid-template-columns:minmax(0,1fr); } .cap-detail { padding:16px; } .cap-page { padding:20px 16px; } }
 `;
 
+/** Destination identity only. Never serialize editor fields, credentials or approvals. */
+type CapabilityRoute = ConsoleDestination["capability"];
+
 /** This function is serialized into the single console page. Keep its dependencies explicit. */
 export function capabilitiesPage(deps: {
   el: (tag: string, attrs: Record<string, unknown>, ...children: unknown[]) => HTMLElement;
   api: (method: string, path: string, body?: unknown, signal?: AbortSignal) => Promise<CapabilityView>;
   readFolder: typeof readCapabilityFolder;
+  navigate: (route: CapabilityRoute) => void;
 }) {
   const { el, api, readFolder } = deps;
   type Upload = Awaited<ReturnType<typeof readFolder>>;
   type Binding = { target: string; name: string; value: string; configured: boolean };
   type Editor = { name: string; transport: "remote" | "local"; url: string; command: string; args: string[]; cwd: string; bindings: Binding[]; step: number; consent: boolean; test: CapabilityTest | null; approved: Set<string>; revision: string };
-  type State = { id: string; name: string; root: HTMLElement; body: HTMLElement; feedback: HTMLElement; pending: HTMLElement; data: CapabilityView | null; screen: "overview" | "import" | "skill" | "server" | "review" | "taskfast" | "credential"; item: string; dirty: boolean; busy: boolean; loading: boolean; revision: string; editor: Editor | null; upload: Upload | null; preview: (NonNullable<CapabilityView["skillPreview"]> & { revision: string }) | null; epoch: number; scroll: number; origin: string; error: string; notice: string; filter: string; requestId: string | null; readVersion: number };
+  type State = { id: string; name: string; root: HTMLElement; body: HTMLElement; feedback: HTMLElement; pending: HTMLElement; data: CapabilityView | null; screen: CapabilityRoute["screen"]; item: string; step: number; dirty: boolean; busy: boolean; loading: boolean; revision: string; editor: Editor | null; upload: Upload | null; preview: (NonNullable<CapabilityView["skillPreview"]> & { revision: string }) | null; epoch: number; scroll: number; origin: string; error: string; notice: string; filter: string; requestId: string | null; readVersion: number };
   const states = new Map<string, State>();
   let current: State | null = null;
+  function route(): CapabilityRoute {
+    const s = current;
+    if (!s) return { screen: "overview", item: "", step: 0 };
+    return { screen: s.screen, item: ["skill", "server", "credential", "import"].includes(s.screen) ? s.item : "", step: s.screen === "server" ? s.editor?.step ?? s.step : 0 };
+  }
+  function navigate(s: State) { if (current === s) deps.navigate(route()); }
+  function serverStep(s: State, editor: Editor, step: number) {
+    editor.step = step; draw(s); navigate(s);
+  }
   const button = (text: string, action: () => void, attrs: Record<string, unknown> = {}) => el("button", { type: "button", text, onclick: action, ...attrs });
   const disable = (node: HTMLElement, value: boolean) => { if (value) node.setAttribute("disabled", ""); else node.removeAttribute("disabled"); };
   const para = (text: string, cls = "small") => el("p", { class: cls, text });
@@ -156,7 +170,7 @@ export function capabilitiesPage(deps: {
       if (current !== s || s.epoch !== epoch) return null;
       s.notice = action === "test" ? "Test passed; not active. Review tools individually." : action === "preview-taskfast" ? "Preview ready. No capability changes have been staged or activated." : "Request saved. Nothing changes until apply completes.";
       s.busy = false; s.revision = data.revision;
-      if (!options.stay) { abandon(s); s.screen = "overview"; s.revision = data.revision; draw(s); ((s.origin ? s.root.querySelector<HTMLElement>("#" + s.origin) : null) || s.root.querySelector<HTMLElement>("h1"))?.focus({ preventScroll: true }); }
+      if (!options.stay) { abandon(s); s.screen = "overview"; s.revision = data.revision; draw(s); ((s.origin ? s.root.querySelector<HTMLElement>("#" + s.origin) : null) || s.root.querySelector<HTMLElement>("h1"))?.focus({ preventScroll: true }); navigate(s); }
       message(s);
       return data;
     } catch (error) {
@@ -188,15 +202,19 @@ export function capabilitiesPage(deps: {
     current = null;
     return true;
   }
+  function show(s: State, { screen, item, step }: CapabilityRoute) {
+    abandon(s); s.screen = screen; s.item = item; s.step = step; s.revision = s.data?.revision || ""; s.error = ""; s.notice = "";
+  }
   function go(s: State, screen: State["screen"], item = "", origin = "") {
     if (s.dirty && !confirm("Discard unsaved edits? New credential entries and test approvals will be cleared.")) return;
     if (s.screen === "overview") { s.scroll = window.scrollY; s.origin = origin; }
-    abandon(s); s.screen = screen; s.item = item; s.revision = s.data?.revision || ""; s.error = ""; s.notice = "";
+    show(s, { screen, item, step: 0 });
     draw(s);
     if (screen === "overview") {
       window.scrollTo({ top: s.scroll });
       ((s.origin ? s.root.querySelector<HTMLElement>("#" + s.origin) : null) || s.root.querySelector<HTMLElement>("h1"))?.focus({ preventScroll: true });
     } else { window.scrollTo({ top: 0 }); s.body.querySelector<HTMLElement>("h2")?.focus(); }
+    navigate(s);
   }
   function pending(s: State) {
     const data = s.data;
@@ -264,8 +282,8 @@ export function capabilitiesPage(deps: {
   }
   function taskfastPreview(s: State) {
     const preview = s.preview;
-    s.body.append(title("Preview TaskFast skill"), para("The installed CLI exported this bundle into temporary private storage. Preview does not change this agent's pending or active configuration. No account setup, software download or automatic update.", ""));
-    if (!preview) { s.body.append(para("Read and validate the installed bundle before choosing whether to stage it."), button("Read installed CLI bundle", () => { void taskfast(s); }, { disabled: locked(s) })); return; }
+    s.body.append(title("Preview TaskFast skill"), para("Read the installed CLI bundle into temporary private storage for review. Preview does not change this agent's pending or active configuration. No account setup, software download or automatic update.", ""));
+    if (!preview) { s.body.append(para("TaskFast previews are temporary and cannot be restored after leaving or reloading this page. Use the button below to explicitly read and validate the installed bundle again before choosing whether to stage it."), button("Read installed CLI bundle", () => { void taskfast(s); }, { disabled: locked(s) })); return; }
     const bundle = preview.skill, proposed = s.data!.skills.find((skill) => skill.name === bundle.name);
     const existing = proposed || savedSkills(s.data!).find((skill) => skill.name === bundle.name);
     let replace = false, enabled = existing?.enabled ?? true;
@@ -295,8 +313,8 @@ export function capabilitiesPage(deps: {
   function compatibility() { return el("div", { class: "note" }, para("Skills add guidance only. No shell, scripts, raw HTML or remote images execute. They never change tool permissions or marketplace policy.", ""), para("Use the agent's existing TaskFast tools. File artifacts, payments, reviews, account setup, webhooks and CLI-only task changes remain unavailable. The agent must not claim work that needs an unavailable command."), para("Disabling or removing a skill cannot erase instructions already loaded into conversation history.")); }
   function skill(s: State) {
     const after = s.data!.skills.find((item) => item.name === s.item);
-    const installed = after || savedSkills(s.data!).find((item) => item.name === s.item);
-    if (!installed) { s.body.append(title("Skill not found"), para("Refresh capabilities and choose an installed skill.")); return; }
+    // draw() shows "Destination unavailable" for a skill that no longer exists.
+    const installed = (after || savedSkills(s.data!).find((item) => item.name === s.item))!;
     const active = s.data!.activeSkills.find((item) => item.name === installed.name);
     const saved = savedSkills(s.data!).find((item) => item.name === installed.name);
     if (!after) {
@@ -328,7 +346,7 @@ export function capabilitiesPage(deps: {
         if (invalid) { invalid.setAttribute("aria-invalid", "true"); invalid.setAttribute("aria-describedby", "capability-field-error"); invalid.focus(); }
       } }
     } });
-    s.body.append(el("label", {}, "Choose folder", picker));
+    s.body.append(para("Folder uploads are temporary and cannot be restored after leaving or reloading this page. Choose the folder again to preview its files. No files are staged automatically."), el("label", {}, "Choose folder", picker));
     const upload = s.upload;
     if (!upload) return;
     const proposed = s.data!.skills.find((item) => item.name === upload.name);
@@ -343,7 +361,7 @@ export function capabilitiesPage(deps: {
   }
   function makeEditor(s: State): Editor {
     const server = s.data!.servers.find((item) => item.name === s.item) || savedServers(s.data!).find((item) => item.name === s.item), config = server?.config;
-    return { name: server?.name || "", transport: config && "command" in config ? "local" : "remote", url: config && "url" in config ? config.url : "", command: config && "command" in config ? config.command : "", args: config && "command" in config ? [...config.args || []] : [], cwd: config && "command" in config ? config.cwd || "." : ".", bindings: Object.entries(config ? "command" in config ? config.env || {} : config.headers || {} : {}).map(([target, name]) => ({ target, name, value: "", configured: s.data!.credentials.includes(name) })), step: 0, consent: false, test: null, approved: new Set(), revision: s.revision };
+    return { name: server?.name || "", transport: config && "command" in config ? "local" : "remote", url: config && "url" in config ? config.url : "", command: config && "command" in config ? config.command : "", args: config && "command" in config ? [...config.args || []] : [], cwd: config && "command" in config ? config.cwd || "." : ".", bindings: Object.entries(config ? "command" in config ? config.env || {} : config.headers || {} : {}).map(([target, name]) => ({ target, name, value: "", configured: s.data!.credentials.includes(name) })), step: s.step, consent: false, test: null, approved: new Set(), revision: s.revision || s.data!.revision };
   }
   function configOf(editor: Editor): CapabilityServerConfig {
     const bindings = Object.fromEntries(editor.bindings.map((binding) => [binding.target, binding.name]));
@@ -406,7 +424,7 @@ export function capabilitiesPage(deps: {
         if (target) { target.setAttribute("aria-invalid", "true"); target.setAttribute("aria-describedby", "capability-field-error"); target.focus(); }
         return;
       }
-      editor.step = 1; draw(s); s.body.querySelector<HTMLElement>("h2")?.focus();
+      serverStep(s, editor, 1); s.body.querySelector<HTMLElement>("h2")?.focus();
     }, { class: "primary", disabled: s.busy }));
     return controls;
   }
@@ -436,7 +454,7 @@ export function capabilitiesPage(deps: {
         tools.append(panel);
       }
     }
-    tools.append(group(button("Back to connection", () => { editor.step = 0; draw(s); }), button("Continue to review and save", () => { editor.step = 2; draw(s); }, { class: "primary", disabled: s.busy })));
+    tools.append(group(button("Back to connection", () => { serverStep(s, editor, 0); }), button("Continue to review and save", () => { serverStep(s, editor, 2); }, { class: "primary", disabled: s.busy })));
     return tools;
   }
   function saveServer(s: State, editor: Editor) {
@@ -451,7 +469,7 @@ export function capabilitiesPage(deps: {
       para("Tool access after apply: " + (approved.map((tool) => tool.name).join(", ") || "none"), ""),
       para(tested ? "Only these reviewed fingerprints will be saved. Later new or changed tools require a new review." : "Not tested. Only Save disabled is available."),
       para("Credential changes: " + (editor.bindings.filter((binding) => binding.value).map((binding) => binding.name + (binding.configured ? " · Replaced" : " · Added")).join(", ") || "none")),
-      group(button("Back to test and review tools", () => { editor.step = 1; draw(s); }), button("Save disabled", () => { void save(false); }, { disabled: s.busy }), button("Save and enable after apply", () => { void save(true); }, { class: "primary", disabled: s.busy || !tested || !approved.length })));
+      group(button("Back to test and review tools", () => { serverStep(s, editor, 1); }), button("Save disabled", () => { void save(false); }, { disabled: s.busy }), button("Save and enable after apply", () => { void save(true); }, { class: "primary", disabled: s.busy || !tested || !approved.length })));
   }
   function server(s: State) {
     const editor = s.editor || (s.editor = makeEditor(s));
@@ -472,7 +490,7 @@ export function capabilitiesPage(deps: {
   async function discardItem(s: State, kind: "skill" | "server" | "credential", name: string) {
     const data = await command(s, "discard-item", { kind, name }, { stay: true, revision: s.revision });
     if (!data || current !== s) return;
-    abandon(s); s.screen = "review"; s.revision = data.revision; draw(s); s.body.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+    abandon(s); s.screen = "review"; s.revision = data.revision; draw(s); s.body.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true }); navigate(s);
   }
   function credential(s: State) {
     const data = s.data!, name = s.item;
@@ -551,6 +569,17 @@ export function capabilitiesPage(deps: {
     s.body.replaceChildren(); message(s); pending(s);
     if (!s.data) { s.body.append(title(s.error ? "Capabilities unavailable" : "Loading capabilities…"), button("Retry loading capabilities", () => { s.error = ""; void load(s, true); })); return; }
     if (s.screen !== "overview") s.body.append(button("Back to capabilities", () => go(s, "overview")));
+    const skillExists = [...s.data.skills, ...savedSkills(s.data)].some((item) => item.name === s.item);
+    const serverExists = [...s.data.servers, ...savedServers(s.data)].some((item) => item.name === s.item);
+    const credentialExists = s.data.credentials.includes(s.item) || s.data.credentialChanges.some((item) => item.name === s.item);
+    if ((s.screen === "skill" && !skillExists) || (s.screen === "import" && s.item && !skillExists) || (s.screen === "server" && s.item && !serverExists) || (s.screen === "credential" && !credentialExists)) {
+      s.body.append(title("Destination unavailable"), para("This selected capability no longer exists in the current configuration. Back to capabilities to choose an available item."));
+      return;
+    }
+    if (s.screen === "server" && !s.item && s.step > 0 && !s.editor) {
+      s.body.append(title("Destination unavailable"), para("This setup step needed an unsaved connection. Links do not contain form fields or credentials. Start a new connection to enter them again."), button("Start new connection", () => go(s, "server")));
+      return;
+    }
     switch (s.screen) {
       case "overview": overview(s); break;
       case "skill": skill(s); break;
@@ -561,15 +590,19 @@ export function capabilitiesPage(deps: {
       case "credential": credential(s); break;
     }
   }
-  function mount(id: string, name: string) {
+  function mount(id: string, name: string, destination?: CapabilityRoute) {
     let s = states.get(id);
     if (!s) {
       const body = el("div", { class: "cap-fields" }), feedback = el("div", {}), bar = el("section", { class: "cap-pending", "aria-label": "Pending capability changes", hidden: true });
       const root = el("div", { id: "capabilities-root", class: "page cap-page", "data-agent": id }, el("div", { class: "cap-identity" }, el("h1", { tabindex: "-1", text: "Capabilities · " + name }), para("Agent folder: agents/" + id + "/", "mono"), para("Manage this agent only. Configuration is shared across environments; staging edits are not staging-only.")), feedback, body, bar);
-      s = { id, name, root, body, feedback, pending: bar, data: null, screen: "overview", item: "", dirty: false, busy: false, loading: false, revision: "", editor: null, upload: null, preview: null, epoch: 0, scroll: 0, origin: "", error: "", notice: "", filter: "", requestId: null, readVersion: 0 };
+      s = { id, name, root, body, feedback, pending: bar, data: null, screen: "overview", item: "", step: 0, dirty: false, busy: false, loading: false, revision: "", editor: null, upload: null, preview: null, epoch: 0, scroll: 0, origin: "", error: "", notice: "", filter: "", requestId: null, readVersion: 0 };
       states.set(id, s);
     }
-    current = s; draw(s); void load(s); return s.root;
+    if (current !== s) {
+      if (destination) show(s, destination);
+      current = s; draw(s);
+    }
+    void load(s); return s.root;
   }
   addEventListener("beforeunload", (event) => { if (current?.dirty) { event.preventDefault(); event.returnValue = true; } });
   return { mount, leave, clear: () => { for (const state of states.values()) abandon(state); states.clear(); current = null; }, poll: () => current ? load(current) : Promise.resolve(), selected: () => current?.id };

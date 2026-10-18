@@ -1,5 +1,6 @@
 import { capabilitiesPage, CAPABILITIES_CSS, readCapabilityFolder } from "./console-capabilities-page.js";
 import { follow } from "./console-live.js";
+import { consoleNavigation } from "./console-navigation.js";
 import { markdown } from "./console-markdown.js";
 import { foldPolls } from "./console-polling.js";
 import { MAX_INSTRUCTIONS, POLL_MINUTES } from "./core/spec.js";
@@ -232,12 +233,19 @@ const app = document.getElementById("app");
 const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} }, drop: (k) => { try { sessionStorage.removeItem(k); } catch {} } };
 const tokenLink = /^#token=([0-9a-f]{64})$/;
 const fromLink = tokenLink.exec(location.hash);
-if (fromLink) { store.set("token", fromLink[1]); history.replaceState(null, "", location.pathname); }
+if (fromLink) { store.set("token", fromLink[1]); history.replaceState(history.state, "", location.pathname + location.search); }
 // A token link in an open tab is same-document navigation, so startup above never sees it.
 // Reload rather than install in place: old requests' 401s could clear the new token.
 addEventListener("hashchange", () => { if (tokenLink.test(location.hash)) location.reload(); });
+const destinations = (${consoleNavigation.toString()})();
+const initialDestination = destinations.read(location.pathname, location.search);
+let navigationIndex = history.state && Number.isInteger(history.state.consoleNavigation) ? history.state.consoleNavigation : 0;
+let revertingNavigation = false;
+let navigationUrl = location.pathname + location.search;
+history.replaceState({ consoleNavigation: navigationIndex }, "", navigationUrl);
 let token = store.get("token");
-const ui = { agent: store.get("agent"), tab: "timeline", open: new Set(), raw: new Set(), folds: new Set(), checks: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
+const ui = { agent: initialDestination.agent || (initialDestination.invalid ? null : store.get("agent")), tab: initialDestination.tab, capability: initialDestination.capability, invalidDestination: initialDestination.invalid, open: new Set(initialDestination.open), raw: new Set(initialDestination.raw), folds: new Set(), checks: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
+let revealLinkedPanels = true;
 let list = null, view = null;
 const drafts = new Map(), startupRequests = new Map();
 const selected = () => list && list.agents.find((a) => a.id === ui.agent);
@@ -247,14 +255,9 @@ const ready = () => stateOf(selected()) === "ready";
 const selectionKey = () => token && ready() ? token + " " + ui.agent + " " + generationOf(selected()) : null;
 function selectAgent(id) {
   if (id === ui.agent) return;
-  if (!capabilities.leave()) { const selector = document.querySelector('select[aria-label="Agent"]'); if (selector) selector.value = ui.agent; return; }
-  drafts.set(ui.agent, { draft: ui.draft, attempt: ui.attempt, messageError: ui.messageError });
-  ui.agent = id;
-  Object.assign(ui, drafts.get(id) || { draft: "", attempt: null, messageError: "" });
-  store.set("agent", id);
-  ui.open.clear(); ui.raw.clear(); ui.folds.clear(); ui.checks.clear(); ui.specDraft = null; ui.error = "";
-  view = null;
-  syncSelection(); render(true); refresh();
+  if (!navigate(destinationAt({ agent: id, open: [], raw: [] }))) {
+    const selector = document.querySelector('select[aria-label="Agent"]'); if (selector) selector.value = ui.agent;
+  }
 }
 
 function el(tag, attrs, ...children) {
@@ -360,12 +363,64 @@ async function act(method, action, body) {
 ${LIVE}
 ${MARKDOWN}
 ${FOLD_POLLS}
-const capabilities = (${capabilitiesPage.toString()})({ el, api, readFolder: ${readCapabilityFolder.toString()} });
+const capabilities = (${capabilitiesPage.toString()})({ el, api, readFolder: ${readCapabilityFolder.toString()}, navigate: (route) => {
+  ui.capability = route;
+  writeDestination();
+} });
+function destination() {
+  return { agent: ui.agent, tab: ui.tab, open: [...ui.open], raw: [...ui.raw], capability: ui.capability, invalid: ui.invalidDestination };
+}
+// Another page of the console: a fresh capability screen and a valid destination.
+const destinationAt = (change) => ({ ...destination(), capability: destinations.empty().capability, invalid: false, ...change });
+function writeDestination(replace = false) {
+  const url = destinations.href(destination());
+  if (url === navigationUrl) return;
+  if (!replace) navigationIndex++;
+  history[replace ? "replaceState" : "pushState"]({ consoleNavigation: navigationIndex }, "", url);
+  navigationUrl = url;
+}
+function briefingDirty() { return !!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec)); }
+function navigate(next, traversed = false) {
+  const leaving = next.agent !== ui.agent || next.tab !== ui.tab || JSON.stringify(next.capability) !== JSON.stringify(ui.capability) || next.invalid !== ui.invalidDestination;
+  if (leaving) {
+    if (briefingDirty() && !confirm("Discard unsaved Briefing edits?")) return false;
+    if (!capabilities.leave()) return false;
+    ui.specDraft = null;
+  }
+  if (next.agent !== ui.agent) {
+    drafts.set(ui.agent, { draft: ui.draft, attempt: ui.attempt, messageError: ui.messageError });
+    Object.assign(ui, drafts.get(next.agent) || { draft: "", attempt: null, messageError: "" });
+    ui.agent = next.agent;
+    if (ui.agent) store.set("agent", ui.agent); else store.drop("agent");
+    view = null;
+    ui.windowN = 12;
+    ui.folds.clear(); ui.checks.clear();
+  }
+  ui.tab = next.tab; ui.capability = next.capability; ui.invalidDestination = next.invalid;
+  ui.open = new Set(next.open); ui.raw = new Set(next.raw); ui.error = "";
+  toEnd = false; revealLinkedPanels = true;
+  if (!traversed) writeDestination();
+  syncSelection(); render(true); void refresh();
+  return true;
+}
+addEventListener("popstate", (event) => {
+  if (revertingNavigation) { revertingNavigation = false; return; }
+  const index = event.state && Number.isInteger(event.state.consoleNavigation) ? event.state.consoleNavigation : 0;
+  const url = location.pathname + location.search;
+  const next = destinations.read(location.pathname, location.search);
+  if (navigate(next, true)) { navigationIndex = index; navigationUrl = url; }
+  else if (index !== navigationIndex) { revertingNavigation = true; history.go(navigationIndex - index); }
+  else history.replaceState({ consoleNavigation: navigationIndex }, "", navigationUrl);
+});
+addEventListener("beforeunload", (event) => { if (briefingDirty()) { event.preventDefault(); event.returnValue = true; } });
 function selectTab(tab) {
-  if (tab === ui.tab) return;
-  if (ui.tab === "capabilities" && !capabilities.leave()) return;
-  ui.tab = tab; render(true);
+  if (tab === ui.tab && !ui.invalidDestination) return;
+  if (!navigate(destinationAt({ tab }))) return;
   document.querySelector(tab === "capabilities" ? "#capabilities-root h1" : 'nav a[aria-current="page"]')?.focus({ preventScroll: true });
+}
+function followTab(event, tab) {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button) return;
+  event.preventDefault(); selectTab(tab);
 }
 // Every link that leaves the console opens a new tab that cannot reach back into this one.
 const AWAY = { target: "_blank", rel: "noopener noreferrer" };
@@ -402,8 +457,9 @@ function syncSelection() {
   following.stop();
   if (detailRequest) detailRequest.abort();
   detailRequest = null; view = null;
-  ui.open.clear(); ui.raw.clear(); ui.folds.clear(); ui.checks.clear();
-  ui.windowN = 12; timelineLength = 0; toEnd = true;
+  // Explicit URL references survive startup and generation changes; opaque IDs prevent row drift.
+  ui.folds.clear(); ui.checks.clear(); revealLinkedPanels = true;
+  ui.windowN = 12; timelineLength = 0; toEnd = !ui.open.size && !ui.raw.size;
   following = { key, up: false, stop: () => {} };
   if (key) following.stop = follow("/api/agents/" + encodeURIComponent(ui.agent) + "/stream", token,
     (next) => { if (selectionKey() !== key || following.key !== key) return; view = next; following.up = true; render(); },
@@ -434,7 +490,8 @@ async function refresh() {
     if (token !== auth) return;
     const changed = JSON.stringify(list) !== JSON.stringify(next);
     list = next;
-    if (!ui.agent) ui.agent = list.agents[0] ? list.agents[0].id : null;
+    if (!ui.agent && !ui.invalidDestination) ui.agent = list.agents[0] ? list.agents[0].id : null;
+    if (!ui.invalidDestination) writeDestination(true);
     syncSelection();
     if (changed) render();
     void refreshDetail();
@@ -464,7 +521,7 @@ function updateStartupStatus() {
 function startupPanel() {
   const entry = selected(), state = stateOf(entry);
   const title = state === "starting" ? "Starting agent" : state === "stopped" ? "Agent stopped" : state === "ready" ? "Loading agent" : ui.agent ? "Agent unavailable" : "No agents found";
-  const reason = state === "stopped" ? entry.reason : state === "starting" ? (entry.phase === "waiting-for-close" ? "Waiting for the previous attempt to close before starting." : "Opening the agent and checking its configured capabilities.") : state === "ready" ? "Waiting for this agent's view." : "Waiting for the host's agent roster. Other agents remain available in the selector.";
+  const reason = state === "stopped" ? entry.reason : state === "starting" ? (entry.phase === "waiting-for-close" ? "Waiting for the previous attempt to close before starting." : "Opening the agent and checking its configured capabilities.") : state === "ready" ? "Waiting for this agent's view." : list && ui.agent ? "Destination unavailable. This agent is not in the host's roster. Choose another agent in the selector. The requested URL has been kept." : "Waiting for the host's agent roster. Other agents remain available in the selector.";
   return el("div", { class: "page startup" }, el("main", {},
     band(title),
     el("section", { class: "card", "aria-label": "Agent startup" },
@@ -533,9 +590,8 @@ function header() {
     el("header", {}, el("div", { class: "row" },
       el("span", { class: "brand" }, el("span", { class: "sq brand-sq" + (!op ? " unready" : op.paused ? " paused" : ""), title: stateText }, pict("agent", 16)), "Agent console", el("span", { class: "sr-only", role: "status", text: stateText.toLowerCase() })),
       el("nav", { "aria-label": "Console" },
-        el("a", { href: "#", "aria-current": ui.tab === "timeline" ? "page" : null, onclick: (e) => { e.preventDefault(); selectTab("timeline"); }, text: "Timeline" }),
-        el("a", { href: "#", "aria-current": ui.tab === "briefing" ? "page" : null, onclick: (e) => { e.preventDefault(); selectTab("briefing"); }, text: "Briefing" }),
-        el("a", { href: "#", "aria-current": ui.tab === "capabilities" ? "page" : null, onclick: (e) => { e.preventDefault(); selectTab("capabilities"); }, text: "Capabilities" })),
+        [["timeline", "Timeline"], ["briefing", "Briefing"], ["capabilities", "Capabilities"]].map(([tab, text]) =>
+          el("a", { href: destinations.href(destinationAt({ tab })), "aria-current": ui.tab === tab ? "page" : null, onclick: (e) => followTab(e, tab), text }))),
       el("div", { class: "spacer" },
         el("span", { class: "rule" }),
         el("span", { class: "switcher" },
@@ -600,7 +656,36 @@ function attention() {
     }));
 }
 
-function toggle(set, key) { if (set.has(key)) set.delete(key); else set.add(key); render(); }
+function toggle(set, key) { if (set.has(key)) set.delete(key); else set.add(key); writeDestination(); render(); }
+const replyKey = (turn, reply, r) => turn.id + (reply.calls.length ? ":" + reply.calls[0].id : "r" + r);
+// References use immutable input and call identities, never their current row number.
+function resolvePanels() {
+  const reveal = revealLinkedPanels;
+  revealLinkedPanels = false;
+  if (!ui.open.size && !ui.raw.size) return false;
+  const open = new Map(), raw = new Map();
+  view.timeline.forEach((turn, i) => {
+    if (turn.kind === "event") raw.set(turn.id, [...raw.get(turn.id) || [], i]);
+    turn.replies.forEach((reply, r) => { if (reply.calls.length) { const key = replyKey(turn, reply, r); open.set(key, [...open.get(key) || [], i]); } });
+  });
+  for (const item of view.attention) if (item.kind === "abandoned") raw.set("a:" + item.id, [-1]);
+  let missing = false;
+  for (const [keys, available] of [[ui.open, open], [ui.raw, raw]]) for (const key of keys) {
+    const matches = available.get(key);
+    if (!matches || matches.length !== 1) missing = true;
+    else if (matches[0] >= 0) {
+      ui.windowN = Math.max(ui.windowN, view.timeline.length - matches[0]);
+      if (reveal) revealTurn(matches[0]);
+    }
+  }
+  return missing;
+}
+function unavailableDestination() {
+  return el("section", { class: "card", role: "status", "aria-label": "Destination unavailable" },
+    el("h2", { text: "Destination unavailable" }),
+    el("p", { text: "This link is invalid, or a requested action is no longer available in the current history. The requested URL has been kept. Choose an agent or page, or open its current timeline." }),
+    el("button", { onclick: () => navigate(destinationAt({ tab: "timeline", open: [], raw: [] })), text: "Open current timeline" }));
+}
 // Turn origins as wayfinding pictograms: black squares, except the operator's own yellow.
 const TAG = { poll: ["", "clock", "Automatic check-in"], event: ["", "bell", "Marketplace event"], operator: ["you", "person", "You"], resume: ["", "arrow", "Resumed work"], other: ["", "info", "Input"] };
 const countOf = (calls, outcome) => calls.filter((c) => c.outcome === outcome).length;
@@ -608,9 +693,9 @@ const countOf = (calls, outcome) => calls.filter((c) => c.outcome === outcome).l
 const headText = (turn) => turn.kind === "event" ? ((turn.event && turn.event.event) || "event") + (turn.event && turn.event.task_id ? " · task " + turn.event.task_id : "") : turn.text;
 function turnCard(turn, index) {
   const [cls, glyph, origin] = TAG[turn.kind];
-  const key = turnIdentity(turn, index);
+  const key = turn.id;
   const isEvent = turn.kind === "event";
-  return el("article", { class: "card turn", "data-i": index, "data-timeline-anchor": "turn:" + turnIdentity(turn, index) },
+  return el("article", { class: "card turn", "data-i": index, "data-timeline-anchor": "turn:" + key },
     el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "data-focus": "raw:" + key, "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),
       el("span", { class: "sr-only", text: origin + ":" }),
@@ -618,7 +703,7 @@ function turnCard(turn, index) {
       el("span", { class: "head-msg", text: headText(turn) }),
       isEvent ? el("span", { class: "raw-chev" }, icon(GLYPH.chevron, 15)) : null),
     ui.raw.has(key) ? el("div", { style: "padding:0 18px 12px" }, jsonBlock("e:" + key, turn.event === undefined ? turn.text : turn.event), el("div", { class: "small", text: "Shown as plain text. HTML in marketplace content is never rendered." })) : null,
-    el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, key + "r" + r, index === view.timeline.length - 1)) : el("div", { class: "small", text: "No reply yet." })));
+    el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, replyKey(turn, reply, r), index === view.timeline.length - 1)) : el("div", { class: "small", text: "No reply yet." })));
 }
 // live marks the newest turn: its call dots pulse so current failures stay visible,
 // while an idle page's history stands still.
@@ -654,11 +739,6 @@ function hue(turn) {
   return countOf(calls, "uncertain") ? "warn" : countOf(calls, "failed") ? "bad" : turn.kind;
 }
 const rank = (turn) => RANK[hue(turn)];
-// Keep identities tied to the original run start, not the clipped window or run end.
-function turnIdentity(turn, index) {
-  const call = turn.replies.flatMap((reply) => reply.calls)[0];
-  return JSON.stringify([turn.at, call ? call.id : [turn.kind, turn.text, turn.event, turn.at ? null : index]]);
-}
 function timelineRows() {
   const from = Math.max(0, view.timeline.length - ui.windowN);
   return foldPolls(view.timeline).flatMap((row) => row.kind === "turn"
@@ -676,7 +756,8 @@ function rememberDisclosure(node, set, key) {
 }
 const checkedAt = (at) => at ? new Date(at).toLocaleString() : "Unknown time";
 function pollRun(row) {
-  const tl = view.timeline, key = turnIdentity(tl[row.start], row.start), count = row.to - row.from;
+  // Key the run by its original start, not the clipped window or run end.
+  const tl = view.timeline, key = tl[row.start].id, count = row.to - row.from;
   const first = tl[row.from], last = tl[row.to - 1];
   const summary = el("summary", { "data-focus": "fold:" + key, "data-timeline-anchor": "fold:" + key, "data-i": row.from },
     el("span", { class: "sq", "aria-hidden": "true" }, pict("clock", 16)),
@@ -687,7 +768,7 @@ function pollRun(row) {
     el("span", { class: "raw-chev", "aria-hidden": "true" }, icon(GLYPH.chevron, 15)));
   return rememberDisclosure(el("details", { class: "poll-run", open: ui.folds.has(key) }, summary,
     tl.slice(row.from, row.to).map((turn, offset) => {
-      const index = row.from + offset, checkKey = turnIdentity(turn, index);
+      const index = row.from + offset, checkKey = turn.id;
       return rememberDisclosure(el("details", { class: "poll-check", open: ui.checks.has(checkKey) },
         el("summary", { "data-focus": "check:" + checkKey, "data-timeline-anchor": "check:" + checkKey, "data-i": index },
           el("span", { class: "mono small", text: checkedAt(turn.at) }), el("span", { text: "Check-in" }),
@@ -717,7 +798,7 @@ function timelineTurns(rows) {
       document.querySelector('.tick[data-i="' + (i + d) + '"]').focus();
     };
     // markRail() picks the one current mark, which is also the rail's one tab stop.
-    return el("button", { class: "tick " + turn.kind + (h === turn.kind ? "" : " " + h), "data-i": i, "data-focus": "tick:" + turnIdentity(turn, i), tabindex: "-1", "aria-current": "false", "aria-label": (where ? where + " · " : "") + who + ", " + rel(turn.at), onclick: () => jumpTo(i), onkeydown },
+    return el("button", { class: "tick " + turn.kind + (h === turn.kind ? "" : " " + h), "data-i": i, "data-focus": "tick:" + turn.id, tabindex: "-1", "aria-current": "false", "aria-label": (where ? where + " · " : "") + who + ", " + rel(turn.at), onclick: () => jumpTo(i), onkeydown },
       el("span", { class: "peek" }, where ? el("span", { class: "small", text: where }) : null, el("span", { class: "small mono", text: who + " · " + rel(turn.at) }), el("span", { class: "peek-text", text: said })));
   };
   return el("div", { class: "railed" },
@@ -734,14 +815,16 @@ function showFrom(i) {
   ui.windowN = view.timeline.length - Math.max(0, i);
   render();
 }
+// Open the polling run and check that hide turn i, if any. Returns that run.
+function revealTurn(i) {
+  const row = foldPolls(view.timeline).find((row) => row.kind === "unchanged" && row.from <= i && i < row.to);
+  if (row) { ui.folds.add(view.timeline[row.from].id); ui.checks.add(view.timeline[i].id); }
+  return row;
+}
 function jumpTo(i) {
   // A turn that was not mounted is far away: go there at once rather than glide.
   const far = i < view.timeline.length - ui.windowN;
-  const row = foldPolls(view.timeline).find((row) => row.kind === "unchanged" && row.from <= i && i < row.to);
-  if (row) {
-    ui.folds.add(turnIdentity(view.timeline[row.from], row.from));
-    ui.checks.add(turnIdentity(view.timeline[i], i));
-  }
+  const row = revealTurn(i);
   if (far) showFrom(i); else if (row) render();
   document.querySelector('.turn[data-i="' + i + '"]')?.scrollIntoView({ block: "start", behavior: far ? "auto" : smooth() });
   markRail(i);
@@ -1062,7 +1145,7 @@ function timelineTab() {
         band("Standing orders", "· " + op.orders.length),
         el("div", { class: "card" },
           op.orders.map((order) => el("div", { text: order })),
-          el("a", { href: "#", style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => { e.preventDefault(); ui.tab = "briefing"; render(); } }, "Edit in Briefing", pict("arrow", 14))))));
+          el("a", { href: destinations.href(destinationAt({ tab: "briefing" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "briefing") }, "Edit in Briefing", pict("arrow", 14))))));
 }
 
 function briefingTab() {
@@ -1185,9 +1268,10 @@ function render(force = false) {
   if (!changed && timeline) ui.windowN += Math.max(0, view.timeline.length - timelineLength);
   timelineLength = timeline ? view.timeline.length : 0;
   renderedSelection = current;
+  const missingPanels = ready() && view && ui.tab === "timeline" ? resolvePanels() : false;
   app.replaceChildren(...(!token ? [unlock()] :
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null,
-      ui.tab === "capabilities" && ui.agent && selected() ? capabilities.mount(ui.agent, selected().name || ui.agent) : !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+      ui.invalidDestination || missingPanels ? el("div", { class: "page" }, unavailableDestination()) : ui.tab === "capabilities" && ui.agent && selected() ? capabilities.mount(ui.agent, selected().name || ui.agent, ui.capability) : !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
   updateStartupStatus();
   if (activeTag === "SELECT" && changed) document.querySelector('select[aria-label="Agent"]')?.focus({ preventScroll: true });
   // The timeline opens at its newest turn, as a chat does.

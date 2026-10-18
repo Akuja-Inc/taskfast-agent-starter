@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { consoleNavigation } from "./console-navigation.js";
 import { PAGE } from "./console-page.js";
 import type { EventWork, MarketplaceAgent } from "./core/agent.js";
 import type { Action } from "./core/policy.js";
@@ -156,6 +157,8 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
   };
 }
 
+const { read: readDestination } = consoleNavigation();
+
 // The page may run only its own inline code and talk only to this server.
 const PAGE_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json") {
@@ -201,15 +204,19 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
   let port = 0;
   const open = new Set<{ id: string; end(): void; settled(): Promise<void> }>();
   const own = () => [`127.0.0.1:${port}`, `localhost:${port}`];
-  const server = createServer((req, res) => {
+  // A whole expanded transcript window can exceed Node's default 16 KiB request budget.
+  // Keep a finite loopback-only bound while allowing those navigation URLs to reload.
+  const server = createServer({ maxHeaderSize: 128 * 1024 }, (req, res) => {
     void handle(req, res).catch((error: unknown) => send(res, 500, { error: error instanceof Error ? error.message : String(error) }));
   });
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!own().includes(req.headers.host ?? "")) return send(res, 403, { error: "unknown host" });
     if (req.method === "OPTIONS") return send(res, 405, { error: "no cross-origin requests" });
     if (req.headers.origin !== undefined && !own().some((host) => req.headers.origin === `http://${host}`)) return send(res, 403, { error: "unknown origin" });
+    // Check the raw path: URL parsing would collapse dot segments or turn backslashes into slashes.
+    const rawPath = (req.url ?? "/").split("?", 1)[0];
+    if (req.method === "GET" && !readDestination(rawPath, "").invalid) return send(res, 200, PAGE, "text/html");
     const path = new URL(req.url ?? "/", "http://console").pathname;
-    if (req.method === "GET" && path === "/") return send(res, 200, PAGE, "text/html");
     if (!sameToken(req.headers.authorization, o.token)) return send(res, 401, { error: "missing or wrong console token" });
     if (req.method === "GET" && path === "/api/agents") {
       return send(res, 200, { env: o.env, agents: o.roster?.() ?? o.agents().map(({ id, spec }) => ({ id, role: spec.role })) });

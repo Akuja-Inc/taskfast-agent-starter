@@ -161,6 +161,68 @@ it("only answers this machine's own pages, and only with the token", async () =>
   expect(Object.keys(allowed.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
 });
 
+it.each(["/agents/foo", "/agents/foo?tab=briefing", "/agents/copy%20editor", "/agents/%E6%96%87%E5%AD%97", "/agents/nobody?tab=timeline"])("serves the same token-free shell on direct GET and refresh of %s", async (path) => {
+  const { port } = await serve();
+  const root = await call(port, "/");
+  for (let refresh = 0; refresh < 2; refresh++) {
+    const page = await call(port, path);
+    expect(page.status).toBe(200);
+    expect(page.text).toBe(root.text);
+    expect(page.text).not.toContain(token);
+    expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(page.headers["cache-control"]).toBe("no-store");
+    expect(page.headers["content-security-policy"]).toBe(root.headers["content-security-policy"]);
+    expect(page.headers["x-content-type-options"]).toBe("nosniff");
+    expect(page.headers["referrer-policy"]).toBe("no-referrer");
+    expect(Object.keys(page.headers).filter((name) => name.startsWith("access-control-"))).toEqual([]);
+  }
+  expect((await call(port, "/api/agents/foo")).status).toBe(401);
+  expect((await call(port, "/api/agents/nobody", { headers: auth })).status).toBe(404);
+});
+
+it("serves a fully expanded transcript-window URL beyond Node's default 16 KiB header budget", async () => {
+  const { port } = await serve();
+  const query = new URLSearchParams();
+  for (let index = 0; index < 200; index++) {
+    const id = index.toString(16).padStart(64, "0");
+    query.append("open", id + ":call-" + index);
+    query.append("raw", id);
+  }
+  const path = "/agents/foo?" + query;
+  expect(Buffer.byteLength(path)).toBeGreaterThan(16 * 1024);
+  const page = await call(port, path);
+  expect(page.status).toBe(200);
+  expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
+  expect(page.text).not.toContain(token);
+});
+
+it.each(["/", "/agents/foo?tab=briefing", "/agents/nobody"])("keeps Host, Origin and method protections on the shell at %s", async (path) => {
+  const { port } = await serve();
+  expect((await call(port, path, { headers: { host: `rebound.example:${port}` } })).status).toBe(403);
+  expect((await call(port, path, { headers: { origin: "https://elsewhere.example" } })).status).toBe(403);
+  expect((await call(port, path, { method: "OPTIONS" })).status).toBe(405);
+  expect((await call(port, path, { headers: { host: `localhost:${port}`, origin: `http://localhost:${port}` } })).status).toBe(200);
+  for (const headers of [{}, auth]) {
+    const post = await call(port, path, { method: "POST", headers });
+    expect(post.status).toBe(headers === auth ? 404 : 401);
+    expect(post.headers["content-type"]).toBe("application/json; charset=utf-8");
+  }
+});
+
+it.each([
+  "/agents", "/agents/", "/agents/foo/", "/agents/foo/bar", "/agents/foo/bar?tab=briefing",
+  "/agents/foo%2fbar", "/agents/foo%2Fbar", "/agents/foo%5cbar", "/agents/foo%5Cbar", "/agents/foo\\bar",
+  "/agents/.", "/agents/..", "/agents/%2e", "/agents/%2E%2E", "/agents/.%2e",
+  "/agents/foo/../..", "/agents/foo/%2e%2e/%2e%2e", "/agents/%", "/agents/%2", "/agents/%GG", "/agents/%C0%AF",
+])("does not serve a shell for nested, malformed or unsafe path %s", async (path) => {
+  const { port } = await serve();
+  for (const headers of [{}, auth]) {
+    const response = await call(port, path, { headers });
+    expect(response.status).toBe(headers === auth ? 404 : 401);
+    expect(response.headers["content-type"]).toBe("application/json; charset=utf-8");
+  }
+});
+
 it("streams only to this machine's own pages, only with the token in the header, and offers no CORS", async () => {
   const { port } = await serve();
   expect((await call(port, "/api/agents/foo/stream")).status).toBe(401);

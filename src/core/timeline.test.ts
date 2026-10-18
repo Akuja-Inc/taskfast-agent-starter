@@ -68,6 +68,51 @@ it("groups a transcript into turns by what started them, with each reply's tool 
   expect(turns[2].replies[0].calls[0].outcome).toBe("uncertain");
 });
 
+it("keeps opaque turn IDs stable as replies arrive, the transcript window shifts and stored messages reload", () => {
+  const input = user("Message from your operator:\nprivate navigation input /?#", 2000);
+  const messages: Message[] = [user("Earlier input", 1000), fauxAssistantMessage("Earlier reply"), input];
+  const id = buildTimeline(messages)[1].id;
+  expect(id).toMatch(/^[a-f0-9]{64}$/);
+  expect(id).toBe("87e4e674615983446a1a0d230e2048211ad4579ff63e094c33ba4cad4c0aa319");
+  expect(id).not.toContain("private navigation input");
+
+  messages.push(fauxAssistantMessage([fauxToolCall("me", {}, { id: "stable-call" })], { stopReason: "toolUse" }));
+  expect(buildTimeline(messages)[1].id).toBe(id);
+  messages.push(result("stable-call", "me", '{"profile":{}}'), fauxAssistantMessage("Finished"));
+  expect(buildTimeline(messages)[1].id).toBe(id);
+  expect(buildTimeline(messages.slice(2))[0].id).toBe(id);
+  expect(buildTimeline(structuredClone(messages))[1].id).toBe(id);
+  expect(buildTimeline([input])[0].id).toBe(id);
+});
+
+it("uses the originating timestamp and full input, preserving duplicate identities rather than adding an index", () => {
+  const input = "Message from your operator:\nSame display text";
+  const turns = buildTimeline([
+    user(input, 1000),
+    user(input, 2000),
+    user(`${input}!`, 1000),
+    user("Same display text", 1000),
+    user(input, 1000),
+  ]);
+  expect(new Set(turns.slice(0, 4).map((turn) => turn.id)).size).toBe(4);
+  expect(turns[0].text).toBe(turns[3].text);
+  expect(turns[4].id).toBe(turns[0].id);
+});
+
+it("includes non-text content in the identity even when the displayed text is unchanged", () => {
+  const turns = buildTimeline([
+    { role: "user", timestamp: 1000, content: [{ type: "text", text: "Look at this" }, { type: "image", mimeType: "image/png", data: "aW1hZ2Ux" }] },
+    { role: "user", timestamp: 1000, content: [{ type: "text", text: "Look at this" }, { type: "image", mimeType: "image/png", data: "aW1hZ2Uy" }] },
+  ]);
+  expect(turns[0].text).toBe(turns[1].text);
+  expect(turns[0].id).not.toBe(turns[1].id);
+  for (const turn of turns) {
+    expect(turn.id).toMatch(/^[a-f0-9]{64}$/);
+    expect(turn.id).not.toContain("Look at this");
+    expect(turn.id).not.toContain("aW1hZ2U");
+  }
+});
+
 it("shows a skipped repeat of an uncertain write as uncertain, while a skipped repeat of a done write stays ok", () => {
   const turns = buildTimeline([
     user("Check your marketplace work", 1000),
