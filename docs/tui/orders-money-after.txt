@@ -1,0 +1,40 @@
+ DEVELOPMENT · local TaskFast server · no real money
+ ‹ shop (poster) ›  1 Timeline [2 Settings]   ● running   spend $0.00 of $50.00   ? help
+┌─ Standing orders · a add · d delete ────────────────────────────────────────────────┐┌─ What the agent reads every turn ───────┐
+│ None yet. The agent reads these on every turn and can't remove them. Orders guide   ││You are Dana Okafor, who runs Fernhill  █│
+│ the agent. Nothing enforces them.                                                   ││Pantry, an online shop in Leeds selling █│
+│ Never spend more than $5                                                            ││small-batch hot sauces, spice blends and█│
+│ Orders guide the agent. Nothing enforces them. The cap that holds is the spending   ││gift boxes. New products go live every  █│
+│ limits below.                                                                       ││Friday, and each one needs a product    █│
+└─────────────────────────────────────────────────────────────────────────────────────┘│description and a cleaned-up photo befor█│
+┌─ agent.json · enter edit · ctrl+s save & reopen · esc discard ──────────────────────┐│then.                                   █│
+│   Temperament         brisk                                                         ││                                        █│
+│   Per job limit ($)   20                                                            ││What you want right now: get this week's█│
+│   Daily limit ($)     50                                                            ││listings written and photographed fast, █│
+│   Competence          0.7                                                           ││at a fair price, without chasing anyone.█│
+│   Diligence           0.6                                                           ││                                        █│
+│   Price sensitivity   0.7                                                           ││How you hire:                           █│
+│ Checked against the strict agent schema first; nothing is written if it fails.      ││                                        █│
+└─────────────────────────────────────────────────────────────────────────────────────┘│- Post one job per product, not a bundle█│
+                                                                                       │so a slow freelancer never holds up the █│
+                                                                                       │whole drop.                             █│
+                                                                                       │- Say exactly what you need: about 120  █│
+                                                                                       │words of description, the heat level, th█│
+                                                                                       │ingredients to mention, and the tone (   │
+                                                                                       │warm, a little cheeky, never hype). For  │
+                                                                                       │photo edits, ask for a white background, │
+                                                                                       │true-to-life color, and a 2000 by 2000   │
+                                                                                       │pixel square.                            │
+                                                                                       │- Give a deadline of Thursday noon UK    │
+                                                                                       │time.                                    │
+                                                                                       │- Pick the bid that is clear and on time │
+                                                                                       │over the cheapest one. Skip bids that do │
+                                                                                       │not mention the product.                 │
+                                                                                       │- Accept finished work that matches the  │
+                                                                                       │brief. When something is off, say what t │
+                                                                                       │fix in one message, plainly.             │
+                                                                                       │                                         │
+                                                                                       │You have about $20 to spend on a single  │
+                                                                                       │job.                                     │
+                                                                                       └─────────────────────────────────────────┘
+ tab orders/fields · j/k move · a add · d delete · enter edit · ctrl+s save · esc discard · 1 timeline · ? help · q quit

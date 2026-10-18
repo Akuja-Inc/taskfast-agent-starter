@@ -7,6 +7,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import type { ConsoleView } from "../console.js";
 import { follow } from "../console-live.js";
 import { markdown, type Block, type List, type Run } from "../console-markdown.js";
+import { mentionsMoney } from "../console-orders.js";
 import { actionError, FIELDS, fieldValue, initialUi, messageAttempt, messageBody, press, setField, withdrawnSelection, type Effect, type Field, type MessageAttempt, type MessageMode, type Ui } from "./keys.js";
 import { clean, environmentBanner, screen, startupScreen, type Screen } from "./screen.js";
 import { roster, sameAgent, startupAllowed, type Listing } from "./link.js";
@@ -254,6 +255,8 @@ export function App(p: AppProps) {
   }
   // Leaves the line after this key event, so its enter isn't also read as a command.
   const done = () => setTimeout(() => setUi({ ...ui(), editing: undefined }), 0);
+  // The new order's text as typed, for the money hint; cleared whenever the line closes.
+  const [orderDraft, setOrderDraft] = createSignal("");
 
   useKeyboard((event) => {
     const key = keyName(event);
@@ -266,7 +269,7 @@ export function App(p: AppProps) {
         event.preventDefault();
         const next = press(ui(), key, view(), list()?.agents.length ?? 0, agent(), busy());
         if (next.effect) void run(next.effect);
-      } else if (key === "escape") { event.preventDefault(); setUi({ ...ui(), editing: undefined }); }
+      } else if (key === "escape") { event.preventDefault(); setOrderDraft(""); setUi({ ...ui(), editing: undefined }); }
       return;
     }
     const next = press(ui(), key, view(), list()?.agents.length ?? 0, agent(), busy());
@@ -465,11 +468,12 @@ export function App(p: AppProps) {
               <box flexDirection={narrow() ? "column" : "row"} flexGrow={1}>
                 <box flexDirection="column" flexGrow={1}>
                   <box flexDirection="column" border borderColor={ui().panel === "orders" ? ACCENT : MUTED} title=" Standing orders · a add · d delete " paddingX={1}>
-                    <For each={s().sidebar.orders} fallback={<text fg={MUTED}>None yet. The agent reads these on every turn and can't remove them.</text>}>
+                    <For each={s().sidebar.orders} fallback={<text fg={MUTED}>None yet. The agent reads these on every turn and can't remove them. Orders guide the agent. Nothing enforces them.</text>}>
                       {(order, at) => <text>{`${ui().panel === "orders" && at() === ui().order ? "▶ " : "  "}${at() + 1}. ${order}`}</text>}
                     </For>
                     <Show when={ui().editing === "order"}>
-                      <input focused placeholder="New standing order; enter adds it" onSubmit={(text: unknown) => { void sendOrder(String(text)); done(); }} />
+                      <input focused placeholder="New standing order; enter adds it" onInput={(text: string) => setOrderDraft(text)} onSubmit={(text: unknown) => { void sendOrder(String(text)); setOrderDraft(""); done(); }} />
+                      <Show when={mentionsMoney(orderDraft())}><text fg={WARN}>Orders guide the agent. Nothing enforces them. The cap that holds is the spending limits below.</text></Show>
                     </Show>
                   </box>
                   <box flexDirection="column" border borderColor={ui().panel === "fields" ? ACCENT : MUTED} title=" agent.json · enter edit · ctrl+s save & reopen · esc discard " paddingX={1}>

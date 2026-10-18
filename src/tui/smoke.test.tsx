@@ -573,6 +573,22 @@ test("folds the sidebar away below 100 columns", async () => {
   setup.renderer.destroy();
 }, 30_000);
 
+// gh#120: orders guide the agent; a dollar amount in a new order says so.
+test("says orders are not enforced, and hints at limits while a new order names a dollar amount", async () => {
+  const { setup, until, keys } = await draw(130, 48);
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    keys.pressKey("2");
+    await until((frame) => frame.includes("Nothing enforces them."));
+    keys.pressKey("a");
+    await until(() => setup.renderer.currentFocusedEditor !== null);
+    await keys.typeText("Skip phone jobs");
+    expect(await until((frame) => frame.includes("Skip phone jobs"))).not.toContain("The cap that holds");
+    await keys.typeText(" over $5");
+    await until((frame) => frame.includes("The cap that holds"));
+  } finally { setup.renderer.destroy(); }
+}, 30_000);
+
 test("drops a stale view for the can't-reach screen when the host stops", async () => {
   const other = await startHost();
   const { setup, until, keys } = await draw(120, 30, other.link.origin, other.link.hash.slice("#token=".length));
