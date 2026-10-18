@@ -17,7 +17,18 @@ class FakeNode {
   dataset: Record<string, string> = {};
   classList = { add() {}, remove() {}, toggle() {} };
   constructor(tag: string) { this.tagName = tag.toUpperCase(); }
-  setAttribute(key: string, value: string) { this.attributes[key] = value; }
+  setAttribute(key: string, value: string) { this.attributes[key] = value; if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())] = value; }
+  get open() { return this.hasAttribute('open'); }
+  set open(value: boolean) { if (value) this.attributes.open = ''; else delete this.attributes.open; }
+  rect = { top: 150, bottom: 250 };
+  getBoundingClientRect() { return this.rect; }
+  getClientRects() {
+    let child: FakeNode = this;
+    for (let parent = this.parentElement; parent; child = parent, parent = parent.parentElement) {
+      if (parent.tagName === 'DETAILS' && !parent.open && child.tagName !== 'SUMMARY') return [];
+    }
+    return [this.rect];
+  }
   getAttribute(key: string) { return key in this.attributes ? this.attributes[key] : null; }
   hasAttribute(key: string) { return key in this.attributes; }
   get hidden() { return this.hasAttribute('hidden'); }
@@ -29,13 +40,16 @@ class FakeNode {
   insertBefore(node: FakeNode, before: unknown) { node.remove(); node.parentElement = this; const index = this.children.indexOf(before); this.children.splice(index < 0 ? this.children.length : index, 0, node); }
   contains(node: unknown): boolean { return node === this || this.children.some((child) => child instanceof FakeNode && child.contains(node)); }
   matches(selector: string): boolean {
-    const tag = /^[a-z]+/i.exec(selector)?.[0];
-    const id = /#([\w-]+)/.exec(selector)?.[1];
-    const classes = [...selector.matchAll(/\.([\w-]+)/g)].map((match) => match[1]);
-    return (!tag || this.tagName === tag.toUpperCase()) && (!id || this.getAttribute('id') === id) && classes.every((cls) => (this.getAttribute('class') || '').split(' ').includes(cls));
+    const attrs = [...selector.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)];
+    const base = selector.replace(/\[[^\]]*\]/g, '');
+    const tag = /^[a-z]+/i.exec(base)?.[0];
+    const id = /#([\w-]+)/.exec(base)?.[1];
+    const classes = [...base.matchAll(/\.([\w-]+)/g)].map((match) => match[1]);
+    return (!tag || this.tagName === tag.toUpperCase()) && (!id || this.getAttribute('id') === id) && classes.every((cls) => (this.getAttribute('class') || '').split(' ').includes(cls)) && attrs.every(([, name, value]) => value === undefined ? this.hasAttribute(name) : this.getAttribute(name) === value);
   }
   querySelectorAll(selector: string): FakeNode[] {
-    const parts = selector.split(' '), last = parts.pop()!;
+    if (selector.includes(', ')) return selector.split(', ').flatMap((part) => this.querySelectorAll(part));
+    const parts = selector.match(/(?:\[[^\]]*\]|[^\s])+/g) || [], last = parts.pop()!;
     return this.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : []).filter((node) => node.matches(last) && (!parts.length || !!node.parentElement?.closest(parts.join(' '))));
   }
   querySelector(selector: string): FakeNode | null { return this.querySelectorAll(selector)[0] || null; }
@@ -64,22 +78,23 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
     createElement: (tag: string) => { const node = new FakeNode(tag); node.onFocus = () => { fakeDocument.activeElement = node; }; return node; },
     createElementNS: () => new FakeNode("svg"),
     activeElement: null as FakeNode | null,
+    scrollMoves: [] as number[],
     body: new FakeNode("body"),
     documentElement: { dataset: {} as Record<string, string>, style: { setProperty() {} }, scrollHeight: 0 },
     querySelector: (selector: string) => app.querySelector(selector),
-    querySelectorAll: (selector: string) => selector === '.turn[data-i]' ? [] : app.querySelectorAll(selector),
+    querySelectorAll: (selector: string) => app.querySelectorAll(selector),
   };
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
-    "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval",
-    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, render, refresh, selectAgent, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
+    "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval", "innerHeight", "scrollY", "scrollBy",
+    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
   );
   return boot(
     fakeDocument, FakeNode, storage, storage,
     { hash: "", host: "127.0.0.1", pathname: "/" }, { replaceState() {} },
     () => {}, class { observe() {} disconnect() {} },
-    fetch, () => ({ matches: false }), () => 0,
-  ) as { refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
+    fetch, () => ({ matches: false }), () => 0, 800, 0, (_x: number, y: number) => { fakeDocument.scrollMoves.push(y); },
+  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; windowN: number; draft: string; tab: string; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
 };
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
@@ -87,6 +102,149 @@ const demoView = () => ({
   operator: { paused: true, frozen: false, messages: [], orders: [] }, queuedMessages: [],
   events: {}, attention: [], timeline: [], actions: {}, spend: {}, notes: [],
   spec: { model: 'faux:test', instructions: 'You are Demo.', limits: { dailyUsd: 50 } },
+});
+
+const pollingHistory = (count: number) => Array.from({ length: count }, (_, i) => ({
+  kind: 'poll', complete: true, at: 1_750_000_000_000 + i * 900_000, text: 'Check your marketplace work',
+  replies: [{ text: '', tasks: [], calls: [{ id: 'read-' + i, name: 'task_list', arguments: { kind: 'open' }, outcome: 'ok', comparable: true, result: '{"tasks":[],"note":"<script>unsafe</script>"}' }] }, { text: 'No action <img src=x>.', tasks: [], calls: [] }],
+}));
+const openDetails = (details: FakeNode, open = true) => { details.open = open; details.listeners.toggle[0]({ target: details }); };
+
+it("folds checks into a native disclosure with original counts, checked scope and safe results", () => {
+  const page = bootPage();
+  const timeline = pollingHistory(4), original = structuredClone(timeline);
+  page.setView({ ...demoView(), timeline }); page.render();
+  const group = page.app.querySelector('details.poll-run')!;
+  expect(group).not.toBeNull();
+  expect(group.open).toBe(false);
+  expect(group.querySelector('summary')!.textContent).toContain('No changes3 checks');
+  expect(group.querySelector('summary')!.textContent).toContain('Task lists');
+  expect(group.querySelector('summary')!.textContent).toContain('Last checked');
+  expect(page.app.textContent).toContain('4 turns · 4 loaded · 1 unchanged group');
+  expect(page.app.querySelectorAll('.tick')).toHaveLength(4);
+  openDetails(group);
+  const check = group.querySelector('details.poll-check')!; openDetails(check);
+  const calls = check.querySelector('.calls-chip')!; calls.focus(); calls.listeners.click[0]({});
+  expect(page.app.textContent).toContain('No action <img src=x>.');
+  expect(page.app.textContent).toContain('"note": "<script>unsafe</script>"');
+  expect(page.document.activeElement?.getAttribute('data-focus')).toBe(calls.getAttribute('data-focus'));
+  expect(page.document.activeElement).not.toBe(calls);
+  expect(page.document.activeElement?.focusCalls.at(-1)).toEqual({ preventScroll: true });
+  expect(page.app.querySelector('img')).toBeNull(); expect(page.app.querySelector('script')).toBeNull();
+  expect(timeline).toEqual(original);
+});
+
+it("clips folds to mounted originals, uses singular checks and preserves group state when loading earlier", () => {
+  const page = bootPage(); page.setView({ ...demoView(), timeline: pollingHistory(20) }); page.render();
+  const group = page.app.querySelector('details.poll-run')!;
+  expect(group.querySelector('summary')!.textContent).toContain('12 checks');
+  expect(group.querySelectorAll('.poll-check')).toHaveLength(12);
+  expect(page.app.textContent).toContain('20 turns · 12 loaded · 1 unchanged group');
+  openDetails(group); page.showFrom(0);
+  expect(page.app.querySelector('details.poll-run')!.open).toBe(true);
+  expect(page.app.querySelector('details.poll-run summary')!.textContent).toContain('19 checks');
+  page.setView({ ...demoView(), timeline: pollingHistory(2) }); page.render();
+  expect(page.app.querySelector('details.poll-run summary')!.textContent).toContain('1 check');
+  expect(page.app.querySelector('details.poll-run summary')!.textContent).not.toContain('1 checks');
+});
+
+it("keeps disclosures and focus through growth, and rail jumps reveal the original turn", () => {
+  const page = bootPage(); page.setView({ ...demoView(), timeline: pollingHistory(20) }); page.render();
+  const group = page.app.querySelector('details.poll-run')!; openDetails(group);
+  const check = group.querySelector('.poll-check')!; openDetails(check);
+  const summary = check.querySelector('summary')!; summary.focus();
+  const key = summary.getAttribute('data-focus');
+  page.setView({ ...demoView(), timeline: pollingHistory(21) }); page.render();
+  expect(page.document.activeElement?.getAttribute('data-focus')).toBe(key);
+  expect(page.document.activeElement).not.toBe(summary);
+  expect(page.app.querySelector('details.poll-run')!.open).toBe(true);
+  expect(page.app.querySelector('.poll-check')!.open).toBe(true);
+  expect(page.app.querySelector('details.poll-run summary')!.textContent).toContain('13 checks');
+  page.jumpTo(2);
+  const revealed = page.app.querySelector('.turn[data-i="2"]')!;
+  expect(revealed.getClientRects()).toHaveLength(1);
+  expect(revealed.closest('.poll-check')!.open).toBe(true);
+});
+
+it("refreshes a focused fold summary and keeps its scroll anchor when loading older originals", () => {
+  const page = bootPage(); page.setView({ ...demoView(), timeline: pollingHistory(20) }); page.render();
+  const summary = page.app.querySelector('details.poll-run summary')!; summary.focus();
+  summary.rect = { top: 110, bottom: 200 };
+  page.showFrom(0);
+  expect(page.document.scrollMoves.at(-1)).toBe(40);
+  expect(page.document.activeElement?.getAttribute('data-focus')).toBe(summary.getAttribute('data-focus'));
+  expect(page.document.activeElement?.textContent).toContain('19 checks');
+  page.setView({ ...demoView(), timeline: pollingHistory(21) }); page.render();
+  expect(page.document.activeElement?.textContent).toContain('20 checks');
+});
+
+it("marks closed groups and visible check-ins in the rail, never hidden original cards", () => {
+  const page = bootPage(); page.setView({ ...demoView(), timeline: pollingHistory(20) }); page.render();
+  expect(page.app.querySelector('.tick[aria-current="true"]')!.getAttribute('data-i')).toBe('8');
+  const group = page.app.querySelector('.poll-run')!; openDetails(group);
+  const summaries = group.querySelectorAll('summary');
+  summaries[0].rect = { top: -60, bottom: -10 };
+  summaries[1].rect = { top: 10, bottom: 80 };
+  // Turn 8's original card still has the default visible-looking geometry, but its
+  // native details parent is closed. The next check-in, not that card, is current.
+  page.onScroll();
+  expect(page.app.querySelector('.tick[aria-current="true"]')!.getAttribute('data-i')).toBe('9');
+  openDetails(group, false); summaries[0].rect = { top: 150, bottom: 250 }; page.onScroll();
+  expect(page.app.querySelector('.tick[aria-current="true"]')!.getAttribute('data-i')).toBe('8');
+});
+
+it("keeps disclosure and tool focus identities when transcript indices shift, but not when the baseline disappears", () => {
+  const page = bootPage(), timeline = pollingHistory(4);
+  page.setView({ ...demoView(), timeline: [{ kind: 'operator', at: 10, text: 'Start', replies: [] }, ...timeline] }); page.render();
+  const group = page.app.querySelector('.poll-run')!; openDetails(group);
+  const check = group.querySelector('.poll-check')!; openDetails(check);
+  const calls = check.querySelector('.calls-chip')!; calls.focus(); calls.listeners.click[0]({});
+  const key = page.document.activeElement?.getAttribute('data-focus');
+  page.setView({ ...demoView(), timeline }); page.render();
+  expect(page.app.querySelector('.poll-run')!.open).toBe(true);
+  expect(page.app.querySelector('.poll-check')!.open).toBe(true);
+  expect(page.document.activeElement?.getAttribute('data-focus')).toBe(key);
+  expect(page.document.activeElement?.getAttribute('aria-expanded')).toBe('true');
+  expect(page.app.querySelector('.poll-check .turn')!.getAttribute('data-i')).toBe('1');
+  page.setView({ ...demoView(), timeline: timeline.slice(1) }); page.render();
+  expect(page.app.querySelector('.poll-run')!.open).toBe(false);
+  expect(page.app.querySelector('.poll-check')!.open).toBe(false);
+});
+
+it("keeps a focused original visible when completion moves it into a fold", () => {
+  const page = bootPage(), timeline = pollingHistory(4);
+  timeline[3].complete = false;
+  page.setView({ ...demoView(), timeline }); page.render();
+  const calls = page.app.querySelector('.turn[data-i="3"] .calls-chip')!;
+  calls.focus(); calls.listeners.click[0]({});
+  const key = page.document.activeElement?.getAttribute('data-focus');
+  page.setView({ ...demoView(), timeline: pollingHistory(4) }); page.render();
+  expect(page.app.querySelector('.poll-run')!.open).toBe(true);
+  expect(page.app.querySelector('.turn[data-i="3"]')!.closest('.poll-check')!.open).toBe(true);
+  expect(page.document.activeElement?.getAttribute('data-focus')).toBe(key);
+  expect(page.document.activeElement?.getClientRects()).toHaveLength(1);
+});
+
+it("preserves rail focus on Enter activation and live refresh", () => {
+  const page = bootPage(); page.setView({ ...demoView(), timeline: pollingHistory(4) }); page.render();
+  const tick = page.app.querySelector('.tick[data-i="2"]')!;
+  tick.focus(); tick.listeners.click[0]({});
+  expect(page.document.activeElement).not.toBe(tick);
+  expect(page.document.activeElement?.getAttribute('class')).toContain('tick');
+  expect(page.document.activeElement?.getAttribute('data-i')).toBe('2');
+  page.setView({ ...demoView(), timeline: pollingHistory(5) }); page.render();
+  expect(page.document.activeElement?.getAttribute('class')).toContain('tick');
+  expect(page.document.activeElement?.getAttribute('data-i')).toBe('2');
+});
+
+it("clears fold and check state on generation changes and agent selection", () => {
+  const page = bootPage(); page.setView({ ...demoView(), timeline: pollingHistory(3) }); page.render();
+  const group = page.app.querySelector('details.poll-run')!; openDetails(group); openDetails(group.querySelector('.poll-check')!);
+  expect(page.ui.folds.size).toBe(1); expect(page.ui.checks.size).toBe(1);
+  page.setRoster([{ id: 'shop', state: 'ready', generation: 1 }, { id: 'other', state: 'starting', generation: 1 }]);
+  expect(page.ui.folds.size).toBe(0); expect(page.ui.checks.size).toBe(0);
+  page.ui.folds.add('old'); page.ui.checks.add('old'); page.selectAgent('other');
+  expect(page.ui.folds.size).toBe(0); expect(page.ui.checks.size).toBe(0);
 });
 
 it("renders starting and stopped agents without fetching details or admitting a draft", async () => {
@@ -687,7 +845,7 @@ it("renders the event turn head as a native button", () => {
   expect(head.listeners.keydown ?? []).toHaveLength(0);
   // A native button fires click on Enter and Space by itself, so no keydown shim remains.
   head.listeners.click[0]({});
-  expect(ui.raw.has("t0")).toBe(true);
+  expect(ui.raw.size).toBe(1);
 });
 
 it("keeps a non-event turn head as a plain row", () => {
