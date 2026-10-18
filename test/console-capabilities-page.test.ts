@@ -1,12 +1,9 @@
-import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PAGE } from "../src/console-page.js";
 import { readCapabilityFolder } from "../src/console-capabilities-page.js";
 import type { CapabilityView } from "../src/capability-types.js";
+import { browser as openBrowser, browserPath } from "./browser.js";
 
 const text = "---\nname: research\ndescription: Read source material.\n---\n<img src=https://invalid.test/x onerror=alert(1)>\n";
 const file = (path = "research/SKILL.md", content = text, size = Buffer.byteLength(content)) => ({
@@ -44,55 +41,14 @@ describe("skill directory validation", () => {
 
 // Optional real-browser coverage without a browser-test dependency in the host package.
 // TASKFAST_BROWSER=/path/to/chromium pnpm exec vitest run test/console-capabilities-page.test.ts
-const browserPath = process.env.TASKFAST_BROWSER;
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
-
 async function browser(url: string, ready = "document.querySelector('nav') !== null") {
-  const profile = mkdtempSync(join(tmpdir(), "taskfast-capabilities-browser-"));
-  const process = spawn(browserPath!, ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
-  cleanup.push(async () => { process.kill("SIGTERM"); await new Promise<void>((resolve) => { if (process.exitCode !== null) resolve(); else process.once("exit", () => resolve()); }); rmSync(profile, { recursive: true, force: true }); });
-  const endpoint = await new Promise<string>((resolve, reject) => {
-    let output = "";
-    const timeout = setTimeout(() => reject(new Error("Chromium did not expose DevTools: " + output.slice(-1000))), 20_000);
-    process.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); const match = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(output); if (match) { clearTimeout(timeout); resolve("http://127.0.0.1:" + match[1]); } });
-    process.once("error", reject);
-  });
-  const page: unknown = await (await fetch(endpoint + "/json/new?" + encodeURIComponent(url), { method: "PUT" })).json();
-  if (!page || typeof page !== "object" || !("webSocketDebuggerUrl" in page) || typeof page.webSocketDebuggerUrl !== "string") throw new Error("No page DevTools endpoint");
-  const socket = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise<void>((resolve, reject) => { socket.onopen = () => resolve(); socket.onerror = () => reject(new Error("DevTools socket failed")); });
-  cleanup.push(async () => { socket.close(); });
-  const waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-  let nextId = 0;
-  socket.onmessage = (event) => {
-    const packet: unknown = JSON.parse(String(event.data));
-    if (!packet || typeof packet !== "object" || !("id" in packet) || typeof packet.id !== "number") return;
-    const pending = waiting.get(packet.id); if (!pending) return; waiting.delete(packet.id);
-    if ("error" in packet) pending.reject(new Error(JSON.stringify(packet.error))); else pending.resolve("result" in packet ? packet.result : undefined);
-  };
-  async function protocol(method: string, params: Record<string, unknown>) {
-    const id = ++nextId;
-    const response = new Promise<unknown>((resolve, reject) => waiting.set(id, { resolve, reject }));
-    socket.send(JSON.stringify({ id, method, params }));
-    return response;
-  }
-  async function evaluate(expression: string): Promise<unknown> {
-    const result = await protocol("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-    if (!result || typeof result !== "object") throw new Error("No evaluation result");
-    if ("exceptionDetails" in result) throw new Error(JSON.stringify(result.exceptionDetails));
-    if (!("result" in result) || !result.result || typeof result.result !== "object") return undefined;
-    return "value" in result.result ? result.result.value : undefined;
-  }
-  async function until(expression: string) {
-    for (let index = 0; index < 100; index++) {
-      if (await evaluate(expression)) return;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    throw new Error("Browser condition failed: " + expression + "\n" + String(await evaluate("document.body.innerText")));
-  }
-  await until(ready);
-  return { evaluate, until, protocol };
+  // The console may rewrite "/" to the stored agent's URL, so wait for ready rather than for url.
+  const page = await openBrowser("about:blank", cleanup);
+  await page.protocol("Page.navigate", { url });
+  await page.until(ready);
+  return page;
 }
 
 async function tokenConsole(token: string) {

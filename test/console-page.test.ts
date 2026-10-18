@@ -277,7 +277,7 @@ it("keeps malformed destinations explicit and never selects a different page", (
 });
 
 const pollingHistory = (count: number) => Array.from({ length: count }, (_, i) => ({
-  kind: 'poll', complete: true, at: 1_750_000_000_000 + i * 900_000, text: 'Check your marketplace work',
+  id: 'poll-' + i, kind: 'poll', complete: true, at: 1_750_000_000_000 + i * 900_000, text: 'Check your marketplace work',
   replies: [{ text: '', tasks: [], calls: [{ id: 'read-' + i, name: 'task_list', arguments: { kind: 'open' }, outcome: 'ok', comparable: true, result: '{"tasks":[],"note":"<script>unsafe</script>"}' }] }, { text: 'No action <img src=x>.', tasks: [], calls: [] }],
 }));
 const openDetails = (details: FakeNode, open = true) => { details.open = open; details.listeners.toggle[0]({ target: details }); };
@@ -382,7 +382,7 @@ it("marks closed groups and visible check-ins in the rail, never hidden original
 
 it("keeps disclosure and tool focus identities when transcript indices shift, but not when the baseline disappears", () => {
   const page = bootPage(), timeline = pollingHistory(4);
-  page.setView({ ...demoView(), timeline: [{ kind: 'operator', at: 10, text: 'Start', replies: [] }, ...timeline] }); page.render();
+  page.setView({ ...demoView(), timeline: [{ id: 'start', kind: 'operator', at: 10, text: 'Start', replies: [] }, ...timeline] }); page.render();
   const group = page.app.querySelector('.poll-run')!; openDetails(group);
   const check = group.querySelector('.poll-check')!; openDetails(check);
   const calls = check.querySelector('.calls-chip')!; calls.focus(); calls.listeners.click[0]({});
@@ -1022,7 +1022,7 @@ it("says when each queued message runs, lists the rows and keeps focus on Steer 
 
 it("renders the event turn head as a native button", () => {
   const { turnCard, ui } = bootPage();
-  const card = turnCard({ kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: "t-1" }, replies: [] }, 0);
+  const card = turnCard({ id: "event", kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: "t-1" }, replies: [] }, 0);
   const head = card.children[0] as FakeNode;
   expect(head.tagName).toBe("BUTTON");
   expect(head.getAttribute("type")).toBe("button");
@@ -1037,7 +1037,7 @@ it("renders the event turn head as a native button", () => {
 
 it("keeps a non-event turn head as a plain row", () => {
   const { turnCard } = bootPage();
-  const card = turnCard({ kind: "operator", at: Date.now(), text: "Hold off on new bids today", replies: [] }, 1);
+  const card = turnCard({ id: "operator", kind: "operator", at: Date.now(), text: "Hold off on new bids today", replies: [] }, 1);
   const head = card.children[0] as FakeNode;
   expect(head.tagName).toBe("DIV");
   expect(head.hasAttribute("aria-expanded")).toBe(false);
@@ -1152,7 +1152,7 @@ it("keeps historical call dots still and pulses only the newest turn's", () => {
   expect(PAGE).toMatch(/\.dot\.live \{[^}]*animation: dotpulse/);
   expect(PAGE).toMatch(/prefers-reduced-motion: reduce\) \{ \.dot\.live \{ animation: none/);
   // replyBlock gates the live class on the newest turn of the timeline.
-  expect(PAGE.includes('replyBlock(reply, replyKey(turn, index, reply, r), index === view.timeline.length - 1)')).toBe(true);
+  expect(PAGE.includes('replyBlock(reply, replyKey(turn, reply, r), index === view.timeline.length - 1)')).toBe(true);
   expect(PAGE).toMatch(/"dot " \+ cls \+ \(live \? " live" : ""\)/);
 });
 

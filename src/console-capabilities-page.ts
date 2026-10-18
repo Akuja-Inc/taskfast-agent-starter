@@ -202,10 +202,13 @@ export function capabilitiesPage(deps: {
     current = null;
     return true;
   }
+  function show(s: State, { screen, item, step }: CapabilityRoute) {
+    abandon(s); s.screen = screen; s.item = item; s.step = step; s.revision = s.data?.revision || ""; s.error = ""; s.notice = "";
+  }
   function go(s: State, screen: State["screen"], item = "", origin = "") {
     if (s.dirty && !confirm("Discard unsaved edits? New credential entries and test approvals will be cleared.")) return;
     if (s.screen === "overview") { s.scroll = window.scrollY; s.origin = origin; }
-    abandon(s); s.screen = screen; s.item = item; s.step = 0; s.revision = s.data?.revision || ""; s.error = ""; s.notice = "";
+    show(s, { screen, item, step: 0 });
     draw(s);
     if (screen === "overview") {
       window.scrollTo({ top: s.scroll });
@@ -310,8 +313,8 @@ export function capabilitiesPage(deps: {
   function compatibility() { return el("div", { class: "note" }, para("Skills add guidance only. No shell, scripts, raw HTML or remote images execute. They never change tool permissions or marketplace policy.", ""), para("Use the agent's existing TaskFast tools. File artifacts, payments, reviews, account setup, webhooks and CLI-only task changes remain unavailable. The agent must not claim work that needs an unavailable command."), para("Disabling or removing a skill cannot erase instructions already loaded into conversation history.")); }
   function skill(s: State) {
     const after = s.data!.skills.find((item) => item.name === s.item);
-    const installed = after || savedSkills(s.data!).find((item) => item.name === s.item);
-    if (!installed) { s.body.append(title("Skill not found"), para("Refresh capabilities and choose an installed skill.")); return; }
+    // draw() shows "Destination unavailable" for a skill that no longer exists.
+    const installed = (after || savedSkills(s.data!).find((item) => item.name === s.item))!;
     const active = s.data!.activeSkills.find((item) => item.name === installed.name);
     const saved = savedSkills(s.data!).find((item) => item.name === installed.name);
     if (!after) {
@@ -596,11 +599,7 @@ export function capabilitiesPage(deps: {
       states.set(id, s);
     }
     if (current !== s) {
-      if (destination) {
-        abandon(s);
-        s.screen = destination.screen; s.item = destination.item; s.step = destination.step;
-        s.revision = s.data?.revision || ""; s.error = ""; s.notice = "";
-      }
+      if (destination) show(s, destination);
       current = s; draw(s);
     }
     void load(s); return s.root;
