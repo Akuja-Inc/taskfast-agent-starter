@@ -36,9 +36,27 @@ async def reads_raw(page):
     await expect(page.locator('details.reads-raw pre')).to_be_visible()
 
 
+async def settled(page, mode):
+    pass
+
+
+async def money_hint(page):
+    """gh#120: a draft order that names a dollar amount points at the limits."""
+    await page.locator('#order-input').fill('Never spend more than $5 on a job')
+    await expect(page.locator('#order-money')).to_be_visible()
+
+
+async def timeline(page):
+    await page.get_by_role('link', name='Timeline').click()
+    await expect(page.get_by_text('Edit in Settings')).to_be_visible()
+
+
+LIMITS = {'perJobUsd': 20, 'dailyUsd': 50}
 # name: (before ref, fixture state, check run on every shot, extra after-only shots)
 SCENARIOS = {
-    'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': {'perJobUsd': 20, 'dailyUsd': 50}}, reads, {'raw': reads_raw}),
+    'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, reads, {'raw': reads_raw}),
+    'limits-empty': ('7516c0a', {'notes': NOTES}, settled, {'money': money_hint, 'timeline': timeline}),
+    'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, settled, {}),
 }
 
 
