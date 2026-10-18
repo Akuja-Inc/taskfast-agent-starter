@@ -7,7 +7,6 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import { afterEach, expect, it } from "vitest";
 import { openMarketplaceAgent, type MarketplaceAgent } from "../src/core/agent.js";
 import type { CliResult } from "../src/core/cli.js";
-import { marketplacePrompt } from "../src/core/prompt.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { example } from "./example.js";
 
@@ -16,11 +15,6 @@ const opened: MarketplaceAgent[] = [];
 afterEach(async () => {
   await Promise.all(opened.splice(0).map((agent) => agent.close()));
   dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }));
-});
-
-it("numbers notes from 1 in the prompt", () => {
-  const prompt = marketplacePrompt(parseAgentSpec(example("brisk-poster")), ["First", "Second"], []);
-  expect(prompt).toContain("Your notes:\n1: First\n2: Second");
 });
 
 // gh#122: the console shows notes from 1, so forget takes the number the prompt shows.

@@ -25,7 +25,7 @@ const spec = () => ({
 const streams = new Set();
 const view = () => ({
   id: 'editor', env: 'local', spec: spec(),
-  operator: { paused: false, frozen: false, messages: [], orders: state.orders, checked: {} }, queuedMessages: [],
+  operator: { paused: false, frozen: false, messages: [], orders: state.orders }, queuedMessages: [],
   events: {}, attention: [], timeline: [], actions: {}, spend: {}, notes: state.notes,
   prompt: marketplacePrompt(spec(), state.notes, state.orders),
   host: { unlockFile: false, stream: 'connected', tasks: {}, pollIntervalMs: 900_000 },
@@ -53,13 +53,6 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (!action) { json(200, view()); return; }
-  if (action === '/orders' && req.method === 'POST') { state.orders = [...state.orders, body.text.replace(/[\r\n]+/g, ' ')]; publish(); json(204); return; }
-  const order = /^\/orders\/(\d+)$/.exec(action);
-  if (order && req.method === 'DELETE') {
-    const index = Number(order[1]);
-    if (state.orders[index] !== body.expect) { json(409, { error: 'orders changed; refresh' }); return; }
-    state.orders = state.orders.filter((_, at) => at !== index); publish(); json(204); return;
-  }
   json(404, { error: 'unsupported fixture request' });
 });
 server.listen(0, '127.0.0.1', () => process.stdout.write(`http://127.0.0.1:${server.address().port}/agents/editor?tab=settings#token=${token}\n`));
