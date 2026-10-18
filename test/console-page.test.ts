@@ -146,17 +146,26 @@ const demoView = () => ({
 });
 
 it("restores destination through token extraction and authentication without leaking it into navigation links", () => {
-  const page = bootPage(undefined, '/agents/shop?tab=briefing#token=' + 'a'.repeat(64));
+  const page = bootPage(undefined, '/agents/shop?tab=settings#token=' + 'a'.repeat(64));
   expect(page.location.hash).toBe('');
-  expect(page.location.pathname + page.location.search).toBe('/agents/shop?tab=briefing');
+  expect(page.location.pathname + page.location.search).toBe('/agents/shop?tab=settings');
   expect(page.ui.agent).toBe('shop');
-  expect(page.ui.tab).toBe('briefing');
+  expect(page.ui.tab).toBe('settings');
   expect(page.history.length).toBe(1);
   const links = page.header().flatMap((node) => node ? nodes(node) : []).filter((node) => node.tagName === 'A');
   expect(links.every((link) => !link.getAttribute('href')?.includes('token'))).toBe(true);
+});
+
+// gh#115: addresses saved since #109 name this page "briefing". They still open it.
+it("opens Settings from an address saved under the page's old name and rewrites the address bar", () => {
+  const page = bootPage(undefined, '/agents/shop?tab=briefing&open=stable-turn%3Acall-1');
+  expect(page.ui.tab).toBe('settings');
+  expect(page.ui.open.has('stable-turn:call-1')).toBe(true);
+  expect(page.location.search).toBe('?tab=settings&open=stable-turn%3Acall-1');
+  expect(page.history.length).toBe(1);
   const locked = bootPage(undefined, '/agents/shop?tab=briefing');
   expect(locked.app.textContent).toContain('Unlock the console');
-  expect(locked.location.search).toBe('?tab=briefing');
+  expect(locked.location.search).toBe('?tab=settings');
 });
 
 it("tracks every panel toggle, page and agent switch in browser history", () => {
@@ -171,8 +180,8 @@ it("tracks every panel toggle, page and agent switch in browser history", () => 
   click(page.app, 'raw');
   expect(page.ui.raw.has('stable-turn')).toBe(true);
   expect(page.history.length).toBe(3);
-  page.selectTab('briefing');
-  expect(page.location.search).toContain('tab=briefing');
+  page.selectTab('settings');
+  expect(page.location.search).toContain('tab=settings');
   page.selectAgent('other');
   expect(page.location.pathname).toBe('/agents/other');
   page.history.back();
@@ -189,13 +198,13 @@ it("tracks every panel toggle, page and agent switch in browser history", () => 
   expect(page.ui.open.has('stable-turn:call-1')).toBe(true);
 });
 
-it("routes the Standing orders Briefing link through browser history", () => {
+it("routes the Standing orders Settings link through browser history", () => {
   const page = bootPage(); page.setView(demoView()); page.render();
-  const link = nodes(page.app).find((node) => node.tagName === 'A' && node.textContent.includes('Edit in Briefing'))!;
-  expect(link.getAttribute('href')).toBe('/agents/shop?tab=briefing');
+  const link = nodes(page.app).find((node) => node.tagName === 'A' && node.textContent.includes('Edit in Settings'))!;
+  expect(link.getAttribute('href')).toBe('/agents/shop?tab=settings');
   link.listeners.click[0]({ preventDefault() {} });
-  expect(page.ui.tab).toBe('briefing');
-  expect(page.location.search).toBe('?tab=briefing');
+  expect(page.ui.tab).toBe('settings');
+  expect(page.location.search).toBe('?tab=settings');
   expect(page.history.length).toBe(2);
   page.history.back();
   expect(page.ui.tab).toBe('timeline');
@@ -203,7 +212,7 @@ it("routes the Standing orders Briefing link through browser history", () => {
 
 it("cancels configuration navigation and history traversal without changing URL, draft or screen", () => {
   const page = bootPage(); page.setView(demoView()); page.render();
-  page.selectTab('briefing');
+  page.selectTab('settings');
   const url = page.location.href;
   page.ui.specDraft = { ...demoView().spec, instructions: 'Unsaved instructions' };
   page.setDiscard(false);
@@ -212,7 +221,7 @@ it("cancels configuration navigation and history traversal without changing URL,
   expect(page.ui.agent).toBe('shop');
   page.history.back();
   expect(page.location.href).toBe(url);
-  expect(page.ui.tab).toBe('briefing');
+  expect(page.ui.tab).toBe('settings');
   expect(page.ui.specDraft).toMatchObject({ instructions: 'Unsaved instructions' });
   page.setDiscard(true);
   page.history.back();
@@ -220,8 +229,8 @@ it("cancels configuration navigation and history traversal without changing URL,
   expect(page.ui.specDraft).toBeNull();
 });
 
-it("still guards unsaved Briefing edits when the agent stops before navigation", () => {
-  const page = bootPage(); page.setView(demoView()); page.render(); page.selectTab('briefing');
+it("still guards unsaved Settings edits when the agent stops before navigation", () => {
+  const page = bootPage(); page.setView(demoView()); page.render(); page.selectTab('settings');
   page.ui.specDraft = { ...demoView().spec, instructions: 'Keep these unsaved edits' };
   const url = page.location.href;
   page.setRoster([{ id: 'shop', state: 'stopped', generation: 1 }, { id: 'other', state: 'starting', generation: 1 }]);
@@ -926,15 +935,15 @@ it("scrolls the composer into view when a sample prompt drafts a message", () =>
   expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: false }]);
 });
 
-// gh#30: a bare "textarea" query lands on the Briefing tab's instructions field, so a pending
+// gh#30: a bare "textarea" query lands on the Settings tab's instructions field, so a pending
 // composer focus must wait for the timeline's composer instead.
-it("keeps a pending composer focus away from the Briefing tab's instructions field", () => {
+it("keeps a pending composer focus away from the Settings tab's instructions field", () => {
   const page = bootPage();
   page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { model: 'faux:test', instructions: 'You are Demo.\n\nWhat you want right now: Win copy-editing jobs.', dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
   page.render();
   page.ui.focusComposer = true;
   page.document.activeElement = page.app.querySelector('nav a');
-  page.ui.tab = 'briefing';
+  page.ui.tab = 'settings';
   page.render();
   expect(page.app.querySelector('textarea')!.focusCalls).toEqual([]);
   page.ui.tab = 'timeline';
@@ -942,7 +951,7 @@ it("keeps a pending composer focus away from the Briefing tab's instructions fie
   expect(page.app.querySelector('form.composer textarea')!.focusCalls).toEqual([{ preventScroll: true }]);
 });
 
-it("shows the default or saved polling interval in Briefing and saves it with the spec", async () => {
+it("shows the default or saved polling interval in Settings and saves it with the spec", async () => {
   for (const interval of [undefined, 1, 1440]) {
     const requests: unknown[] = [];
     const page = bootPage((_path, init) => {
@@ -950,7 +959,7 @@ it("shows the default or saved polling interval in Briefing and saves it with th
       return new Promise<never>(() => {});
     });
     page.setView({ ...demoView(), spec: { ...demoView().spec, pollIntervalMinutes: interval, dials: { temperament: 'patient' } } });
-    page.ui.tab = 'briefing'; page.render();
+    page.ui.tab = 'settings'; page.render();
     const input = nodes(page.app).find((node) => node.getAttribute('id') === 'poll-interval')!;
     expect(input).toBeDefined();
     expect(input.getAttribute('value')).toBe(String(interval ?? 15));
@@ -967,7 +976,7 @@ it("shows the default or saved polling interval in Briefing and saves it with th
 it("names an active host polling override without changing the saved interval", () => {
   const page = bootPage();
   page.setView({ ...demoView(), host: { pollIntervalMs: 500 }, spec: { ...demoView().spec, pollIntervalMinutes: 7, dials: { temperament: 'patient' } } });
-  page.ui.tab = 'briefing'; page.render();
+  page.ui.tab = 'settings'; page.render();
   expect(nodes(page.app).find((node) => node.getAttribute('id') === 'poll-interval')!.getAttribute('value')).toBe('7');
   expect(page.app.textContent).toContain('Host override active: the current delay is 0.5 seconds. Saving does not change the override.');
 });
@@ -977,7 +986,7 @@ it("rejects invalid polling drafts before sending a save request", () => {
     const requests: unknown[] = [];
     const page = bootPage((path) => { requests.push(path); return new Promise<never>(() => {}); });
     page.setView({ ...demoView(), spec: { ...demoView().spec, dials: { temperament: 'patient' } } });
-    page.ui.tab = 'briefing'; page.render();
+    page.ui.tab = 'settings'; page.render();
     const input = nodes(page.app).find((node) => node.getAttribute('id') === 'poll-interval')!;
     input.listeners.change[0]({ target: { value } });
     nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save & reopen')!.listeners.click[0]({});

@@ -241,7 +241,9 @@ const destinations = (${consoleNavigation.toString()})();
 const initialDestination = destinations.read(location.pathname, location.search);
 let navigationIndex = history.state && Number.isInteger(history.state.consoleNavigation) ? history.state.consoleNavigation : 0;
 let revertingNavigation = false;
-let navigationUrl = location.pathname + location.search;
+// A saved address can name a page by a name it no longer uses; show the current one.
+const savedTabName = new URLSearchParams(location.search).get("tab");
+let navigationUrl = savedTabName && !initialDestination.invalid && savedTabName !== initialDestination.tab ? destinations.href(initialDestination) : location.pathname + location.search;
 history.replaceState({ consoleNavigation: navigationIndex }, "", navigationUrl);
 let token = store.get("token");
 const ui = { agent: initialDestination.agent || (initialDestination.invalid ? null : store.get("agent")), tab: initialDestination.tab, capability: initialDestination.capability, invalidDestination: initialDestination.invalid, open: new Set(initialDestination.open), raw: new Set(initialDestination.raw), folds: new Set(), checks: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
@@ -379,11 +381,11 @@ function writeDestination(replace = false) {
   history[replace ? "replaceState" : "pushState"]({ consoleNavigation: navigationIndex }, "", url);
   navigationUrl = url;
 }
-function briefingDirty() { return !!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec)); }
+function settingsDirty() { return !!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec)); }
 function navigate(next, traversed = false) {
   const leaving = next.agent !== ui.agent || next.tab !== ui.tab || JSON.stringify(next.capability) !== JSON.stringify(ui.capability) || next.invalid !== ui.invalidDestination;
   if (leaving) {
-    if (briefingDirty() && !confirm("Discard unsaved Briefing edits?")) return false;
+    if (settingsDirty() && !confirm("Discard unsaved Settings edits?")) return false;
     if (!capabilities.leave()) return false;
     ui.specDraft = null;
   }
@@ -412,7 +414,7 @@ addEventListener("popstate", (event) => {
   else if (index !== navigationIndex) { revertingNavigation = true; history.go(navigationIndex - index); }
   else history.replaceState({ consoleNavigation: navigationIndex }, "", navigationUrl);
 });
-addEventListener("beforeunload", (event) => { if (briefingDirty()) { event.preventDefault(); event.returnValue = true; } });
+addEventListener("beforeunload", (event) => { if (settingsDirty()) { event.preventDefault(); event.returnValue = true; } });
 function selectTab(tab) {
   if (tab === ui.tab && !ui.invalidDestination) return;
   if (!navigate(destinationAt({ tab }))) return;
@@ -591,7 +593,7 @@ function header() {
     el("header", {}, el("div", { class: "row" },
       el("span", { class: "brand" }, el("span", { class: "sq brand-sq" + (!op ? " unready" : op.paused ? " paused" : ""), title: stateText }, pict("agent", 16)), "Agent console", el("span", { class: "sr-only", role: "status", text: stateText.toLowerCase() })),
       el("nav", { "aria-label": "Console" },
-        [["timeline", "Timeline"], ["briefing", "Briefing"], ["capabilities", "Capabilities"]].map(([tab, text]) =>
+        [["timeline", "Timeline"], ["settings", "Settings"], ["capabilities", "Capabilities"]].map(([tab, text]) =>
           el("a", { href: destinations.href(destinationAt({ tab })), "aria-current": ui.tab === tab ? "page" : null, onclick: (e) => followTab(e, tab), text }))),
       el("div", { class: "spacer" },
         el("span", { class: "rule" }),
@@ -1150,17 +1152,17 @@ function timelineTab() {
         band("Standing orders", "· " + op.orders.length),
         el("div", { class: "card" },
           op.orders.map((order) => el("div", { text: order })),
-          el("a", { href: destinations.href(destinationAt({ tab: "briefing" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "briefing") }, "Edit in Briefing", pict("arrow", 14))))));
+          el("a", { href: destinations.href(destinationAt({ tab: "settings" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "settings") }, "Edit in Settings", pict("arrow", 14))))));
 }
 
-function briefingTab() {
+function settingsTab() {
   const op = view.operator;
   const draft = ui.specDraft || (ui.specDraft = JSON.parse(JSON.stringify(view.spec)));
   const set = (path, value) => { let at = draft; for (const key of path.slice(0, -1)) at = at[key] = at[key] || {}; at[path[path.length - 1]] = value; render(); };
   const number = (value) => value === "" ? undefined : Number(value);
   const limitText = (value) => value === undefined ? "no limit" : money(value);
   const limitChanges = ["perJobUsd", "dailyUsd"].filter((k) => (view.spec.limits || {})[k] !== (draft.limits || {})[k]);
-  function saveBriefing() {
+  function saveSettings() {
     const minutes = draft.pollIntervalMinutes ?? ${POLL_MINUTES.default};
     if (!Number.isInteger(minutes) || minutes < ${POLL_MINUTES.min} || minutes > ${POLL_MINUTES.max}) {
       ui.error = "Check-for-work interval must be a whole number from ${POLL_MINUTES.min} to ${POLL_MINUTES.max} minutes.";
@@ -1202,7 +1204,7 @@ function briefingTab() {
           limitChanges.map((k) => el("div", { class: "mono", text: (k === "dailyUsd" ? "Daily limit " : "Per job limit ") + limitText((view.spec.limits || {})[k]) + " → " + limitText((draft.limits || {})[k]) })),
           el("div", { class: "small", text: "Takes effect when the agent reopens. Spending already counted today still counts." })) : null,
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
-          el("button", { class: "primary", onclick: saveBriefing, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
+          el("button", { class: "primary", onclick: saveSettings, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
         el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
     el("aside", {}, el("section", { class: "section" },
@@ -1259,8 +1261,8 @@ function render(force = false) {
   const queue = document.querySelector("#queued-messages");
   const timeline = token && ready() && view && !ui.reopening && ui.tab === "timeline";
   if (!changed && timeline && queue && queue.contains(document.activeElement)) return;
-  // Briefing fields and inputs keep the old protection: never rebuild under them.
-  if (!changed && ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "briefing"))) return;
+  // Settings fields and inputs keep the old protection: never rebuild under them.
+  if (!changed && ((activeTag === "INPUT" || activeTag === "SELECT") || (activeTag === "TEXTAREA" && ui.tab === "settings"))) return;
   // Queue and admission feedback update above without rebuilding a typed draft.
   // An empty composer keeps the existing full live refresh and gets focus back.
   const taHadFocus = activeTag === "TEXTAREA";
@@ -1276,7 +1278,7 @@ function render(force = false) {
   const missingPanels = ready() && view && ui.tab === "timeline" ? resolvePanels() : false;
   app.replaceChildren(...(!token ? [unlock()] :
     [...header(), ui.error ? el("div", { class: "page" }, el("div", { class: "error", role: "alert", text: ui.error })) : null,
-      ui.invalidDestination || missingPanels ? el("div", { class: "page" }, unavailableDestination()) : ui.tab === "capabilities" && ui.agent && selected() ? capabilities.mount(ui.agent, selected().name || ui.agent, ui.capability) : !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : briefingTab()].filter(Boolean)));
+      ui.invalidDestination || missingPanels ? el("div", { class: "page" }, unavailableDestination()) : ui.tab === "capabilities" && ui.agent && selected() ? capabilities.mount(ui.agent, selected().name || ui.agent, ui.capability) : !ready() || !view ? startupPanel() : ui.tab === "timeline" ? timelineTab() : settingsTab()].filter(Boolean)));
   updateStartupStatus();
   if (activeTag === "SELECT" && changed) document.querySelector('select[aria-label="Agent"]')?.focus({ preventScroll: true });
   // The timeline opens at its newest turn, as a chat does.
@@ -1288,7 +1290,7 @@ function render(force = false) {
   restoreReading(anchor);
   onScroll();
   if (restored) { restored.focus({ preventScroll: true }); ui.focusComposer = false; }
-  // Only the composer's own textarea: a bare "textarea" query can land on a Briefing
+  // Only the composer's own textarea: a bare "textarea" query can land on a Settings
   // field. Restored focus keeps the reader's scroll position; a deliberate ask
   // (draftInto) scrolls the composer into view.
   const next = document.querySelector("form.composer textarea");

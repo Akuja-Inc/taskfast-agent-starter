@@ -1,6 +1,6 @@
 export type ConsoleDestination = {
   agent: string | null;
-  tab: "timeline" | "briefing" | "capabilities";
+  tab: "timeline" | "settings" | "capabilities";
   open: string[];
   raw: string[];
   capability: { screen: "overview" | "import" | "skill" | "server" | "review" | "taskfast" | "credential"; item: string; step: number };
@@ -22,7 +22,8 @@ export function consoleNavigation() {
     const single = ["tab", "screen", "item", "step"];
     for (const key of query.keys()) if (![...single, "open", "raw"].includes(key) || single.includes(key) && query.getAll(key).length !== 1) route.invalid = true;
     const tab = query.get("tab") ?? "timeline";
-    if (tab === "timeline" || tab === "briefing" || tab === "capabilities") route.tab = tab;
+    if (tab === "timeline" || tab === "settings" || tab === "capabilities") route.tab = tab;
+    else if (tab === "briefing") route.tab = "settings"; // Saved links from before #115.
     else route.invalid = true;
     route.open = [...new Set(query.getAll("open"))];
     route.raw = [...new Set(query.getAll("raw"))];

@@ -23,12 +23,12 @@ const SELECTED = "#1f2937";
 const CODE = { fg: "#e9e7dc", bg: "#2a2d31" };
 const LABEL: Record<Field, string> = { temperament: "Temperament", perJobUsd: "Per job limit ($)", dailyUsd: "Daily limit ($)", competence: "Competence", diligence: "Diligence", priceSensitivity: "Price sensitivity" };
 export const HELP: [string, string][] = [
-  ["1 / 2", "Timeline / Briefing"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
-  ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Briefing: edit the field)"],
+  ["1 / 2", "Timeline / Settings"], ["j / k", "next / previous reply, alert, queued message, order or field"], ["g / G", "top / bottom"],
+  ["tab", "next panel (Timeline / alerts / queued messages; opens narrow sidebar)"], ["< / >", "previous / next agent"], ["enter", "show tool calls (Settings: edit the field)"],
   ["r", "raw event"], ["o", "open the task"], ["m", "write a message: Enter follow-up / Ctrl+S steer after this tool round"], ["s", "steer the selected queued follow-up (Tab to focus the queue)"], ["w", "withdraw the selected queued follow-up or steer"], ["p", "pause / resume"],
   ["f", "freeze spending (asks y/n) / unfreeze"], ["c", "mark the alert checked"], ["R", "ready: run an abandoned event again; stopped: retry startup"], ["x", "starting: cancel startup (not a running agent)"],
-  ["a", "show alerts (Briefing: add a standing order)"], ["d", "Briefing: delete the standing order"],
-  ["ctrl+s", "Timeline composer: steer; Briefing: save and reopen (asks y/n)"], ["esc", "discard the draft, close a line"],
+  ["a", "show alerts (Settings: add a standing order)"], ["d", "Settings: delete the standing order"],
+  ["ctrl+s", "Timeline composer: steer; Settings: save and reopen (asks y/n)"], ["esc", "discard the draft, close a line"],
   ["i", "show the sidebar"], ["?", "this help"], ["q", "quit the TUI; the agents keep running"],
 ];
 
@@ -236,7 +236,7 @@ export function App(p: AppProps) {
       await api("POST", `${agentPath(id)}/messages`, messageBody(attempt));
       attempts.delete(id);
       // Admission belongs to this agent even if selection changed while awaiting ACK.
-      // Keep the Briefing draft, other agents' drafts and any newer message text.
+      // Keep the Settings draft, other agents' drafts and any newer message text.
       const saved = drafts.get(id);
       if (saved?.messageText.trim() === attempt.text) drafts.set(id, { ...saved, messageText: "" });
       if (!closed && agentId() === id && ui().messageText.trim() === attempt.text) setUi({ ...ui(), editing: undefined, messageText: "" });
@@ -336,7 +336,7 @@ export function App(p: AppProps) {
               <text>
                 <Span fg={MUTED}>‹ </Span><b>{clean(agent()?.id ?? "")}</b>{` (${clean(agent()?.role ?? "")})`}<Span fg={MUTED}> ›   </Span>
                 <Span fg={ui().tab === "timeline" ? ACCENT : MUTED}>{ui().tab === "timeline" ? "[1 Timeline]" : " 1 Timeline "}</Span>
-                <Span fg={ui().tab === "briefing" ? ACCENT : MUTED}>{ui().tab === "briefing" ? "[2 Briefing]" : " 2 Briefing "}</Span>
+                <Span fg={ui().tab === "settings" ? ACCENT : MUTED}>{ui().tab === "settings" ? "[2 Settings]" : " 2 Settings "}</Span>
                 <Span fg={view()?.operator.paused ? WARN : OK}>{`   ● ${s().state}`}</Span>
                 {`   spend ${s().spend.today}${s().spend.limit ? ` of ${s().spend.limit}` : ""}`}<Span fg={MUTED}>{"   ? help"}</Span>
               </text>
@@ -461,7 +461,7 @@ export function App(p: AppProps) {
                 </Show>
               </box>
             </Show>
-            <Show when={!ui().help && ui().tab === "briefing"}>
+            <Show when={!ui().help && ui().tab === "settings"}>
               <box flexDirection={narrow() ? "column" : "row"} flexGrow={1}>
                 <box flexDirection="column" flexGrow={1}>
                   <box flexDirection="column" border borderColor={ui().panel === "orders" ? ACCENT : MUTED} title=" Standing orders · a add · d delete " paddingX={1}>
@@ -493,7 +493,7 @@ export function App(p: AppProps) {
               </box>
             </Show>
             <box height={1} paddingX={1}>
-              <text fg={notice() ? WARN : MUTED}>{notice() || (ui().tab === "briefing"
+              <text fg={notice() ? WARN : MUTED}>{notice() || (ui().tab === "settings"
                 ? "tab orders/fields · j/k move · a add · d delete · enter edit · ctrl+s save · esc discard · 1 timeline · ? help · q quit"
                 : narrow()
                 ? `i sidebar · Tab queue · s steer · w withdraw · a alerts (${s().attention.length}) · m message · p pause · ? help · q quit`

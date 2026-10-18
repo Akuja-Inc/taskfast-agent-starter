@@ -96,7 +96,7 @@ describe.skipIf(!browserPath)("console URL navigation in Chromium", () => {
     await page.until("document.querySelector('article.turn:last-of-type > .head[aria-expanded=true]') !== null && document.querySelectorAll('.calls').length === 1");
     await page.evaluate("history.go(2)");
     await page.until("location.search === '' && document.querySelectorAll('.calls').length === 0 && document.querySelectorAll('article.turn > .head[aria-expanded=true]').length === 0");
-    await page.push("navTest.click('Briefing')", "/agents/alpha?tab=briefing");
+    await page.push("navTest.click('Settings')", "/agents/alpha?tab=settings");
     await page.push("navTest.click('Capabilities')", cap());
     await page.until("document.querySelector('[data-cap-name=catalog]') !== null");
     await page.push("navTest.agent('beta')", "/agents/beta?tab=capabilities");
@@ -128,22 +128,22 @@ describe.skipIf(!browserPath)("console URL navigation in Chromium", () => {
     expect(page.errors).toEqual([]); expect(restored.errors).toEqual([]);
   }, 60_000);
 
-  it("keeps dirty Briefing URL and form on cancelled Back and discards only after acceptance", async () => {
+  it("keeps dirty Settings URL and form on cancelled Back and discards only after acceptance", async () => {
     const f = await fixture();
     const page = await browser(f.base + "/agents/alpha#token=" + token, cleanup);
     await page.until("document.querySelector('nav') !== null");
-    await page.push("navTest.click('Briefing')", "/agents/alpha?tab=briefing");
+    await page.push("navTest.click('Settings')", "/agents/alpha?tab=settings");
     await page.until("document.querySelector('#poll-interval') !== null");
-    await page.evaluate("navTest.input(" + JSON.stringify(instructionsLabel) + ", 'PRIVATE-BRIEFING-DRAFT', 'change')");
+    await page.evaluate("navTest.input(" + JSON.stringify(instructionsLabel) + ", 'PRIVATE-SETTINGS-DRAFT', 'change')");
     page.acceptDialogs(false);
     const count = page.dialogs.length;
     await page.evaluate("history.back()");
     await expect.poll(() => page.dialogs.length).toBe(count + 1);
-    await page.until("location.search === '?tab=briefing'");
-    expect(page.dialogs.at(-1)).toContain("Briefing");
-    expect(await page.evaluate("document.querySelector('main textarea').value")).toBe("PRIVATE-BRIEFING-DRAFT");
-    expect(await page.path()).toBe("/agents/alpha?tab=briefing");
-    await page.screenshot("briefing-back-cancelled");
+    await page.until("location.search === '?tab=settings'");
+    expect(page.dialogs.at(-1)).toContain("Settings");
+    expect(await page.evaluate("document.querySelector('main textarea').value")).toBe("PRIVATE-SETTINGS-DRAFT");
+    expect(await page.path()).toBe("/agents/alpha?tab=settings");
+    await page.screenshot("settings-back-cancelled");
     page.acceptDialogs(true);
     await page.evaluate("history.back()");
     await page.until("location.search === '' && document.querySelector('nav a[aria-current=page]')?.textContent === 'Timeline'");
@@ -206,9 +206,9 @@ describe.skipIf(!browserPath)("console URL navigation in Chromium", () => {
   it("keeps dirty capability config on cancelled Back across a reload boundary and discards only after accepted Back", async () => {
     const f = await fixture();
     const page = await browser(f.base + "/agents/alpha#token=" + token, cleanup);
-    await page.until("[...document.querySelectorAll('aside a')].some(node => node.textContent === 'Edit in Briefing')");
-    expect(await page.evaluate("[...document.querySelectorAll('aside a')].find(node => node.textContent === 'Edit in Briefing').getAttribute('href')")).toBe("/agents/alpha?tab=briefing");
-    await page.push("navTest.click('Edit in Briefing')", "/agents/alpha?tab=briefing");
+    await page.until("[...document.querySelectorAll('aside a')].some(node => node.textContent === 'Edit in Settings')");
+    expect(await page.evaluate("[...document.querySelectorAll('aside a')].find(node => node.textContent === 'Edit in Settings').getAttribute('href')")).toBe("/agents/alpha?tab=settings");
+    await page.push("navTest.click('Edit in Settings')", "/agents/alpha?tab=settings");
     await page.until("document.querySelector('#poll-interval') !== null");
     await page.push("navTest.click('Capabilities')", cap());
     await page.until("document.querySelector('[data-cap-name=catalog]') !== null");
@@ -237,7 +237,7 @@ describe.skipIf(!browserPath)("console URL navigation in Chromium", () => {
     await page.evaluate("history.back()");
     await page.until("location.pathname + location.search === " + JSON.stringify(cap()) + " && document.querySelector('[data-cap-name=catalog]') !== null");
     await page.evaluate("history.back()");
-    await page.until("location.search === '?tab=briefing' && document.querySelector('#poll-interval') !== null");
+    await page.until("location.search === '?tab=settings' && document.querySelector('#poll-interval') !== null");
     await page.evaluate("history.forward()");
     await page.until("location.pathname + location.search === " + JSON.stringify(cap()) + " && document.querySelector('[data-cap-name=catalog]') !== null");
     await page.evaluate("history.forward()");

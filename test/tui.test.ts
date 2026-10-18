@@ -154,8 +154,8 @@ it("sends follow-ups with Enter and steers with Ctrl+S only in the Timeline comp
   expect(press({ ...editing, messageText: " " }, "ctrl+s", view, 1).effect).toBeUndefined();
   expect(press(initialUi(), "ctrl+s", view, 1).effect).toBeUndefined();
   expect(press(editing, "s", view, 1).effect).toBeUndefined();
-  const briefing = setField({ ...initialUi(), tab: "briefing" }, view, "dailyUsd", "25");
-  expect(press(briefing, "ctrl+s", view, 1).ui.confirm).toEqual({ kind: "save", lines: ["Daily limit $50.00 → $25.00"] });
+  const settings = setField({ ...initialUi(), tab: "settings" }, view, "dailyUsd", "25");
+  expect(press(settings, "ctrl+s", view, 1).ui.confirm).toEqual({ kind: "save", lines: ["Daily limit $50.00 → $25.00"] });
 });
 
 it("keeps the attempted message ID and mode on retry, never sends steer:false", () => {
@@ -185,7 +185,7 @@ it("withdraws either queued mode by selected ID, never a replacement row", () =>
   expect(k.ui.queuedRequestId).toBe("chosen / id");
   k.run("j");
   expect(k.run("w")).toEqual([{ kind: "call", method: "DELETE", action: "messages/steer" }]);
-  expect(press({ ...k.ui, tab: "briefing" }, "w", view, 1).effect).toBeUndefined();
+  expect(press({ ...k.ui, tab: "settings" }, "w", view, 1).effect).toBeUndefined();
   expect(press({ ...k.ui, editing: "message", messageText: "draft" }, "w", view, 1).effect).toBeUndefined();
 });
 
@@ -288,11 +288,11 @@ it("turns timeline keys into console actions, and asks y/n before freezing", () 
   expect(k.run("escape", "q")).toEqual([{ kind: "quit" }]);
 });
 
-it("edits the briefing: orders, fields, and save only after y/n, with spending changes spelled out", () => {
+it("edits the settings: orders, fields, and save only after y/n, with spending changes spelled out", () => {
   const view = fixtureView();
   const k = keys(view);
   k.run("2");
-  expect(k.ui.tab).toBe("briefing");
+  expect(k.ui.tab).toBe("settings");
   k.run("a");
   expect(k.ui.editing).toBe("order");
   expect(k.run("d")).toEqual([{ kind: "call", method: "DELETE", action: "orders/0" }]);
@@ -311,7 +311,7 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
   typo.run("ctrl+s");
   expect(typo.ui.confirm).toEqual({ kind: "save", lines: ["Per job limit $20.00 → invalid"] });
 
-  // Escape on the timeline closes lines; only the briefing's escape discards its draft.
+  // Escape on the timeline closes lines; only the settings escape discards its draft.
   const away = keys(view, { ...setField(k.ui, view, "temperament", "curt"), tab: "timeline" });
   away.run("escape");
   expect(away.ui.draft?.dials.temperament).toBe("curt");
@@ -326,7 +326,7 @@ it("edits the briefing: orders, fields, and save only after y/n, with spending c
 it("preserves a saved polling interval when the TUI edits and saves another field", () => {
   const view = fixtureView();
   view.spec.pollIntervalMinutes = 42;
-  const ui = setField({ ...initialUi(), tab: "briefing" }, view, "temperament", "curt");
+  const ui = setField({ ...initialUi(), tab: "settings" }, view, "temperament", "curt");
   const saving = keys(view, ui);
   saving.run("ctrl+s");
   expect(saving.run("y")).toEqual([{ kind: "call", method: "PUT", action: "spec", body: { ...view.spec, dials: { ...view.spec.dials, temperament: "curt" } } }]);

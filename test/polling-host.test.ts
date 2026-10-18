@@ -120,7 +120,7 @@ it("keeps an explicit host override ahead of saved and default intervals", async
   } finally { await host.close(); }
 });
 
-it("persists Briefing saves, cancels only the replaced loop and reloads the interval after host restart", async () => {
+it("persists Settings saves, cancels only the replaced loop and reloads the interval after host restart", async () => {
   const dir = folders({ me: 1, you: 2 });
   let host = await launch(dir);
   try {
