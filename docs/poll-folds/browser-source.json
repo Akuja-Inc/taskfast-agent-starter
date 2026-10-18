@@ -1,10 +1,10 @@
 {
-  "commit": "9b9afe11580d39908261ebd38498f008a9195a47",
+  "commit": "ec4b0a20314934ccf450fc94b84325226b8e9bba",
   "beforeCommit": "98f42469cc33ae6fc3369cebe02a23f110fad7b7",
   "dirty": false,
   "sha256": {
-    "src/console-page.ts": "00368b39aa5c4174bb6d8ea5bd20ed26085bb06ff54a647275c24398df4304c6",
-    "src/console-polling.ts": "327155ed2013b0b8d70ddf33b137f6eeee0a5d2244ab699ff5387d4fa5497012",
+    "src/console-page.ts": "26d43e60693de38449abf7c31cecd7cdfa05dc2c16c7d7c18acdaccad484b8d6",
+    "src/console-polling.ts": "b74f805a9f95b08e09be8c521a3cad7b0995a80e96316d3ee31acb47e9ff60d0",
     "src/core/timeline.ts": "c04d1b166c16705243996e8772bcf8ec381a33e2886b17bdfeb2803e2571c09c",
     "docs/poll-folds/browser-host.mjs": "6349922e1419a3168e67c6f9edd1eae98f3a66e89bad95b65d0343acca5ab855",
     "docs/poll-folds/capture.py": "3dccc841b701aa7f6330fb82dbd37947efeee69687aa4d47c3c311eca402ac00"
