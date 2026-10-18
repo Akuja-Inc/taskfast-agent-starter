@@ -195,7 +195,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
       return { ui: selected && selected.turn.raw ? { ...ui, raw: toggle(ui.raw, `turn:${selected.turn.at}`) } : ui };
     case "enter": return { ui: selected?.reply?.badge ? { ...ui, open: toggle(ui.open, selected.reply.key) } : ui };
     case "o": {
-      const link = selected?.reply?.tasks.find((task) => task.link)?.link;
+      const link = selected?.reply?.tasks[0]?.link ?? selected?.turn.link;
       return link ? { ui, effect: { kind: "open", url: link } } : { ui };
     }
   }

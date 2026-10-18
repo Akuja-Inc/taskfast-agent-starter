@@ -41,9 +41,8 @@ const field = (value: unknown, key: string): unknown => (typeof value === "objec
 const json = (value: unknown) => clean(typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "");
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-// Development tasks open on the local web host; staging and production show the ID
-// until their web hosts are confirmed.
-export const taskLink = (env: ConsoleView["env"], id: string) => (env === "local" ? `http://localhost:4000/tasks/${encodeURIComponent(id)}` : undefined);
+const WEB = { local: "http://localhost:4000", staging: "https://staging.taskfast.app", prod: "https://taskfast.app" } as const;
+export const taskLink = (env: ConsoleView["env"], id: string) => `${WEB[env]}/tasks/${encodeURIComponent(id)}`;
 
 function usdc(wallet: unknown): string {
   const raw = field(field(wallet, "balance"), "available_balance");
@@ -63,11 +62,19 @@ function badge(calls: Call[]): string | undefined {
   const uncertain = calls.filter((call) => call.outcome === "uncertain").length;
   return [plural(calls.length, "tool call"), failed ? `${failed} failed` : "", uncertain ? `${uncertain} uncertain` : ""].filter(Boolean).join(" · ");
 }
+function eventTask(turn: Turn): string | undefined {
+  const taskId = turn.kind === "event" ? field(turn.event, "task_id") : undefined;
+  return typeof taskId === "string" ? taskId : undefined;
+}
+function eventLink(env: ConsoleView["env"], turn: Turn): string | undefined {
+  const taskId = eventTask(turn);
+  return taskId === undefined ? undefined : taskLink(env, taskId);
+}
 function title(turn: Turn): string {
   if (turn.kind !== "event") return clean(turn.text);
   const name = field(turn.event, "event");
-  const taskId = field(turn.event, "task_id");
-  return clean(`${typeof name === "string" ? name : "event"}${typeof taskId === "string" ? ` · task ${taskId}` : ""}`);
+  const taskId = eventTask(turn);
+  return clean(`${typeof name === "string" ? name : "event"}${taskId ? ` · task ${taskId}` : ""}`);
 }
 
 export type Screen = ReturnType<typeof screen>;
@@ -78,11 +85,13 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
   const limits = view.spec.limits ?? {};
   const hasLimits = limits.perJobUsd !== undefined || limits.dailyUsd !== undefined;
   const wallet = usdc(view.host?.wallet);
-  const groups = { POSTED: new Map<string, { id: string; title: string }>(), BIDDING: new Map<string, { id: string; title: string }>(), "WORKING ON": new Map<string, { id: string; title: string }>() };
+  type SideTask = { id: string; title: string; link: string };
+  const groups = { POSTED: new Map<string, SideTask>(), BIDDING: new Map<string, SideTask>(), "WORKING ON": new Map<string, SideTask>() };
   const turns = view.timeline.map((turn) => ({
     tag: TAG[turn.kind],
     at: turn.at,
     title: title(turn),
+    link: eventLink(view.env, turn),
     raw: turn.kind === "event" ? json(turn.event ?? turn.text) : undefined,
     replies: turn.replies.map((reply, r) => ({
       // Keyed by the turn's timestamp plus the reply's place in it, so selection and
@@ -94,9 +103,9 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
       tasks: reply.tasks.map((ref) => {
         const group = GROUP[ref.via];
         const { title: name, summary } = task(view, ref.id);
-        if (group) groups[group].set(ref.id, { id: ref.id, title: name });
         const link = taskLink(view.env, ref.id);
-        return { id: ref.id, via: clean(ref.via).toUpperCase(), title: name, summary, ...(link ? { link } : {}) };
+        if (group) groups[group].set(ref.id, { id: ref.id, title: name, link });
+        return { id: ref.id, via: clean(ref.via).toUpperCase(), title: name, summary, link };
       }),
     })),
   }));
@@ -128,7 +137,7 @@ export function screen(view: ConsoleView, width: number, now = new Date()) {
         { label: "Model", detail: clean(view.spec.model), ok: true },
         { label: "Spending limits", detail: hasLimits ? [limits.perJobUsd !== undefined ? `${money(limits.perJobUsd)} per job` : "", limits.dailyUsd !== undefined ? `${money(limits.dailyUsd)} per day` : ""].filter(Boolean).join(" · ") : "none: nothing caps commitments", ok: hasLimits },
       ],
-      tasks: Object.fromEntries(Object.entries(groups).map(([name, refs]) => [name, [...refs.values()]])) as Record<keyof typeof groups, { id: string; title: string }[]>,
+      tasks: Object.fromEntries(Object.entries(groups).map(([name, refs]) => [name, [...refs.values()]])) as Record<keyof typeof groups, SideTask[]>,
       orders: op.orders.map(clean),
     },
   };
