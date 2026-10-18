@@ -64,6 +64,11 @@ const server = createServer(async (req, res) => {
     state.notes = req.method === 'PUT' ? state.notes.map((text, at) => at === Number(note[1]) ? body.text : text) : state.notes.filter((_, at) => at !== Number(note[1]));
     publish(); json(204); return;
   }
+  if (action === '/spec' && req.method === 'PUT') {
+    const key = (limits) => JSON.stringify([limits?.perJobUsd ?? null, limits?.dailyUsd ?? null]);
+    if (body.expectLimits && key(body.expectLimits) !== key(state.limits)) { json(409, { error: 'limits changed; refresh' }); return; }
+    state.limits = body.limits ?? {}; publish(); json(204); return;
+  }
   const order = /^\/orders\/(\d+)$/.exec(action);
   if (order && req.method === 'PUT') {
     if (state.orders[order[1]] !== body.expect) { publish(); json(409, { error: 'orders changed; refresh' }); return; }

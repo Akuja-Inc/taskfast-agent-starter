@@ -1,0 +1,11 @@
+{
+  "commit": "b1be998e1ec3c8e917f75362ae0cf0aa5a912e93",
+  "beforeCommit": "bc4ccdead691b808dfd57dc9b488e23f9770e127",
+  "dirty": false,
+  "sha256": {
+    "src/console-page.ts": "7e54e6cd0f741272c735a7e1890189532a532ed4b471939ee1a442ee644b750d",
+    "docs/console/reads-host.mjs": "de83bc89ac2b04edd76e295622e1241131a584722446fae573e7cb533fda9f99",
+    "docs/console/reads-capture.py": "a73ccf8d825c0e80e4642025e8f91cbd8517d428e2c7ac3f518715c8654385a5"
+  },
+  "capture": "Headless Chromium; desktop 1440x1000 and phone 390x844, light and dark, full page. Synthetic browser fixture only, no marketplace calls."
+}

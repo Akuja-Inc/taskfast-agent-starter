@@ -1142,14 +1142,14 @@ it("shows the saved limits in an enforced Limits card that ignores unsaved edits
   expect(card().textContent).toContain('enforced by code');
   const rows = () => card().querySelectorAll('.limit').map((row) => row.textContent);
   expect(rows()).toEqual(['Per jobNo limit', 'Daily (UTC)$50.00']);
-  expect(card().querySelectorAll('.limit .sq').map((sq) => sq.getAttribute('class'))).toEqual(['sq warn', 'sq ok']);
+  expect(card().querySelectorAll('.limit span.sq').map((sq) => sq.getAttribute('class'))).toEqual(['sq warn', 'sq ok']);
   expect(card().textContent).toContain('Nothing the agent reads can raise these.');
   expect(card().querySelector('.note')).toBeNull();
   page.ui.specDraft = { ...demoView().spec, limits: { dailyUsd: 5, perJobUsd: 1 } }; page.render();
   expect(rows()).toEqual(['Per jobNo limit', 'Daily (UTC)$50.00']);
   page.ui.specDraft = null;
   page.setView({ ...demoView(), spec: { ...demoView().spec, limits: undefined } }); page.render();
-  expect(card().querySelector('.note')!.textContent).toBe("Nothing caps what this agent commits. Standing orders can't do it. Set both limits below.");
+  expect(card().querySelector('.note')!.textContent).toBe("Nothing caps what this agent commits. Standing orders can't do it. Set both limits with their pencils.");
 });
 
 it("shows one muted line instead of an empty orders card on the timeline", () => {
@@ -1545,7 +1545,7 @@ it("asks before leaving Settings with an order typed but not added", () => {
 // gh#123: an order's wording changes in place, in one request, keeping its position.
 it("edits an order in its row and saves it in place, returning focus to its pencil", async () => {
   const { page, calls, notice } = ordersPage(['Keep **bids** small', 'Be brief'], ok);
-  const squares = page.app.querySelectorAll('.row-actions button');
+  const squares = page.app.querySelectorAll('.reads-block')[2].querySelectorAll('.row-actions button');
   expect(squares.map((button) => button.getAttribute('aria-label'))).toEqual(['Edit order 1', 'Remove order 1', 'Edit order 2', 'Remove order 2']);
   squares[0].listeners.click[0]({});
   const editor = page.app.querySelector('#order-edit')!;
@@ -1626,4 +1626,75 @@ it("removes a note with Undo through the owner's write path, and reports a note 
     ['POST', '/api/agents/shop/notes', { text: 'Second' }],
     ['DELETE', '/api/agents/shop/notes/0', { expect: 'First' }],
   ]);
+});
+
+// gh#127: the spending limits are edited where they are shown, with their own confirm.
+const limitsPage = (answer: () => Response) => {
+  const calls: [string, string, unknown][] = [];
+  const page = bootPage(async (path: unknown, init?: unknown) => {
+    const { method = 'GET', body } = (init ?? {}) as RequestInit;
+    if (path === '/api/agents') return new Response(JSON.stringify({ env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }));
+    calls.push([method, String(path), body ? JSON.parse(String(body)) : undefined]);
+    return answer();
+  });
+  const view = { ...demoView(), spec: { ...demoView().spec, limits: { perJobUsd: 20, dailyUsd: 50 } } };
+  page.setView(view); page.ui.tab = 'settings'; page.render();
+  const card = () => page.app.querySelector('aside')!;
+  const type = (key: string, value: string) => page.app.querySelector('#limit-' + key)!.listeners.input[0]({ target: { value } });
+  const pencil = (name: string) => card().querySelectorAll('button').find((button) => button.getAttribute('aria-label') === name)!.listeners.click[0]({});
+  return { page, calls, card, type, pencil, view };
+};
+
+it("edits a limit in the card, spells out the change and warns when a limit is cleared", () => {
+  const { page, card, type, pencil } = limitsPage(() => new Response(null, { status: 204 }));
+  expect(nodes(page.app).some((node) => node.textContent === 'Per job limit ($)')).toBe(false);
+  expect(card().querySelectorAll('.row-actions button').map((button) => button.getAttribute('aria-label'))).toEqual(['Edit per job limit', 'Edit daily limit']);
+  pencil('Edit per job limit');
+  const input = page.app.querySelector('#limit-perJobUsd')!;
+  expect(page.document.activeElement).toBe(input);
+  expect([input.getAttribute('min'), input.getAttribute('step'), input.getAttribute('value')]).toEqual(['0', '0.01', '20']);
+  type('perJobUsd', '15');
+  expect(card().querySelector('#limit-confirm')!.textContent).toContain('Per job limit $20.00 → $15.00');
+  expect(card().textContent).toContain('Takes effect when the agent reopens. Spending already counted today still counts.');
+  pencil('Edit daily limit');
+  type('dailyUsd', '');
+  expect(card().querySelector('#limit-confirm')!.textContent).toContain('Daily limit $50.00 → no limit');
+  expect(card().querySelector('#limit-confirm')!.textContent).toContain("Nothing will cap what this agent commits in a day. Standing orders can't do it.");
+  nodes(card()).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Cancel')!.listeners.click[0]({});
+  expect(card().querySelector('#limit-perJobUsd')).toBeNull();
+  expect(card().querySelector('#limit-confirm')!.textContent).toBe('');
+});
+
+it("saves only the limits with the rendered limits pinned, leaving an instructions draft unsent", async () => {
+  const { page, calls, type, pencil, view } = limitsPage(() => new Response(null, { status: 204 }));
+  page.ui.specDraft = { ...view.spec, instructions: 'Unsaved instructions' };
+  pencil('Edit per job limit');
+  type('perJobUsd', '15');
+  nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Confirm, save & reopen')!.listeners.click[0]({});
+  await settle();
+  expect(calls).toEqual([['PUT', '/api/agents/shop/spec', { ...view.spec, limits: { perJobUsd: 15, dailyUsd: 50 }, expectLimits: { perJobUsd: 20, dailyUsd: 50 } }]]);
+  expect(page.ui.specDraft).toMatchObject({ instructions: 'Unsaved instructions' });
+  // The card keeps the saved values until the host reports the reopened spec.
+  expect(page.app.querySelector('aside')!.querySelectorAll('.limit .num').map((node) => node.textContent)).toEqual(['$20.00', '$50.00']);
+});
+
+it("asks again with the current values when another tab changed the limits", async () => {
+  const { page, card, type, pencil } = limitsPage(() => new Response(JSON.stringify({ error: 'limits changed; refresh' }), { status: 409, headers: { 'content-type': 'application/json' } }));
+  pencil('Edit per job limit');
+  type('perJobUsd', '15');
+  // The other tab's change reaches this one through the stream.
+  page.setView({ ...demoView(), spec: { ...demoView().spec, limits: { perJobUsd: 25, dailyUsd: 50 } } });
+  nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Confirm, save & reopen')!.listeners.click[0]({});
+  await settle();
+  expect(card().textContent).toContain('Limits changed in another tab or the terminal UI.');
+  expect(card().querySelector('#limit-confirm')!.textContent).toContain('Per job limit $25.00 → $15.00');
+});
+
+it("never sends a stale limit from the agent.json form's draft", () => {
+  const requests: unknown[] = [];
+  const page = bootPage((_path, init) => { requests.push(JSON.parse(String((init as RequestInit).body))); return new Promise<never>(() => {}); });
+  page.setView({ ...demoView(), spec: { ...demoView().spec, limits: { perJobUsd: 20, dailyUsd: 50 } } }); page.ui.tab = 'settings'; page.render();
+  page.ui.specDraft = { ...demoView().spec, instructions: 'New words', limits: { perJobUsd: 99 } }; page.render();
+  nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save & reopen')!.listeners.click[0]({});
+  expect(requests).toEqual([expect.objectContaining({ instructions: 'New words', limits: { perJobUsd: 20, dailyUsd: 50 } })]);
 });

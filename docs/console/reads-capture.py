@@ -101,18 +101,37 @@ async def note_removed(page):
     await expect(page.get_by_text('Note removed.')).to_be_visible()
 
 
+async def limit_edit(page):
+    """gh#127: the Limits card's pencil turns a limit into a dollar input and spells out the change."""
+    await page.get_by_role('button', name='Edit per job limit').click()
+    await page.locator('#limit-perJobUsd').fill('15')
+    await expect(page.get_by_text('Per job limit $20.00 → $15.00')).to_be_visible()
+
+
+async def limit_clear(page):
+    # Keyboard, not a click: after a full-page screenshot at phone width, Chromium delivers
+    # the mouse-up to another element, so the click never reaches the pencil.
+    await page.get_by_role('button', name='Edit daily limit').focus()
+    await page.keyboard.press('Enter')
+    await page.locator('#limit-dailyUsd').fill('')
+    await expect(page.get_by_text('Nothing will cap what this agent commits in a day.')).to_be_visible()
+
+
 LIMITS = {'perJobUsd': 20, 'dailyUsd': 50}
 # name: (before ref, fixture state, check run on every shot, extra after-only shots)
 SCENARIOS = {
     'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, reads, {'raw': reads_raw}),
     'limits-empty': ('7516c0a', {'notes': NOTES}, None, {'money': money_hint, 'timeline': timeline}),
     'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {}),
+    'limits-edit': ('bc4ccde', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'edit': limit_edit, 'clear': limit_clear}),
     'notes': ('9fb8b16', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'editing': note_editing, 'waiting': note_waiting, 'removed': note_removed}),
     'edit': ('6abac54', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'editing': editing, 'saved': saved}),
     'feedback': ('5ff0ae9', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {'added': added, 'removed': removed, 'stale': stale}),
 }
 # Scenarios whose extra shots are compared before and after, not shown after only.
 COMPARED = {'feedback'}
+# Scenarios whose extra shots are also taken at phone width.
+PHONE_EXTRAS = {'limits-edit'}
 
 
 async def capture(link, mode, scenario):
@@ -133,10 +152,10 @@ async def capture(link, mode, scenario):
                 if check:
                     await check(page, mode)
                 await page.screenshot(path=str(OUT / f'settings-{scenario}-{mode}-{size}-{theme}.png'), full_page=True)
-                if size == 'desktop' and (mode == 'after' or scenario in COMPARED):
+                if (size == 'desktop' or scenario in PHONE_EXTRAS) and (mode == 'after' or scenario in COMPARED):
                     for name, extra in extras.items():
                         await extra(page)
-                        shot = f'{name}-{mode}' if scenario in COMPARED else name
+                        shot = f'{name}-{mode}' if scenario in COMPARED else f'{name}-{size}' if scenario in PHONE_EXTRAS else name
                         await page.screenshot(path=str(OUT / f'settings-{scenario}-{shot}-{theme}.png'), full_page=True)
                 assert not errors, errors
                 await context.close()

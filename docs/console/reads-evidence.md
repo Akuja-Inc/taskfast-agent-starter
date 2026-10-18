@@ -99,3 +99,22 @@ python3 docs/console/reads-capture.py notes
 | Editing a note | | ![light](settings-notes-editing-light.png) ![dark](settings-notes-editing-dark.png) |
 | Waiting for the turn | | ![light](settings-notes-waiting-light.png) ![dark](settings-notes-waiting-dark.png) |
 | Removed with Undo | | ![light](settings-notes-removed-light.png) ![dark](settings-notes-removed-dark.png) |
+
+## Edit the spending limits in the card (#127)
+
+The per-job and daily limits move out of the agent.json form into the Limits card. Each row's pencil turns its value into a dollar input; empty means no limit. Any change shows the Confirm spending change note in the card, and clearing a limit adds the no-cap warning. The card's own Confirm, save & reopen sends only the limits, pinned to the limits it rendered.
+
+```bash
+python3 docs/console/reads-capture.py limits-edit
+```
+
+| | Before | After |
+| --- | --- | --- |
+| Desktop light | ![before](settings-limits-edit-before-desktop-light.png) | ![after](settings-limits-edit-after-desktop-light.png) |
+| Desktop dark | ![before](settings-limits-edit-before-desktop-dark.png) | ![after](settings-limits-edit-after-desktop-dark.png) |
+| Phone light | ![before](settings-limits-edit-before-phone-light.png) | ![after](settings-limits-edit-after-phone-light.png) |
+| Phone dark | ![before](settings-limits-edit-before-phone-dark.png) | ![after](settings-limits-edit-after-phone-dark.png) |
+| Per job edited, desktop | | ![light](settings-limits-edit-edit-desktop-light.png) ![dark](settings-limits-edit-edit-desktop-dark.png) |
+| Per job edited, phone | | ![light](settings-limits-edit-edit-phone-light.png) ![dark](settings-limits-edit-edit-phone-dark.png) |
+| Daily cleared, desktop | | ![light](settings-limits-edit-clear-desktop-light.png) ![dark](settings-limits-edit-clear-desktop-dark.png) |
+| Daily cleared, phone | | ![light](settings-limits-edit-clear-phone-light.png) ![dark](settings-limits-edit-clear-phone-dark.png) |
