@@ -306,10 +306,20 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
       return send(res, 204, "");
     }
     if (req.method === "PUT" && action === "spec" && arg === undefined && item.saveSpec) {
+      const body = await readJson(req);
+      // The Limits card sends the limits it rendered, so it cannot overwrite a newer change
+      // from another tab or the TUI. Other callers omit it and save as before.
+      const expectLimits = field(body, "expectLimits");
+      if (expectLimits !== undefined) {
+        if (typeof expectLimits !== "object" || expectLimits === null) return send(res, 400, { error: "expectLimits must be an object" });
+        delete (body as Record<string, unknown>).expectLimits;
+      }
       let spec: AgentSpec;
-      try { spec = parseAgentSpec(await readJson(req)); }
+      try { spec = parseAgentSpec(body); }
       catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
       if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
+      const limits = (value: unknown) => JSON.stringify([field(value, "perJobUsd") ?? null, field(value, "dailyUsd") ?? null]);
+      if (expectLimits !== undefined && limits(expectLimits) !== limits(item.spec.limits)) return send(res, 409, { error: "limits changed; refresh" });
       await item.saveSpec(spec);
       return send(res, 204, "");
     }

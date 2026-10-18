@@ -626,6 +626,26 @@ it("removes an order only when the rendered text still matches", async () => {
   expect(asked).toEqual([["removeOrder", 1]]);
 });
 
+// gh#127: the Limits card sends the limits it rendered; a newer change answers 409.
+it("saves a spec only when expectLimits still matches the saved limits, and as before without it", async () => {
+  const fake = fakeAgent();
+  const save = vi.fn(async () => {});
+  fake.agent.saveSpec = save;
+  const { port } = await serve([fake.agent]);
+  const put = (body: unknown) => call(port, "/api/agents/foo/spec", { method: "PUT", headers: { ...auth, "content-type": "application/json" }, body });
+  const next = { ...fake.agent.spec, limits: { perJobUsd: 15, dailyUsd: 50 } };
+  const stale = await put({ ...next, expectLimits: { perJobUsd: 25, dailyUsd: 50 } });
+  expect(stale.status).toBe(409);
+  expect(JSON.parse(stale.text)).toEqual({ error: "limits changed; refresh" });
+  expect((await put({ ...next, expectLimits: { perJobUsd: 20 } })).status).toBe(409);
+  expect((await put({ ...next, expectLimits: "20" })).status).toBe(400);
+  expect(save).not.toHaveBeenCalled();
+  expect((await put({ ...next, expectLimits: { perJobUsd: 20, dailyUsd: 50 } })).status).toBe(204);
+  expect(save).toHaveBeenLastCalledWith(next);
+  expect((await put(next)).status).toBe(204);
+  expect(save).toHaveBeenCalledTimes(2);
+});
+
 // gh#125: the owner edits, removes and re-adds the agent's notes; each write waits for idle.
 it("changes a note only inside quiesce, refusing stale or malformed requests", async () => {
   const { agent, asked } = fakeAgent();

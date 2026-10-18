@@ -652,6 +652,54 @@ it("holds an owner's note removal until the turn ends, refuses it when the turn 
   });
 }, 30_000);
 
+// gh#127: new limits saved from the card are in force after the reopen, on the same store,
+// and a card that rendered older limits writes neither file.
+it("reopens with limits saved from the Limits card in force and refuses a stale card", async () => {
+  const dir = folders("me");
+  const faux = fauxProvider({ models: [{ id: "test" }] });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const post = { title: "Edit the guide", description: "Copy edit the short guide.", budget: "10.00", pickup_deadline_hours: 24 };
+  faux.setResponses([
+    fauxAssistantMessage("Ready."),
+    fauxAssistantMessage("Ready again."),
+    fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Could not post."),
+  ]);
+  const calls: string[][] = [];
+  let deliver: ((event: MarketEvent) => Promise<void>) | undefined;
+  await host({
+    agentsDir: dir, console: { port: 0 },
+    listen: (options) => { deliver = options.deliver; return { close: async () => {} }; },
+    openAgent: async ({ spec, runtime, storePath }) => openMarketplaceAgent({
+      spec: { ...spec, model: "faux:test" }, runtime, storePath, models, recoverEveryMs: 60_000,
+      command: async (_rt, args): Promise<CliResult> => {
+        calls.push(args);
+        if (args[0] === "me") return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
+        if (args[0] === "platform") return { outcome: "ok", data: { config: { submission_fee: "3.00" } } };
+        return { outcome: "ok", data: { accepted: true } };
+      },
+    }),
+  }, async (link) => {
+    await expect.poll(async () => (await roster(link!))[0]?.state).toBe("ready");
+    const files = () => readFileSync(join(dir, "me", "agent.json"), "utf8") + readFileSync(join(dir, "me", "INSTRUCTIONS.md"), "utf8");
+    const before = files();
+    const saved = { ...example("brisk-poster") as object, limits: { perJobUsd: 2, dailyUsd: 50 } };
+    const stale = await put(link!, "/api/agents/me/spec", { ...saved, expectLimits: { perJobUsd: 25, dailyUsd: 50 } });
+    expect(stale.status).toBe(409);
+    expect(files()).toBe(before);
+    expect((await put(link!, "/api/agents/me/spec", { ...saved, expectLimits: { perJobUsd: 20, dailyUsd: 50 } })).status).toBe(204);
+    expect(JSON.parse(readFileSync(join(dir, "me", "agent.json"), "utf8")).limits).toEqual({ perJobUsd: 2, dailyUsd: 50 });
+    await expect.poll(async () => (await roster(link!))[0]?.state).toBe("ready");
+    // The reopened agent's policy refuses a $3 post over the new $2 per-job limit, before any CLI write.
+    await deliver!({ event_id: "post-1", event: "message_received" });
+    await expect.poll(async () => JSON.stringify(await (await get(link!, "/api/agents/me")).json()), { timeout: 10_000 }).toContain("Could not post.");
+    const view = JSON.stringify(await (await get(link!, "/api/agents/me")).json());
+    expect(view).toMatch(/\$3 is more than your \$2 per job/);
+    expect(calls.filter((args) => args[0] === "post")).toEqual([]);
+  });
+}, 30_000);
+
 it("keeps the host running when an agent cannot reopen", async () => {
   const dir = folders("me", "you");
   let opens = 0;

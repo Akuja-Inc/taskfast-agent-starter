@@ -105,6 +105,8 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .row-actions .sq { position: relative; min-height: 28px; padding: 0; border: none; border-radius: 0; }
 .row-actions .sq::before { content: ""; position: absolute; inset: -8px; }
 .row-edit { flex: 1; }
+.limit-input { width: 9em; min-height: 36px; padding: 6px 8px; text-align: right; font-variant-numeric: tabular-nums; }
+.limit-notice:empty { display: none; }
 .row-edit input { flex: 1 1 280px; width: auto; }
 .reads-raw > summary { min-height: 44px; padding: 12px 18px; cursor: pointer; }
 .reads-raw > pre { margin: 0 18px 16px; }
@@ -428,13 +430,17 @@ function writeDestination(replace = false) {
   history[replace ? "replaceState" : "pushState"]({ consoleNavigation: navigationIndex }, "", url);
   navigationUrl = url;
 }
-function settingsDirty() { return (!!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec))) || !!ui.orderDraft.trim(); }
+// The agent.json form never saves limits; the Limits card owns them.
+const withoutLimits = (spec) => JSON.stringify({ ...spec, limits: undefined });
+const LIMITS = [["perJobUsd", "Per job", "Per job limit", "on one job."], ["dailyUsd", "Daily (UTC)", "Daily limit", "in a day."]];
+const limitChanges = () => ui.limitsDraft && view ? LIMITS.filter(([key]) => ui.limitsDraft[key] !== (view.spec.limits || {})[key]) : [];
+function settingsDirty() { return (!!ui.specDraft && (!view || withoutLimits(ui.specDraft) !== withoutLimits(view.spec))) || !!ui.orderDraft.trim() || limitChanges().length > 0; }
 function navigate(next, traversed = false) {
   const leaving = next.agent !== ui.agent || next.tab !== ui.tab || JSON.stringify(next.capability) !== JSON.stringify(ui.capability) || next.invalid !== ui.invalidDestination;
   if (leaving) {
     if (settingsDirty() && !confirm("Discard unsaved Settings edits?")) return false;
     if (!capabilities.leave()) return false;
-    ui.specDraft = null; ui.orderDraft = ""; ui.editingRow = null;
+    ui.specDraft = null; ui.orderDraft = ""; ui.editingRow = null; ui.limitsDraft = null;
   }
   if (next.agent !== ui.agent) {
     ui.listNotice = null;
@@ -1220,7 +1226,7 @@ function settingsTab() {
   const set = (path, value) => { let at = draft; for (const key of path.slice(0, -1)) at = at[key] = at[key] || {}; at[path[path.length - 1]] = value; render(); };
   const number = (value) => value === "" ? undefined : Number(value);
   const limitText = (value) => value === undefined ? "no limit" : money(value);
-  const limitChanges = ["perJobUsd", "dailyUsd"].filter((k) => (view.spec.limits || {})[k] !== (draft.limits || {})[k]);
+  const limits = view.spec.limits || {};
   function saveSettings() {
     const minutes = draft.pollIntervalMinutes ?? ${POLL_MINUTES.default};
     if (!Number.isInteger(minutes) || minutes < ${POLL_MINUTES.min} || minutes > ${POLL_MINUTES.max}) {
@@ -1228,16 +1234,48 @@ function settingsTab() {
       render(true);
       return;
     }
-    if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits;
-    act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; });
+    // The saved limits, never the draft's copy: the Limits card may have changed them since.
+    const body = { ...draft, limits: view.spec.limits };
+    if (!body.limits) delete body.limits;
+    act("PUT", "spec", body).then(() => { if (!ui.error) ui.specDraft = null; });
   }
+  // The Limits card's own confirm: only the two limits change, checked against the limits it rendered.
+  async function saveLimits() {
+    const next = Object.fromEntries(LIMITS.map(([key]) => [key, ui.limitsDraft[key]]).filter(([, value]) => value !== undefined));
+    const body = { ...view.spec, expectLimits: limits };
+    delete body.limits;
+    if (Object.keys(next).length) body.limits = next;
+    try {
+      await api("PUT", "/api/agents/" + encodeURIComponent(ui.agent) + "/spec", body);
+      ui.limitsDraft = null;
+      ui.limitsNotice = "Saved. The card shows the new limits once the agent reopens.";
+    } catch (error) {
+      // The draft stays, so the confirm note now reads from the current values.
+      ui.limitsNotice = error.status === 409 ? "Limits changed in another tab or the terminal UI. The card shows the current values; check the change and confirm again." : error.message;
+    }
+    await refresh();
+    render(true);
+  }
+  // The confirm note, rebuilt in place as a limit is typed so the focused input stays.
+  const limitNote = () => {
+    const changes = limitChanges();
+    return changes.length ? [el("div", { class: "note", role: "group" }, el("strong", { text: "Confirm spending change" }),
+      changes.map(([key, , name]) => el("div", { class: "mono", text: name + " " + limitText(limits[key]) + " → " + limitText(ui.limitsDraft[key]) })),
+      changes.filter(([key]) => ui.limitsDraft[key] === undefined).map(([, , , scope]) => el("div", { text: "Nothing will cap what this agent commits " + scope + " Standing orders can't do it." })),
+      el("div", { class: "small", text: "Takes effect when the agent reopens. Spending already counted today still counts." }))] : [];
+  };
+  const editLimit = (key) => {
+    ui.limitsDraft = ui.limitsDraft || { perJobUsd: limits.perJobUsd, dailyUsd: limits.dailyUsd, open: {} };
+    ui.limitsDraft.open[key] = true;
+    render(true);
+    document.querySelector("#limit-" + key)?.focus({ preventScroll: true });
+  };
   // One owned block of the prompt: who wrote it, and when a change to it applies.
   const block = (author, title, when, ...body) => el("div", { class: "reads-block" },
     el("div", { class: "reads-head" }, el("span", { class: "sq " + author }, pict(author === "you" ? "person" : "agent", 16)),
       el("span", { class: "reads-title", text: title }), el("span", { class: "small", text: when })),
     el("div", { class: "reads-body" }, body));
   const rows = (items, row, empty = "None yet.") => items.length ? el("ol", { class: "reads-list" }, items.map((item, index) => el("li", {}, el("div", { class: "reads-row" }, row(item, index))))) : el("div", { class: "small", text: empty });
-  const limits = view.spec.limits || {};
   const items = (kind) => kind === "orders" ? view.operator.orders : view.notes;
   const setItems = (kind, next) => { if (kind === "orders") view.operator.orders = next; else view.notes = next; };
   const addItem = (kind, text, notice, added = () => {}) => changeList(kind, "POST", kind, { text }, () => {
@@ -1324,25 +1362,34 @@ function settingsTab() {
         el("div", { class: "grid" },
           el("label", {}, "Temperament", el("select", { onchange: (e) => set(["dials", "temperament"], e.target.value) },
             ["patient", "brisk", "exacting", "easygoing", "curt"].map((t) => el("option", { value: t, selected: draft.dials.temperament === t, text: t })))),
-          el("label", {}, "Per job limit ($)", el("input", { type: "number", min: 0, step: "0.01", value: (draft.limits || {}).perJobUsd ?? "", onchange: (e) => set(["limits", "perJobUsd"], number(e.target.value)) })),
-          el("label", {}, "Daily limit ($)", el("input", { type: "number", min: 0, step: "0.01", value: (draft.limits || {}).dailyUsd ?? "", onchange: (e) => set(["limits", "dailyUsd"], number(e.target.value)) })),
           ["competence", "diligence", "priceSensitivity"].map((dial) => el("label", {}, dial + " " + draft.dials[dial],
             el("input", { type: "range", min: 0, max: 1, step: "0.1", value: draft.dials[dial], onchange: (e) => set(["dials", dial], Number(e.target.value)) })))),
-        limitChanges.length ? el("div", { class: "note", role: "group" }, el("strong", { text: "Confirm spending change" }),
-          limitChanges.map((k) => el("div", { class: "mono", text: (k === "dailyUsd" ? "Daily limit " : "Per job limit ") + limitText((view.spec.limits || {})[k]) + " → " + limitText((draft.limits || {})[k]) })),
-          el("div", { class: "small", text: "Takes effect when the agent reopens. Spending already counted today still counts." })) : null,
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
-          el("button", { class: "primary", onclick: saveSettings, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
+          el("button", { class: "primary", onclick: saveSettings, text: "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
         el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
     el("aside", {}, el("section", { class: "section" },
       band("Limits", "enforced by code"),
-      // The saved spec, never the unsaved draft: these are the caps policy holds right now.
+      // The saved spec, never an unsaved draft: these are the caps policy holds right now.
       el("div", { class: "card" },
-        [["Per job", limits.perJobUsd], ["Daily (UTC)", limits.dailyUsd]].map(([label, value]) => el("div", { class: "check limit" },
-          el("span", { class: "sq " + (value === undefined ? "warn" : "ok") }, pict(value === undefined ? "exclaim" : "check", 16)),
-          el("span", { style: "flex:1", text: label }), el("span", { class: "num", text: value === undefined ? "No limit" : money(value) }))),
-        limits.perJobUsd === undefined && limits.dailyUsd === undefined ? el("div", { class: "note", text: "Nothing caps what this agent commits. Standing orders can't do it. Set both limits below." }) : null,
+        LIMITS.map(([key, label, name]) => el("div", { class: "check limit" },
+          el("span", { class: "sq " + (limits[key] === undefined ? "warn" : "ok") }, pict(limits[key] === undefined ? "exclaim" : "check", 16)),
+          el("span", { style: "flex:1", text: label }),
+          ui.limitsDraft && ui.limitsDraft.open[key]
+            // Empty means no limit.
+            ? el("input", { id: "limit-" + key, class: "limit-input", type: "number", min: 0, step: "0.01", "aria-label": name + " ($)", placeholder: "No limit", value: ui.limitsDraft[key] ?? "", oninput: (e) => {
+              ui.limitsDraft[key] = number(e.target.value);
+              document.querySelector("#limit-confirm").replaceChildren(...limitNote());
+            } })
+            : [el("span", { class: "num", text: limits[key] === undefined ? "No limit" : money(limits[key]) }),
+              el("span", { class: "row-actions" }, el("button", { class: "sq", "data-focus": "limit-edit:" + key, "aria-label": "Edit " + name.toLowerCase(), title: "Edit " + name.toLowerCase(), onclick: () => editLimit(key) }, pict("pencil", 13)))])),
+        limits.perJobUsd === undefined && limits.dailyUsd === undefined ? el("div", { class: "note", text: "Nothing caps what this agent commits. Standing orders can't do it. Set both limits with their pencils." }) : null,
+        el("div", { id: "limit-confirm" }, limitNote()),
+        ui.limitsDraft ? [el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
+          el("button", { class: "primary", onclick: saveLimits, text: "Confirm, save & reopen" }),
+          el("button", { onclick: () => { ui.limitsDraft = null; ui.limitsNotice = ""; render(true); }, text: "Cancel" })),
+          el("div", { class: "small", text: "Saving reopens only this agent. Saving while it is mid-turn interrupts it, as Save & reopen does." })] : null,
+        el("div", { class: "small limit-notice", role: "status", "aria-live": "polite", text: ui.limitsNotice || "" }),
         el("div", { class: "small", text: "Nothing the agent reads can raise these." })))));
 }
 
