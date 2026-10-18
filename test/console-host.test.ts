@@ -149,7 +149,7 @@ it("rechecks environment before retrying a stopped slot", async () => {
   });
 });
 
-it("refuses a Briefing reopen after the folder's environment changes and restores both files", async () => {
+it("refuses a Settings reopen after the folder's environment changes and restores both files", async () => {
   const dir = folders("me");
   const file = join(dir, "me", "agent.json");
   const instructions = join(dir, "me", "INSTRUCTIONS.md");
@@ -163,7 +163,7 @@ it("refuses a Briefing reopen after the folder's environment changes and restore
   });
 });
 
-it("rechecks environment after old-owner cleanup before a Briefing replacement opens", async () => {
+it("rechecks environment after old-owner cleanup before a Settings replacement opens", async () => {
   const dir = folders("me");
   const file = join(dir, "me", "agent.json");
   const before = readFileSync(file, "utf8");
@@ -354,7 +354,7 @@ it.each([false, true])("preserves an opening cleanup failure after cancellation 
   await reopened.close(BACKGROUND_CONTEXT);
 });
 
-it("restores both Briefing files when shutdown interrupts old-owner cleanup", async () => {
+it("restores both Settings files when shutdown interrupts old-owner cleanup", async () => {
   const closing = gate();
   const stop = new AbortController();
   const dir = folders("me");
@@ -385,7 +385,7 @@ it("restores both Briefing files when shutdown interrupts old-owner cleanup", as
   expect(opens).toBe(1);
 });
 
-it("serializes duplicate Briefing saves and startup intents through cleanup and rollback", async () => {
+it("serializes duplicate Settings saves and startup intents through cleanup and rollback", async () => {
   const closing = gate();
   const dir = folders("me");
   let opens = 0;

@@ -301,7 +301,7 @@ export async function runAgents(o: RunOptions): Promise<void> {
       pollIntervalMs: pollIntervalMs(item.spec),
     };
   }
-  // Briefing saves and startup intents share one slot. Lock the intent before the
+  // Settings saves and startup intents share one slot. Lock the intent before the
   // first await, and keep it locked through file rollback and ownership cleanup.
   async function reopen(slot: Slot, owned: Owned, spec: AgentSpec): Promise<void> {
     if (ended()) throw new Error("the host is shutting down; agent file not saved");

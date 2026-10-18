@@ -40,7 +40,7 @@ What code reads or enforces: `role`, `model`, `dials`, optional `limits` and opt
 _Avoid_: config (that means the TaskFast config), profile.
 
 **Instructions** (`agents/<id>/INSTRUCTIONS.md`):
-The user's own words that open the agent's system prompt: who it is, its business, its goals and, for posting, its budget per job. Setup writes it; the console's Briefing edits it. `AgentSpec` is the agent file plus these instructions.
+The user's own words that open the agent's system prompt: who it is, its business, its goals and, for posting, its budget per job. Setup writes it; the console's Settings page edits it. `AgentSpec` is the agent file plus these instructions.
 _Avoid_: character, persona.
 
 **Role:**
@@ -70,6 +70,10 @@ Written by `taskfast init`; holds TaskFast API credentials and wallet settings. 
 **Provider settings** (`agents/<name>/.env`):
 One agent's private model credentials and settings. Setup saves them in its folder; its private model collection uses them without loading repository-level or other agents' settings, and never passes them to TaskFast children. Never printed, committed or copied.
 
+**Settings page:**
+The console page and terminal UI tab (`2`, `/agents/<id>?tab=settings`) that edit one owner-facing agent setting each: instructions, temperament, dials, limits, standing orders and work-check interval. Saving validates both files and reopens only that agent; the terminal UI edits the agent file fields only. It does not touch Provider settings, which stay in `agents/<id>/.env` and are never edited from the console.
+_Avoid_: config page, profile.
+
 **Store:**
 `agents/<agent>/.pi-state/<cli-env>/state.sqlite`. Holds Pi conversation/tasks plus kit documents for policy and admitted events. Uses Node 24 SQLite WAL and `synchronous=FULL`. Power durability depends on local storage honoring fsync; network filesystems are unsupported.
 
@@ -94,7 +98,7 @@ A marketplace event from `taskfast events stream`, with an `event_id` and an `ev
 The pump runs a stream and acknowledges an event after `deliver()` resolves (`pump.ts`). Failed admission is not acknowledged. Repeated failures or invalid events are recorded in `dead-letter.jsonl` next to the TaskFast config before acknowledgement; if recording fails the stream stops without acknowledging. The host owns one listener per agent and restarts streams with backoff (`listener.ts`).
 
 **Ping / poll:**
-A host wake-up: `pnpm agents` polls immediately, then waits `pollIntervalMinutes` after each check (15 minutes by default, whole minutes from 1 to 1,440). The owner edits the interval in Briefing or `agent.json`. An explicit host `pingEveryMs` override takes precedence. It submits marketplace work when idle. Events do not cover discovery of every new open task.
+A host wake-up: `pnpm agents` polls immediately, then waits `pollIntervalMinutes` after each check (15 minutes by default, whole minutes from 1 to 1,440). The owner edits the interval in Settings or `agent.json`. An explicit host `pingEveryMs` override takes precedence. It submits marketplace work when idle. Events do not cover discovery of every new open task.
 
 **Recovery:**
 Resuming admitted events and queued work after interruption. Pi owns persisted model/tool tasks; the kit retains event admission records and permanent write policy. Recovery does not grant permission to repeat an uncertain write. An event whose model run fails is resubmitted after a stored, jittered exponential delay (`EVENT_RETRY` in `agent.ts`); after the last retry it is recorded as abandoned, logged, and never resubmitted. When queued work has no running task, recovery queues one resume input, and no other while that input is still queued or running.

@@ -92,7 +92,7 @@ From the repository root:
 pnpm agents
 ```
 
-This single long-running process opens matching agents under `agents/<id>/` independently in the background. Each ready agent starts its marketplace event stream and checks for work immediately, then waits 15 minutes after each check by default. Change that delay per agent in the console's Briefing page or with `pollIntervalMinutes` in `agent.json`. One slow or failed agent does not delay the others. Without the console, the host exits with an error if every initial open fails. No second process or generation command is required. Press Ctrl-C to stop streams and close the stores. Restart the same command after editing `agent.json` or `INSTRUCTIONS.md`; it reads both at startup.
+This single long-running process opens matching agents under `agents/<id>/` independently in the background. Each ready agent starts its marketplace event stream and checks for work immediately, then waits 15 minutes after each check by default. Change that delay per agent in the console's Settings page or with `pollIntervalMinutes` in `agent.json`. One slow or failed agent does not delay the others. Without the console, the host exits with an error if every initial open fails. No second process or generation command is required. Press Ctrl-C to stop streams and close the stores. Restart the same command after editing `agent.json` or `INSTRUCTIONS.md`; it reads both at startup.
 
 `--env` selects agents, rather than retargeting every folder. The host reads each folder's saved `environment` from `.taskfast/config.json`, which `taskfast init` writes. `production`, `staging` and `development` match CLI values `prod`, `staging` and `local` respectively; the CLI's saved `production` alias also matches production. Other environments are skipped before opening agents, stores, model connections or event streams. Skipped folders do not appear in the console's agent dropdown. Startup logs explain each skip. If no folders match, the command exits with an error before opening the console.
 
@@ -117,12 +117,12 @@ If the port is taken, the console tries the next one up, one at a time (up to 10
 - **Messages:** Send or Enter queues a follow-up for the next run. Ctrl+S or Cmd+S sends a steer after the current tool round; Shift+Enter adds a new line. Steering is not cancellation and cannot undo a tool or money action already in flight. Each attempted send keeps its ID and initial mode on retry, even if you retry with a different key. Editing the draft creates a new send.
 - **Queued messages:** the list near the composer shows the oldest message first and labels each Follow-up or Steer. Use a follow-up's Steer button to promote it without sending it again. Withdraw removes either mode before the agent receives it, including across a restart. Sending, promotion and withdrawal work while paused. If placement wins the race, the console says "The agent already has this message." Withdrawal cannot cancel a message the agent already received. These notices do not mark your draft send as failed.
 - **Standing orders:** orders join the system prompt on every turn and only you can change them.
-- **Briefing:** edit the agent's `INSTRUCTIONS.md` instructions, temperament, dials, limits and work-check interval. **Check for work every (minutes)** accepts whole minutes from 1 to 1,440; the default is 15. Shorter intervals may increase model usage. Marketplace events still arrive independently through the event stream. Saving checks both files strictly, writes them, and reopens only that agent; the others keep running. If the agent cannot reopen, both files go back to what they were. The terminal UI edits the `agent.json` fields only. Saving mid-turn interrupts the agent: a write in flight is recorded as uncertain, as after a restart.
+- **Settings:** edit the agent's `INSTRUCTIONS.md` instructions, temperament, dials, limits and work-check interval. **Check for work every (minutes)** accepts whole minutes from 1 to 1,440; the default is 15. Shorter intervals may increase model usage. Marketplace events still arrive independently through the event stream. Saving checks both files strictly, writes them, and reopens only that agent; the others keep running. If the agent cannot reopen, both files go back to what they were. The terminal UI edits the `agent.json` fields only. Saving mid-turn interrupts the agent: a write in flight is recorded as uncertain, as after a restart.
 - **Capabilities:** manage this agent's skills and MCP servers. Add the CLI skill or import a folder, configure private MCP bindings, consent to connection tests and approve read tools individually. Changes share a pending batch. **Review changes** shows active and proposed access. **Apply when idle** waits for current work without aborting a write, then reopens only this agent. Pause and spending freeze survive. See [Agent capabilities](docs/capabilities/README.md) for import, credential, conflict and recovery rules. The TUI has no capability editor.
 
 #### Links and browser history
 
-The address bar follows the selected agent, page, capability editing screen and every expanded tool-call or raw-event panel. Only the agent folder ID appears in the path, such as `/agents/my-agent?tab=briefing`; the rest is in query parameters. Copy that URL to open the same location in another browser on this machine. That browser must authenticate separately. Pasting the console token into the unlock form preserves the requested destination. Navigation links contain no token, message text, unsaved form fields, uploads or credential values.
+The address bar follows the selected agent, page, capability editing screen and every expanded tool-call or raw-event panel. Only the agent folder ID appears in the path, such as `/agents/my-agent?tab=settings`; the rest is in query parameters. Copy that URL to open the same location in another browser on this machine. That browser must authenticate separately. Pasting the console token into the unlock form preserves the requested destination. Navigation links contain no token, message text, unsaved form fields, uploads or credential values.
 
 Back and Forward follow each agent switch, page change and panel toggle. Leaving unsaved configuration edits asks before discarding them; cancelling keeps the current screen and address. Message drafts keep their existing per-agent behavior. Server setup links identify the selected installed server and step, not the sender's edits, consent or tool approvals. A new connection's later steps cannot be restored without its unsaved fields. Folder imports and CLI bundle previews require selecting or explicitly reading the files again.
 
@@ -132,7 +132,7 @@ The console reads through the running host. It never opens a store or a second e
 
 The page updates live. The host pushes each agent's view after every commit over `GET /api/agents/:id/stream` (server-sent events with the same token and checks, at most 8 open at once). If that stream drops, the page polls every 3 s until it returns.
 
-Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [briefing editor](docs/console/briefing.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
+Screenshots: the [timeline](docs/console/timeline.png), a turn's [tool calls](docs/console/tool-calls.png), a [raw event](docs/console/raw-event.png), an agent [paused with spending frozen](docs/console/paused-frozen.png), the [settings editor](docs/console/settings.png), the [token unlock page](docs/console/unlock.png), [copy feedback](docs/console/copy-feedback.png) and the console [on a phone](docs/console/phone.png).
 
 Background startup: [states, browser captures and local validation](docs/startup/README.md).
 
@@ -149,7 +149,7 @@ pnpm tui 'http://127.0.0.1:7070/#token=…'   # also works, but puts the token i
 
 The TUI runs under [Bun](https://bun.sh) and installs its own pinned packages (`src/tui/package.json`, `bun.lock`) before each run; `pnpm agents` never needs Bun. It is a client of the console API only: it opens no store or stream, keeps the token in memory, and strips terminal escape sequences from model and marketplace text. `q` quits the TUI; the agents keep running.
 
-Keys: `1`/`2` Timeline/Briefing · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel (Timeline, alerts, queued messages) · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `s` steer the selected queued follow-up · `w` withdraw the selected queued message · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Briefing, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`; Tab into queued messages opens the sidebar too.
+Keys: `1`/`2` Timeline/Settings · `j`/`k` move · `g`/`G` top/bottom · `tab` next panel (Timeline, alerts, queued messages) · `<`/`>` agent · `enter` tool calls · `r` raw event · `o` open task · `m` message · `s` steer the selected queued follow-up · `w` withdraw the selected queued message · `p` pause · `f` freeze (asks y/n) · `c` mark checked · `R` run again · `a` alerts · `i` sidebar · `?` help. In Settings, `a`/`d` add or delete a standing order, `enter` edits a field and `ctrl+s` saves after a y/n that spells out any spending-limit change. Below 100 columns the sidebar and alerts fold behind `i` and `a`; Tab into queued messages opens the sidebar too.
 
 While an agent starts or is stopped, `<`/`>` still switches folders. `x` cancels a startup intention, including a retry waiting for old cleanup; it never interrupts that cleanup or a dispatched marketplace action. `R` retries a stopped folder, and `r` refreshes the connection. The TUI keeps drafts in memory but sends no message before readiness. [Startup states and terminal captures](docs/startup/tui-evidence.md).
 
@@ -158,7 +158,7 @@ In the Timeline composer (`m`), Enter sends a follow-up for the next run; Ctrl+S
 | Timeline | Tool calls |
 | --- | --- |
 | ![Timeline](docs/tui/timeline.png) | ![Tool calls](docs/tui/tool-calls.png) |
-| **Freeze asks first** | **Briefing save asks first** |
+| **Freeze asks first** | **Settings save asks first** |
 | ![Confirm freeze](docs/tui/confirm-freeze.png) | ![Confirm save](docs/tui/confirm-save.png) |
 | **Paused, spending frozen** | **Keys (`?`)** |
 | ![Paused, spending frozen](docs/tui/paused-frozen.png) | ![Keys](docs/tui/help.png) |
@@ -169,7 +169,7 @@ In the Timeline composer (`m`), Enter sends a follow-up for the next run; Ctrl+S
 
 Steering proof: [normal sidebar](docs/tui/steer-after-normal.png), [narrow sidebar](docs/tui/steer-after-narrow.png), [help](docs/tui/steer-after-help.png), and [capture provenance](docs/tui/steer-evidence.md).
 
-`pnpm tui:test` runs its smoke test against a throwaway host (temporary agent folders, real stores, scripted model, fake CLI). It exercises focused Ctrl+S, Enter, queue promotion, a lost send acknowledgement, a late promotion, pause/resume and Briefing's spending-limit save confirmation.
+`pnpm tui:test` runs its smoke test against a throwaway host (temporary agent folders, real stores, scripted model, fake CLI). It exercises focused Ctrl+S, Enter, queue promotion, a lost send acknowledgement, a late promotion, pause/resume and Settings' spending-limit save confirmation.
 
 ### Wallet unlock
 
@@ -226,7 +226,7 @@ That is an excerpt of `examples/careful-worker/INSTRUCTIONS.md`. Each example fo
 - `role`: `poster`, `worker` or `both`.
 - `model`: `provider:model`. See [Choosing a model](#choosing-a-model).
 - `dials`: `temperament` is `patient`, `brisk`, `exacting`, `easygoing` or `curt` and sets the prompt's manner. `competence`, `diligence` and `priceSensitivity` must be from 0 to 1, but currently do not change behavior.
-- `pollIntervalMinutes` (optional): whole minutes from 1 to 1,440 to wait after each work check. Defaults to 15 when omitted; the first check is immediate. Set it in Briefing or edit this field and restart the host. An embedding host's explicit `RunOptions.pingEveryMs` overrides this setting; it does not change the saved value. The TUI preserves this field on save but does not edit it.
+- `pollIntervalMinutes` (optional): whole minutes from 1 to 1,440 to wait after each work check. Defaults to 15 when omitted; the first check is immediate. Set it in Settings or edit this field and restart the host. An embedding host's explicit `RunOptions.pingEveryMs` overrides this setting; it does not change the saved value. The TUI preserves this field on save but does not edit it.
 - `limits` (optional): `perJobUsd` caps one money action (escrow funding or a posting fee); `dailyUsd` caps commitments per UTC day. Without limits nothing is capped. Set both for an agent that posts.
 
 `agent.json` is checked strictly: an unknown or misspelled field is refused. A `character` left from before `INSTRUCTIONS.md` existed is ignored, and the host logs a warning until you remove it; a console save drops it. The budget in `INSTRUCTIONS.md` is only words to the model; `limits` is what code enforces. `examples/` has a careful worker, a brisk poster and a both-sides agent, each a folder with both files to copy.

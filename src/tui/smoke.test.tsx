@@ -254,7 +254,7 @@ test("draws a live agent and steers it through the console API", async () => {
   expect((await fetch(new URL("/api/agents", link), { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
 }, 60_000);
 
-test("the focused composer sends steers, queue focus promotes by ID, and Briefing still confirms saving", async () => {
+test("the focused composer sends steers, queue focus promotes by ID, and Settings still confirms saving", async () => {
   const other = await startHost();
   const headers = { authorization: `Bearer ${other.link.hash.slice("#token=".length)}`, "content-type": "application/json" };
   const path = other.link.origin + "/api/agents/shop";
@@ -304,7 +304,7 @@ test("the focused composer sends steers, queue focus promotes by ID, and Briefin
       "Steer from the focused input.", "A follow-up to promote.", "Direct API steer.",
     ]);
 
-    // Editing the spending limit and Ctrl+S must still be a Briefing save, never a message.
+    // Editing the spending limit and Ctrl+S must still be a Settings save, never a message.
     keys.pressKey("2");
     keys.pressTab();
     keys.pressKey("j");
