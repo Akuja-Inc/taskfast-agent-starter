@@ -18,7 +18,7 @@ export const MARKET: Record<Role, string> = {
 // standing orders, which the agent cannot change.
 export function marketplacePrompt(spec: AgentSpec, notes: readonly string[], orders: readonly string[]): string {
   return buildSystemPrompt(spec)
-    + (notes.length ? `\nYour notes:\n${notes.map((note, index) => `${index}: ${note}`).join("\n")}` : "")
+    + (notes.length ? `\nYour notes:\n${notes.map((note, index) => `${index + 1}: ${note}`).join("\n")}` : "")
     + (orders.length ? `\nYour operator's standing orders:\n${orders.map((order) => `- ${order}`).join("\n")}` : "");
 }
 

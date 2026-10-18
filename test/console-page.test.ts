@@ -1067,6 +1067,43 @@ it("pins queue prose below its mode even without a promotion button", () => {
   expect(PAGE).toContain('.queue-mode, .queue-text { grid-column: 1; }');
 });
 
+// gh#122: Settings shows what the agent reads, in the order the model reads it.
+const readsView = () => ({ ...demoView(), prompt: 'You are Demo.\nYour notes:\n1: Note <script>x</script>\nYour operator\'s standing orders:\n- Keep **bold** [docs](https://example.com/a)', notes: ['Note <script>x</script>', 'Second note'], operator: { ...demoView().operator, orders: ['Keep **bold** [docs](https://example.com/a)', '<script>alert(1)</script>'] } });
+it("shows instructions, notes, then standing orders, and the exact prompt behind a disclosure", () => {
+  const page = bootPage(); page.setView(readsView()); page.ui.tab = 'settings'; page.render();
+  const blocks = page.app.querySelectorAll('.reads-block');
+  expect(blocks.map((block) => block.querySelector('.reads-title')!.textContent)).toEqual(['Your instructions', "The agent's notes", 'Your standing orders']);
+  expect(blocks[0].textContent).toContain('applies after Save & reopen');
+  expect(blocks[1].querySelectorAll('li').map((li) => li.textContent)).toEqual(['Note <script>x</script>', 'Second note']);
+  expect(blocks[2].textContent).toContain('apply from the next turn, only you can change them');
+  const raw = page.app.querySelector('details.reads-raw')!;
+  expect(raw.querySelector('summary')!.textContent).toBe('Show the exact text the model reads');
+  expect(raw.querySelector('pre')!.textContent).toBe(readsView().prompt);
+  // The sidebar no longer carries the prompt.
+  expect(page.app.querySelector('aside pre')).toBeNull();
+});
+
+it("renders order markdown as nodes and any markup from a note or order as text", () => {
+  const page = bootPage(); page.setView(readsView()); page.ui.tab = 'settings'; page.render();
+  const orders = page.app.querySelectorAll('.reads-block')[2];
+  expect(orders.querySelector('strong')!.textContent).toBe('bold');
+  expect(orders.querySelector('a')!.getAttribute('href')).toBe('https://example.com/a');
+  expect(page.app.querySelectorAll('script')).toEqual([]);
+  expect(orders.querySelectorAll('li')[1].textContent).toContain('<script>alert(1)</script>');
+});
+
+it("gives each order a named remove square that pins the text it removes", () => {
+  const requests: [unknown, unknown][] = [];
+  const page = bootPage((path, init) => { requests.push([path, JSON.parse(String((init as RequestInit).body))]); return new Promise<never>(() => {}); });
+  page.setView(readsView()); page.ui.tab = 'settings'; page.render();
+  const squares = page.app.querySelectorAll('.row-actions button');
+  expect(squares.map((button) => button.getAttribute('aria-label'))).toEqual(['Remove order 1', 'Remove order 2']);
+  expect(squares.every((button) => button.getAttribute('title') === button.getAttribute('aria-label'))).toBe(true);
+  expect(squares.every((button) => button.getAttribute('class') === 'sq')).toBe(true);
+  squares[1].listeners.click[0]({});
+  expect(requests).toEqual([['/api/agents/shop/orders/1', { expect: '<script>alert(1)</script>' }]]);
+});
+
 it("marks each queued row with a muted sentence-case Queued that screen readers skip and text never runs under", () => {
   expect(PAGE).toMatch(/\.queue-row \{[^}]*background: var\(--ground\); border-style: dashed; color: var\(--soft\);/);
   expect(PAGE).toMatch(/\.queue-row::before \{ content: "Queued"; content: "Queued" \/ ""; grid-column: 1; grid-row: 1; justify-self: end;[^}]*font-size: 24px;/);

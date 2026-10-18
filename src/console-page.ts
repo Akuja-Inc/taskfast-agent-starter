@@ -89,6 +89,21 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .attn-actions .sq.fix { background: var(--warn); }
 .attn-actions .sq.fix:hover { background: var(--bad); }
 .attn-actions .sq.dismiss:hover { color: var(--warn); }
+/* What the agent reads: one card of owned blocks in prompt order, each headed on Ground. */
+.card.reads { padding: 0; gap: 0; overflow: hidden; }
+.reads-block + .reads-block, .reads-raw { border-top: 1px solid var(--hairline); }
+.reads-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; background: var(--ground); border-bottom: 1px solid var(--hairline); }
+.reads-title { font-weight: 700; }
+.reads-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+.reads-list { margin: 0; padding-left: 26px; display: flex; flex-direction: column; gap: 4px; }
+.reads-list li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.reads-row { display: flex; gap: 12px; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
+/* Row actions: solid 28px squares, each with an invisible 44px hit area. */
+.row-actions { flex: none; margin-left: auto; display: inline-flex; gap: 16px; }
+.row-actions .sq { position: relative; min-height: 28px; padding: 0; border: none; border-radius: 0; }
+.row-actions .sq::before { content: ""; position: absolute; inset: -8px; }
+.reads-raw > summary { min-height: 44px; padding: 12px 18px; cursor: pointer; }
+.reads-raw > pre { margin: 0 18px 16px; }
 .note { padding: 12px 16px; border-radius: 2px; background: var(--warn-bg); border: 1px solid var(--warn); color: var(--ink); font-size: 14px; }
 .tag { font: 700 11px/1 var(--sans); letter-spacing: .07em; text-transform: uppercase; padding: 5px 8px; border-radius: 2px; background: var(--square); color: #FFF; }
 .tag.warn { background: var(--warn); } .tag.bad { background: var(--bad); }
@@ -444,6 +459,11 @@ const mdBlock = (block) => block.kind === "code" ? el("pre", { text: block.text 
   : block.kind === "list" ? mdList(block)
   : block.kind === "table" ? mdTable(block)
   : el("p", {}, mdRuns(block.runs));
+// One line of operator text: its bold, italic, code and links, or the plain text when it parses as anything else.
+function inlineMarkdown(text) {
+  const blocks = markdown(text);
+  return blocks.length === 1 && blocks[0].kind === "p" ? mdRuns(blocks[0].runs) : text;
+}
 // The same words with the markers gone, for the rail's peek.
 const plain = (node) => node.text !== undefined ? node.text
   : node.head ? [node.head, ...node.rows].flat().map((cell) => cell.map(plain).join("")).join(" ")
@@ -1179,23 +1199,35 @@ function settingsTab() {
     if (draft.limits && Object.values(draft.limits).every((v) => v === undefined)) delete draft.limits;
     act("PUT", "spec", draft).then(() => { if (!ui.error) ui.specDraft = null; });
   }
+  // One owned block of the prompt: who wrote it, and when a change to it applies.
+  const block = (author, title, when, ...body) => el("div", { class: "reads-block" },
+    el("div", { class: "reads-head" }, el("span", { class: "sq " + author }, pict(author === "you" ? "person" : "agent", 16)),
+      el("span", { class: "reads-title", text: title }), el("span", { class: "small", text: when })),
+    el("div", { class: "reads-body" }, body));
+  const rows = (items, row) => items.length ? el("ol", { class: "reads-list" }, items.map((item, index) => el("li", {}, el("div", { class: "reads-row" }, row(item, index))))) : el("div", { class: "small", text: "None yet." });
   return el("div", { class: "page" },
     el("main", {},
       el("section", { class: "section" },
-        band("Standing orders", "live from the next turn · the agent cannot remove these"),
-        el("div", { class: "card" },
-        el("ol", { style: "margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px" },
-          op.orders.map((order, index) => el("li", {}, el("div", { style: "display:flex;gap:12px;align-items:center;justify-content:space-between" }, el("span", { text: order }),
-            // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
-            el("button", { "aria-label": "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index, { expect: order }), text: "Remove" }))))),
-        el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) act("POST", "orders", { text }).then(() => { if (!ui.error) { ui.orderDraft = ""; render(); } }); } },
-          el("label", {}, "New order", el("input", { type: "text", value: ui.orderDraft, oninput: (e) => { ui.orderDraft = e.target.value; } })),
-          el("button", { type: "submit", class: "primary", text: "Add" })),
-        el("div", { class: "small", text: "The agent's own notes: " + (view.notes.length ? view.notes.join(" · ") : "none yet.") }))),
+        band("What the agent reads every turn", "top to bottom, as the model reads it"),
+        el("div", { class: "card reads" },
+          block("you", "Your instructions", "applies after Save & reopen",
+            el("div", { class: "md" }, markdown(view.spec.instructions).map(mdBlock)),
+            el("a", { href: "#instructions-editor", onclick: (e) => { e.preventDefault(); const editor = document.querySelector("#instructions-editor"); editor.scrollIntoView({ block: "center" }); editor.focus({ preventScroll: true }); } }, "Edit instructions")),
+          block("agent", "The agent's notes", "the agent adds and drops these",
+            rows(view.notes, (note) => el("span", { text: note }))),
+          block("you", "Your standing orders", "apply from the next turn, only you can change them",
+            rows(op.orders, (order, index) => [el("span", {}, inlineMarkdown(order)),
+              // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
+              el("span", { class: "row-actions" }, el("button", { class: "sq", "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index, { expect: order }) }, pict("x", 13)))]),
+            el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) act("POST", "orders", { text }).then(() => { if (!ui.error) { ui.orderDraft = ""; render(); } }); } },
+              el("label", {}, "New order", el("input", { type: "text", value: ui.orderDraft, oninput: (e) => { ui.orderDraft = e.target.value; } })),
+              el("button", { type: "submit", class: "primary", text: "Add" }))),
+          el("details", { class: "reads-raw", open: ui.promptOpen, ontoggle: (e) => { ui.promptOpen = e.target.open; } },
+            el("summary", { text: "Show the exact text the model reads" }), el("pre", { text: view.prompt })))),
       el("section", { class: "section" },
         band("INSTRUCTIONS.md and agent.json", "saving reopens only this agent; the others keep running"),
         el("div", { class: "card" },
-        el("label", {}, "Instructions (INSTRUCTIONS.md): who the agent is, its business, goals and budget", el("textarea", { rows: 8, maxlength: ${MAX_INSTRUCTIONS}, onchange: (e) => set(["instructions"], e.target.value), text: draft.instructions })),
+        el("label", {}, "Instructions (INSTRUCTIONS.md): who the agent is, its business, goals and budget", el("textarea", { id: "instructions-editor", rows: 8, maxlength: ${MAX_INSTRUCTIONS}, onchange: (e) => set(["instructions"], e.target.value), text: draft.instructions })),
         el("label", {}, "Check for work every (minutes)", el("input", { id: "poll-interval", type: "number", min: ${POLL_MINUTES.min}, max: ${POLL_MINUTES.max}, step: 1, required: true, "aria-describedby": "poll-interval-help", value: draft.pollIntervalMinutes ?? ${POLL_MINUTES.default}, onchange: (e) => set(["pollIntervalMinutes"], Number(e.target.value)) })),
         el("div", { id: "poll-interval-help", class: "small" }, "Whole minutes from 1 to 1,440; default 15. The delay starts after each check. Shorter intervals may increase model usage. Marketplace events still arrive independently.",
           view.host?.pollIntervalMs !== undefined && view.host.pollIntervalMs !== (view.spec.pollIntervalMinutes ?? ${POLL_MINUTES.default}) * 60000
@@ -1213,10 +1245,7 @@ function settingsTab() {
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
           el("button", { class: "primary", onclick: saveSettings, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
-        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
-    el("aside", {}, el("section", { class: "section" },
-      band("What the agent reads every turn"),
-      el("div", { class: "card" }, el("pre", { text: view.prompt })))));
+        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))));
 }
 
 function unlock() {
