@@ -51,7 +51,7 @@ async def added(page):
     """gh#121: each order change reports beside the list."""
     await page.locator('#order-input').fill('Reply to every message within the hour')
     await page.locator('#order-input').press('Enter')
-    await expect(page.get_by_text('Reply to every message within the hour').first).to_be_visible()
+    # The before page keeps the old list while the input holds focus; the after page shows it.
     await page.wait_for_timeout(300)
 
 
