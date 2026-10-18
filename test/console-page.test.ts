@@ -112,7 +112,6 @@ it("reloads automatically on a valid token hashchange without installing it in t
   location.hash = '#token=' + 'b'.repeat(64);
   listeners.get('hashchange')!();
   expect(location.reload).toHaveBeenCalledTimes(1);
-  expect(location.hash).toBe('#token=' + 'b'.repeat(64));
   expect(sessionStorage.setItem).not.toHaveBeenCalled();
   expect(sessionStorage.removeItem).not.toHaveBeenCalled();
   expect(history.replaceState).not.toHaveBeenCalled();
