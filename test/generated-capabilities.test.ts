@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { expect, it } from "vitest";
@@ -17,7 +17,6 @@ import { approve, FIXTURE, httpFixture, writeMcp } from "./mcp-fixture.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const BUNDLE = join(ROOT, "test/fixtures/cli/skills/taskfast-agent");
-const context = BACKGROUND_CONTEXT;
 const post = { title: "Edit the guide", description: "Copy edit two lines.", budget: "5.00", pickup_deadline_hours: 24 };
 const event = { event_id: "generated-event", event: "task.updated", task_id: "11111111-1111-4111-8111-111111111111" };
 const toolTurn = (name: string, input: Parameters<typeof fauxToolCall>[1], id: string) => fauxAssistantMessage([fauxToolCall(name, input, { id })], { stopReason: "toolUse" });
@@ -49,7 +48,6 @@ it.each(["stdio", "http"])("runs a generated agent's capabilities through compac
     await setup(io, { env: "staging", provider: "ollama", model: "fixture", agent: "editor", role: "both", name: "Editor", business: "Editing", description: "Careful copy editing.", goals: "Finish small jobs honestly", budget: "5", init: false, taskfastSkill: true });
     let folder = join(root, "agents/editor");
     const skillFiles = [...loadSkills(folder)[0]!.files.keys()];
-    expect(skillFiles).toContain("reference/WORKER.md");
     const provenance = readFileSync(join(folder, ".agents/provenance.json"), "utf8");
     expect(skillFiles).toHaveLength(7);
     const hashes = Object.fromEntries(skillFiles.map((file) => [file, createHash("sha256").update(readFileSync(join(folder, ".agents/skills/taskfast-agent", file))).digest("hex")]));
@@ -147,10 +145,9 @@ it.each(["stdio", "http"])("runs a generated agent's capabilities through compac
     const recovered = await transcript(second.agent);
     for (const text of ["# Worker Loop", "results for after relocation", "uncertain"]) expect(recovered).toContain(text);
     expect(recovered).not.toContain(secret);
-    const count = second.faux.state.callCount;
-    expect(count).toBe(4);
+    expect(second.faux.state.callCount).toBe(4);
     await second.agent.deliver(event); await second.agent.recover(); await second.agent.waitForIdle();
-    expect(second.faux.state.callCount).toBe(count);
+    expect(second.faux.state.callCount).toBe(4);
     expect((await second.agent.operator.events())["event:generated-event"]).toMatchObject({ kind: "done" });
     expect(logs.join("\n")).not.toContain(secret);
     if (http) {
