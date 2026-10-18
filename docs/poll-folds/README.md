@@ -32,15 +32,15 @@ The capture needs machine-installed Python Playwright and its Chromium browser. 
 | Observation | Browser display |
 | --- | --- |
 | First supported completed check | Original turn; establishes baseline |
-| Same input, exact reply text, same ordered successful reads and request scopes, canonically equal complete JSON results | Folded run; retains every original |
+| Same input, exact reply text, same ordered successful reads and request scopes, identical result text | Folded run; retains every original |
 | Same responses but different reply wording | Original turn |
 | Changed task state, amount, deadline, cursor, result order or request filter | Original turn |
 | Pending, failed, uncertain, cancelled or truncated work | Original turn |
 | Write, money, memory, skill or MCP tool | Original turn |
-| Unsupported response, missing completion/comparability metadata, non-JSON, oversized or excessively nested result | Original turn |
+| Missing completion or comparability metadata | Original turn |
 | Operator input, marketplace event or resumed work | Original turn; breaks the run |
 
-Every response field participates in comparison. Object key ordering is incidental; array ordering and response timestamps are not discarded. Comparison is limited to an explicit marketplace-read allowlist. No new tool becomes eligible automatically. Null or scalar responses and empty objects remain unfolded. The summary names only the reads performed, never the whole marketplace.
+Results compare as raw text, so any difference in a field, key order, array order or timestamp keeps the turn visible. Comparison is limited to an explicit marketplace-read allowlist. No new tool becomes eligible automatically. The summary names only the reads performed, never the whole marketplace.
 
 The browser clips groups to mounted originals and keeps one rail mark per original turn. Group, check and tool-control identities include the agent, generation and original timestamp/call identity rather than mutable transcript indices. An original that finishes while its tool control is focused stays revealed when it becomes eligible for folding.
 

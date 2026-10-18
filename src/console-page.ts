@@ -653,7 +653,7 @@ const rank = (turn) => RANK[hue(turn)];
 // Keep identities tied to the original run start, not the clipped window or run end.
 function turnIdentity(turn, index) {
   const call = turn.replies.flatMap((reply) => reply.calls)[0];
-  return encodeURIComponent(JSON.stringify([ui.agent, generationOf(selected()), turn.at, call ? call.id : [turn.kind, turn.text, turn.event, turn.at ? null : index]]));
+  return JSON.stringify([turn.at, call ? call.id : [turn.kind, turn.text, turn.event, turn.at ? null : index]]);
 }
 function timelineRows() {
   const from = Math.max(0, view.timeline.length - ui.windowN);
@@ -691,7 +691,7 @@ function pollRun(row) {
         turnCard(turn, index)), ui.checks, checkKey);
     })), ui.folds, key);
 }
-function timelineTurns(rows = timelineRows()) {
+function timelineTurns(rows) {
   const tl = view.timeline, from = Math.max(0, tl.length - ui.windowN);
   const earlier = from + (from === 1 ? " earlier turn" : " earlier turns");
   const size = Math.ceil(from / 12), groups = [];

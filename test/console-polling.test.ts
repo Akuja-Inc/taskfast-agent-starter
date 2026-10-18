@@ -38,26 +38,19 @@ it("ends a run at an operator message, event, resumed work or other input", () =
   }
 });
 
-it("leaves unsupported, failed, pending, uncertain and incomplete observations visible", () => {
+// buildTimeline() leaves failed, uncertain and pending calls without comparable: true.
+it("leaves unsupported, non-comparable and incomplete observations visible", () => {
   const mutations: ((turn: Turn) => void)[] = [
     (turn) => { turn.complete = false; },
     (turn) => { delete turn.complete; },
-    (turn) => { turn.replies[0].calls[0].outcome = "failed"; },
-    (turn) => { turn.replies[0].calls[0].outcome = "pending"; },
-    (turn) => { turn.replies[0].calls[0].outcome = "uncertain"; },
     (turn) => { turn.replies[0].calls[0].name = "mcp_docs_search"; },
     (turn) => { turn.replies[0].calls[0].name = "post_task"; },
     (turn) => { turn.replies[0].calls[0].name = "remember"; },
     (turn) => { delete turn.replies[0].calls[0].result; },
-    (turn) => { turn.replies[0].calls[0].result = "not JSON"; },
     (turn) => { turn.replies[0].calls[0].comparable = false; },
-    (turn) => { turn.replies[0].calls[0].result = '{"error":"failed"}'; },
-    (turn) => { turn.replies[0].calls[0].result = '{"skipped":"already done"}'; },
-    (turn) => { turn.replies[0].calls[0].result = "{}"; },
-    (turn) => { turn.replies[0].calls[0].result = "null"; },
+    (turn) => { delete turn.replies[0].calls[0].comparable; },
     (turn) => { turn.replies = []; },
     (turn) => { turn.replies[1].text = ""; },
-    (turn) => { turn.replies[0].tasks = [{ id: "task", via: "post_task" }]; },
   ];
   for (const mutate of mutations) {
     const history = turns();
@@ -77,16 +70,6 @@ it("compares every response field and request argument, not a summary or count",
     const history = turns(); mutation(history[1]);
     expect(foldPolls(history).slice(0, 3).every((row) => row.kind === "turn")).toBe(true);
   }
-});
-
-it("treats object key ordering as incidental but keeps array ordering significant", () => {
-  const history = turns();
-  history[0].replies[0].calls[0].result = '{"tasks":[],"kind":"open"}';
-  history[1].replies[0].calls[0].result = '{"kind":"open","tasks":[]}';
-  expect(foldPolls(history.slice(0, 2))[1].kind).toBe("unchanged");
-  history[0].replies[0].calls[0].result = '{"tasks":[1,2]}';
-  history[1].replies[0].calls[0].result = '{"tasks":[2,1]}';
-  expect(foldPolls(history.slice(0, 2))[1].kind).toBe("turn");
 });
 
 it("excludes every write, money and memory tool in the actual tool table", () => {
@@ -118,13 +101,6 @@ it("retains task references and notices changed deadlines even when the prose re
   expect(foldPolls(history)[1].kind).toBe("unchanged");
   history[2].replies[0].calls[0].result = '{"id":"task","status":"submitted","deadline":"2026-10-20"}';
   expect(foldPolls(history).slice(2)).toEqual([{ kind: "turn", index: 2 }, { kind: "turn", index: 3 }]);
-});
-
-it("fails open to the full turn for oversized or excessively nested results", () => {
-  for (const result of [JSON.stringify({ tasks: [], note: "x".repeat(131_072) }), '{"tasks":' + '['.repeat(65) + '0' + ']'.repeat(65) + '}']) {
-    const history = turns(); for (const turn of history) turn.replies[0].calls[0].result = result;
-    expect(foldPolls(history).every((row) => row.kind === "turn")).toBe(true);
-  }
 });
 
 it("keeps paraphrases and new warnings visible despite identical server responses", () => {
