@@ -49,12 +49,4 @@ The direct-link comparison requests `/agents/beta?tab=briefing` from each built 
 - [Before direct link](before-direct-link.png): baseline host, 1280 × 900.
 - [After direct link](after-direct-link.png): Beta's Briefing, 1280 × 900.
 - [Expanded panels](after-expanded-panels.png): restored raw event and tool-call group, 1280 × 900.
-- [Phone](after-phone.png): same restored link, 390 × 844. Chromium viewport emulation, not a physical phone. The capture script checks horizontal overflow.
-
-The fixture host is `test/fixtures/console-navigation-host.mjs`. Both checkouts must already have been built. With Python Playwright installed, reproduce the captures from the changed checkout:
-
-```sh
-TASKFAST_BROWSER=/path/to/chromium python3 scripts/capture-console-navigation.py --baseline /path/to/built-baseline-checkout
-```
-
-Capture automation bypasses CSP only in its browser context to drive the existing page. The served CSP remains unchanged. The capture process stops both fixture hosts before exiting.
+- [Phone](after-phone.png): same restored link, 390 × 844. Chromium viewport emulation, not a physical phone.

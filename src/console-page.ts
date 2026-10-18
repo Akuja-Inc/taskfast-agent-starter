@@ -233,15 +233,15 @@ const app = document.getElementById("app");
 const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} }, drop: (k) => { try { sessionStorage.removeItem(k); } catch {} } };
 const tokenLink = /^#token=([0-9a-f]{64})$/;
 const fromLink = tokenLink.exec(location.hash);
-if (fromLink) { store.set("token", fromLink[1]); history.replaceState(history.state, "", location.pathname + (location.search || "")); }
+if (fromLink) { store.set("token", fromLink[1]); history.replaceState(history.state, "", location.pathname + location.search); }
 // A token link in an open tab is same-document navigation, so startup above never sees it.
 // Reload rather than install in place: old requests' 401s could clear the new token.
 addEventListener("hashchange", () => { if (tokenLink.test(location.hash)) location.reload(); });
 const destinations = (${consoleNavigation.toString()})();
-const initialDestination = destinations.read(location.pathname, location.search || "");
+const initialDestination = destinations.read(location.pathname, location.search);
 let navigationIndex = history.state && Number.isInteger(history.state.consoleNavigation) ? history.state.consoleNavigation : 0;
 let revertingNavigation = false;
-let navigationUrl = location.pathname + (location.search || "");
+let navigationUrl = location.pathname + location.search;
 history.replaceState({ consoleNavigation: navigationIndex }, "", navigationUrl);
 let token = store.get("token");
 const ui = { agent: initialDestination.agent || (initialDestination.invalid ? null : store.get("agent")), tab: initialDestination.tab, capability: initialDestination.capability, invalidDestination: initialDestination.invalid, open: new Set(initialDestination.open), raw: new Set(initialDestination.raw), folds: new Set(), checks: new Set(), draft: "", attempt: null, messageError: "", promotions: new Map(), withdrawals: new Map(), notices: new Map(), orderDraft: "", error: "", specDraft: null, reopening: false, focusComposer: true, scrollComposer: false, windowN: 12 };
@@ -404,8 +404,8 @@ function navigate(next, traversed = false) {
 addEventListener("popstate", (event) => {
   if (revertingNavigation) { revertingNavigation = false; return; }
   const index = event.state && Number.isInteger(event.state.consoleNavigation) ? event.state.consoleNavigation : 0;
-  const url = location.pathname + (location.search || "");
-  const next = destinations.read(location.pathname, location.search || "");
+  const url = location.pathname + location.search;
+  const next = destinations.read(location.pathname, location.search);
   if (navigate(next, true)) { navigationIndex = index; navigationUrl = url; }
   else if (index !== navigationIndex) { revertingNavigation = true; history.go(navigationIndex - index); }
   else history.replaceState({ consoleNavigation: navigationIndex }, "", navigationUrl);
@@ -656,13 +656,12 @@ function attention() {
 }
 
 function toggle(set, key) { if (set.has(key)) set.delete(key); else set.add(key); writeDestination(); render(); }
-const turnKey = (turn, index) => turnIdentity(turn, index);
-const replyKey = (turn, index, reply, r) => reply.calls.length ? turnKey(turn, index) + ":" + reply.calls[0].id : turnKey(turn, index) + "r" + r;
+const replyKey = (turn, index, reply, r) => reply.calls.length ? turnIdentity(turn, index) + ":" + reply.calls[0].id : turnIdentity(turn, index) + "r" + r;
 // References use immutable input and call identities, never their current row number.
 function resolvePanels() {
   const open = new Map(), raw = new Map();
   view.timeline.forEach((turn, i) => {
-    if (turn.kind === "event") { const key = turnKey(turn, i); raw.set(key, [...raw.get(key) || [], i]); }
+    if (turn.kind === "event") { const key = turnIdentity(turn, i); raw.set(key, [...raw.get(key) || [], i]); }
     turn.replies.forEach((reply, r) => { if (reply.calls.length) { const key = replyKey(turn, i, reply, r); open.set(key, [...open.get(key) || [], i]); } });
   });
   for (const item of view.attention) if (item.kind === "abandoned") raw.set("a:" + item.id, [-1]);
@@ -695,7 +694,7 @@ const countOf = (calls, outcome) => calls.filter((c) => c.outcome === outcome).l
 const headText = (turn) => turn.kind === "event" ? ((turn.event && turn.event.event) || "event") + (turn.event && turn.event.task_id ? " · task " + turn.event.task_id : "") : turn.text;
 function turnCard(turn, index) {
   const [cls, glyph, origin] = TAG[turn.kind];
-  const key = turnKey(turn, index);
+  const key = turnIdentity(turn, index);
   const isEvent = turn.kind === "event";
   return el("article", { class: "card turn", "data-i": index, "data-timeline-anchor": "turn:" + turnIdentity(turn, index) },
     el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "data-focus": "raw:" + key, "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },

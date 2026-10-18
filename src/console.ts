@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { consoleNavigation } from "./console-navigation.js";
 import { PAGE } from "./console-page.js";
 import type { EventWork, MarketplaceAgent } from "./core/agent.js";
 import type { Action } from "./core/policy.js";
@@ -156,16 +157,7 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
   };
 }
 
-// Check the raw path: URL parsing would collapse dot segments or turn backslashes into slashes.
-function isPagePath(path: string): boolean {
-  if (path === "/") return true;
-  const match = /^\/agents\/([^/]+)$/.exec(path);
-  if (!match) return false;
-  try {
-    const id = decodeURIComponent(match[1]);
-    return id !== "." && id !== ".." && !/[\/\\\0]/.test(id);
-  } catch { return false; }
-}
+const { read: readDestination } = consoleNavigation();
 
 // The page may run only its own inline code and talk only to this server.
 const PAGE_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -221,8 +213,9 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
     if (!own().includes(req.headers.host ?? "")) return send(res, 403, { error: "unknown host" });
     if (req.method === "OPTIONS") return send(res, 405, { error: "no cross-origin requests" });
     if (req.headers.origin !== undefined && !own().some((host) => req.headers.origin === `http://${host}`)) return send(res, 403, { error: "unknown origin" });
+    // Check the raw path: URL parsing would collapse dot segments or turn backslashes into slashes.
     const rawPath = (req.url ?? "/").split("?", 1)[0];
-    if (req.method === "GET" && isPagePath(rawPath)) return send(res, 200, PAGE, "text/html");
+    if (req.method === "GET" && !readDestination(rawPath, "").invalid) return send(res, 200, PAGE, "text/html");
     const path = new URL(req.url ?? "/", "http://console").pathname;
     if (!sameToken(req.headers.authorization, o.token)) return send(res, 401, { error: "missing or wrong console token" });
     if (req.method === "GET" && path === "/api/agents") {

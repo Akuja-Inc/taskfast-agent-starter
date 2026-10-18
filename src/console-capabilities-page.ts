@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
+import type { ConsoleDestination } from "./console-navigation.js";
 import type { CapabilityApproval, CapabilityFile, CapabilityServerConfig, CapabilityTest, CapabilityView } from "./capability-types.js";
 
 /** Browser uploads keep their directory structure. The server validates the same bytes again. */
@@ -93,14 +94,14 @@ header nav { flex-wrap:wrap; max-width:100%; }
 `;
 
 /** Destination identity only. Never serialize editor fields, credentials or approvals. */
-export type CapabilityRoute = { screen: "overview" | "import" | "skill" | "server" | "review" | "taskfast" | "credential"; item: string; step: number };
+type CapabilityRoute = ConsoleDestination["capability"];
 
 /** This function is serialized into the single console page. Keep its dependencies explicit. */
 export function capabilitiesPage(deps: {
   el: (tag: string, attrs: Record<string, unknown>, ...children: unknown[]) => HTMLElement;
   api: (method: string, path: string, body?: unknown, signal?: AbortSignal) => Promise<CapabilityView>;
   readFolder: typeof readCapabilityFolder;
-  navigate?: (route: CapabilityRoute) => void;
+  navigate: (route: CapabilityRoute) => void;
 }) {
   const { el, api, readFolder } = deps;
   type Upload = Awaited<ReturnType<typeof readFolder>>;
@@ -114,7 +115,7 @@ export function capabilitiesPage(deps: {
     if (!s) return { screen: "overview", item: "", step: 0 };
     return { screen: s.screen, item: ["skill", "server", "credential", "import"].includes(s.screen) ? s.item : "", step: s.screen === "server" ? s.editor?.step ?? s.step : 0 };
   }
-  function navigate(s: State) { if (current === s) deps.navigate?.(route()); }
+  function navigate(s: State) { if (current === s) deps.navigate(route()); }
   function serverStep(s: State, editor: Editor, step: number) {
     editor.step = step; draw(s); navigate(s);
   }
@@ -597,8 +598,7 @@ export function capabilitiesPage(deps: {
     if (current !== s) {
       if (destination) {
         abandon(s);
-        s.screen = destination.screen; s.item = ["skill", "server", "credential", "import"].includes(destination.screen) ? destination.item : "";
-        s.step = destination.screen === "server" && Number.isInteger(destination.step) && destination.step >= 0 && destination.step <= 2 ? destination.step : 0;
+        s.screen = destination.screen; s.item = destination.item; s.step = destination.step;
         s.revision = s.data?.revision || ""; s.error = ""; s.notice = "";
       }
       current = s; draw(s);
@@ -606,5 +606,5 @@ export function capabilitiesPage(deps: {
     void load(s); return s.root;
   }
   addEventListener("beforeunload", (event) => { if (current?.dirty) { event.preventDefault(); event.returnValue = true; } });
-  return { mount, leave, route, clear: () => { for (const state of states.values()) abandon(state); states.clear(); current = null; }, poll: () => current ? load(current) : Promise.resolve(), selected: () => current?.id };
+  return { mount, leave, clear: () => { for (const state of states.values()) abandon(state); states.clear(); current = null; }, poll: () => current ? load(current) : Promise.resolve(), selected: () => current?.id };
 }
