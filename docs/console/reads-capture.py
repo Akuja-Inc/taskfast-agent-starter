@@ -109,7 +109,10 @@ async def limit_edit(page):
 
 
 async def limit_clear(page):
-    await page.get_by_role('button', name='Edit daily limit').click()
+    # Keyboard, not a click: after a full-page screenshot at phone width, Chromium delivers
+    # the mouse-up to another element, so the click never reaches the pencil.
+    await page.get_by_role('button', name='Edit daily limit').focus()
+    await page.keyboard.press('Enter')
     await page.locator('#limit-dailyUsd').fill('')
     await expect(page.get_by_text('Nothing will cap what this agent commits in a day.')).to_be_visible()
 
