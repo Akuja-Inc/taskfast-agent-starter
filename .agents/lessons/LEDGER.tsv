@@ -26,3 +26,5 @@ hand:94aba593741f	hand	2026-10-18T01:21:34Z	check	https://github.com/Akuja-Inc/t
 hand:5c08c7d4a3fe	hand	2026-10-18T15:57:00Z	agents_md	AGENTS.md	A renamed console page keeps reading its old tab value so saved links still open it; rewrite the address bar to the current name
 hand:1511f5fa7f95	hand	2026-10-18T16:23:40Z	lesson	.agents/lessons/console-follow-scroll.md	scrollBy cancels an in-flight smooth scrollIntoView
 hand:76152dc02330	hand	2026-10-18T16:23:40Z	lesson	.agents/lessons/console-follow-scroll.md	body.away is rAF-stale within a frame; measure at-bottom from pre-rebuild geometry
+hand:fd2657a8465b	hand	2026-10-18T19:03:58Z	lesson	.agents/lessons/console-evidence-playwright-csp.md	After a full-page phone screenshot Chromium delivers mouse-up elsewhere; activate by keyboard in captures
+hand:563fe0a1882c	hand	2026-10-18T19:03:58Z	lesson	.agents/lessons/host-tests.md	A gated scripted model hangs host shutdown when an assertion throws first; release the gate in finally
