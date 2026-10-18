@@ -64,3 +64,20 @@ python3 docs/console/reads-capture.py feedback
 | Removed with Undo, dark | ![before](settings-feedback-removed-before-dark.png) | ![after](settings-feedback-removed-after-dark.png) |
 | Stale remove, light | ![before](settings-feedback-stale-before-light.png) | ![after](settings-feedback-stale-after-light.png) |
 | Stale remove, dark | ![before](settings-feedback-stale-before-dark.png) | ![after](settings-feedback-stale-after-dark.png) |
+
+## Edit an order in place (#123)
+
+Each order row gains a pencil square to the left of its X. The pencil opens the row as an input holding the raw markdown, with Save and Cancel. Save sends `PUT orders/N` with the text the row started from, so the order keeps its position and no turn runs without it.
+
+```bash
+python3 docs/console/reads-capture.py edit
+```
+
+| | Before | After |
+| --- | --- | --- |
+| Desktop light | ![before](settings-edit-before-desktop-light.png) | ![after](settings-edit-after-desktop-light.png) |
+| Desktop dark | ![before](settings-edit-before-desktop-dark.png) | ![after](settings-edit-after-desktop-dark.png) |
+| Phone light | ![before](settings-edit-before-phone-light.png) | ![after](settings-edit-after-phone-light.png) |
+| Phone dark | ![before](settings-edit-before-phone-dark.png) | ![after](settings-edit-after-phone-dark.png) |
+| Editing | | ![light](settings-edit-editing-light.png) ![dark](settings-edit-editing-dark.png) |
+| Saved | | ![light](settings-edit-saved-light.png) ![dark](settings-edit-saved-dark.png) |
