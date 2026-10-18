@@ -167,7 +167,11 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
   }
   if (ui.tab === "settings") {
     if (key === "a") return { ui: { ...ui, editing: "order" } };
-    if (key === "d" && view.operator.orders.length) return { ui, effect: call("DELETE", `orders/${clamp(ui.order, view.operator.orders.length)}`) };
+    if (key === "d" && view.operator.orders.length) {
+      const at = clamp(ui.order, view.operator.orders.length);
+      // The server removes only the order the TUI shows at that index.
+      return { ui, effect: call("DELETE", `orders/${at}`, { expect: view.operator.orders[at] }) };
+    }
     if (key === "enter" && ui.panel === "fields") return { ui: { ...ui, editing: FIELDS[ui.field] } };
     if (key === "ctrl+s" && ui.draft) {
       const before = view.spec.limits ?? {};

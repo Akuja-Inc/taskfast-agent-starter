@@ -217,6 +217,7 @@ export function App(p: AppProps) {
         setNotice("Message withdrawn.");
       }
       if (effect.action.startsWith("steer/")) setNotice("Message set to Steer.");
+      if (effect.method === "DELETE" && effect.action.startsWith("orders/")) setNotice("Order removed.");
       if (effect.action === "spec") {
         setUi({ ...ui(), draft: undefined });
         setNotice("Saved. Only this agent reopened.");
@@ -250,7 +251,7 @@ export function App(p: AppProps) {
     const entry = agent(), epoch = gen;
     const id = entry?.id;
     if (!id || entry?.state !== "ready" || !view() || !text.trim()) return;
-    try { await api("POST", `${agentPath(id)}/orders`, { text: text.trim() }); }
+    try { await api("POST", `${agentPath(id)}/orders`, { text: text.trim() }); if (current(entry, epoch)) setNotice("Order added."); }
     catch (error) { if (current(entry, epoch)) setNotice(message(error)); }
   }
   // Leaves the line after this key event, so its enter isn't also read as a command.

@@ -589,6 +589,23 @@ test("says orders are not enforced, and hints at limits while a new order names 
   } finally { setup.renderer.destroy(); }
 }, 30_000);
 
+// gh#121: an order change reports on the notice line; removal pins the shown text.
+test("reports an added and a removed order on the notice line", async () => {
+  const other = await startHost();
+  const { setup, until, keys } = await draw(130, 48, other.link.origin, other.link.hash.slice("#token=".length));
+  try {
+    await until((frame) => frame.includes("A new bid arrived"));
+    keys.pressKey("2");
+    keys.pressKey("a");
+    await until(() => setup.renderer.currentFocusedEditor !== null);
+    await keys.typeText("Skip phone jobs");
+    keys.pressEnter();
+    await until((frame) => frame.includes("Order added.") && frame.includes("1. Skip phone jobs"));
+    keys.pressKey("d");
+    await until((frame) => frame.includes("Order removed.") && !frame.includes("1. Skip phone jobs"));
+  } finally { setup.renderer.destroy(); other.host.kill("SIGTERM"); }
+}, 30_000);
+
 test("drops a stale view for the can't-reach screen when the host stops", async () => {
   const other = await startHost();
   const { setup, until, keys } = await draw(120, 30, other.link.origin, other.link.hash.slice("#token=".length));

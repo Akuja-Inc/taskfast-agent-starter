@@ -196,7 +196,8 @@ textarea::placeholder { color: var(--muted); }
 .queue-actions button { justify-content: center; }
 @media (max-width: 640px) { .queue-row { grid-template-columns: minmax(0, 1fr); } .queue-actions { grid-column: 1; grid-row: 3; flex-direction: row; flex-wrap: wrap; } }
 .queue-error { grid-column: 1 / -1; }
-.queue-error:empty, .queue-notice:empty { display: none; }
+.queue-error:empty, .queue-notice:empty, .order-notice:empty { display: none; }
+.order-notice { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 button:disabled, button[aria-disabled="true"] { cursor: wait; opacity: .6; }
 .startup { overflow-wrap: anywhere; }
 .startup-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -379,6 +380,18 @@ async function act(method, action, body) {
   // A 409 says the operator acted on stale state (the orders changed): show the reason over fresh data.
   catch (error) { ui.error = error.message; if (error.status === 409) await refresh(); else render(); }
 }
+// Orders apply from the agent's next turn, apart from Save & reopen, so a change reports
+// beside the list rather than in the page error. done() applies a success to the shown
+// list at once, sets its notice and may name the control to focus next.
+async function changeOrders(method, action, body, done) {
+  let focus = null;
+  try { await api(method, "/api/agents/" + encodeURIComponent(ui.agent) + "/" + action, body); focus = done(); }
+  // A 409 says the list was stale (another tab or the TUI changed it): show the current one.
+  catch (error) { ui.orderNotice = { text: error.status === 409 ? "Orders changed. The list now shows the current orders." : error.message }; }
+  await refresh();
+  render(true);
+  (focus && document.querySelector(focus) || document.querySelector("#order-input"))?.focus({ preventScroll: true });
+}
 ${LIVE}
 ${MARKDOWN}
 ${FOLD_POLLS}
@@ -400,15 +413,16 @@ function writeDestination(replace = false) {
   history[replace ? "replaceState" : "pushState"]({ consoleNavigation: navigationIndex }, "", url);
   navigationUrl = url;
 }
-function settingsDirty() { return !!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec)); }
+function settingsDirty() { return (!!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec))) || !!ui.orderDraft.trim(); }
 function navigate(next, traversed = false) {
   const leaving = next.agent !== ui.agent || next.tab !== ui.tab || JSON.stringify(next.capability) !== JSON.stringify(ui.capability) || next.invalid !== ui.invalidDestination;
   if (leaving) {
     if (settingsDirty() && !confirm("Discard unsaved Settings edits?")) return false;
     if (!capabilities.leave()) return false;
-    ui.specDraft = null;
+    ui.specDraft = null; ui.orderDraft = "";
   }
   if (next.agent !== ui.agent) {
+    ui.orderNotice = null;
     drafts.set(ui.agent, { draft: ui.draft, attempt: ui.attempt, messageError: ui.messageError });
     Object.assign(ui, drafts.get(next.agent) || { draft: "", attempt: null, messageError: "" });
     ui.agent = next.agent;
@@ -1209,6 +1223,11 @@ function settingsTab() {
     el("div", { class: "reads-body" }, body));
   const rows = (items, row, empty = "None yet.") => items.length ? el("ol", { class: "reads-list" }, items.map((item, index) => el("li", {}, el("div", { class: "reads-row" }, row(item, index))))) : el("div", { class: "small", text: empty });
   const limits = view.spec.limits || {};
+  const addOrder = (text, notice, added = () => {}) => changeOrders("POST", "orders", { text }, () => {
+    view.operator.orders = [...view.operator.orders, text];
+    ui.orderNotice = { text: notice };
+    added();
+  });
   // A sample or a typed draft: the hint follows the draft without rebuilding the focused input.
   const draftOrder = (text, input) => {
     ui.orderDraft = text;
@@ -1228,14 +1247,22 @@ function settingsTab() {
           block("you", "Your standing orders", "apply from the next turn, only you can change them",
             rows(op.orders, (order, index) => [el("span", {}, inlineMarkdown(order)),
               // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
-              el("span", { class: "row-actions" }, el("button", { class: "sq", "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index, { expect: order }) }, pict("x", 13)))],
+              el("span", { class: "row-actions" }, el("button", { class: "sq", "data-focus": "order-x:" + index, "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => changeOrders("DELETE", "orders/" + index, { expect: order }, () => {
+                view.operator.orders = view.operator.orders.filter((_, at) => at !== index);
+                ui.orderNotice = { text: "Order removed.", undo: order };
+                return '[data-focus="order-x:' + index + '"]';
+              }) }, pict("x", 13)))],
               "None yet. Anything you add here is the last thing the agent reads before it acts."),
             op.orders.length ? null : el("div", { class: "samples" }, el("span", { class: "samples-label", text: "Try:" }),
               ORDER_SAMPLES[view.spec.role].map((sample) => el("button", { type: "button", class: "sample", onclick: () => draftOrder(sample, document.querySelector("#order-input")), text: sample }))),
-            el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) act("POST", "orders", { text }).then(() => { if (!ui.error) { ui.orderDraft = ""; render(); } }); } },
-              el("label", {}, "Add at the end of what the agent reads", el("input", { id: "order-input", type: "text", value: ui.orderDraft, oninput: (e) => draftOrder(e.target.value) })),
+            el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) addOrder(text, "Order added. The agent reads it from its next turn.", () => { ui.orderDraft = ""; }); } },
+              // 4,000 characters, the server's limit for an order.
+              el("label", {}, "Add at the end of what the agent reads", el("input", { id: "order-input", type: "text", maxlength: 4000, value: ui.orderDraft, oninput: (e) => draftOrder(e.target.value) })),
               el("button", { type: "submit", class: "primary", text: "Add" })),
-            el("div", { id: "order-money", class: "small", hidden: !mentionsMoney(ui.orderDraft), text: "Orders guide the agent. Nothing enforces them. The cap that holds is in Limits, at the side." })),
+            el("div", { id: "order-money", class: "small", hidden: !mentionsMoney(ui.orderDraft), text: "Orders guide the agent. Nothing enforces them. The cap that holds is in Limits, at the side." }),
+            el("div", { class: "small order-notice", role: "status", "aria-live": "polite" }, ui.orderNotice && ui.orderNotice.text,
+              ui.orderNotice && ui.orderNotice.undo !== undefined ? [" Undo adds it back at the end of the list. ",
+                el("button", { type: "button", onclick: () => addOrder(ui.orderNotice.undo, "Order added back at the end of the list.") }, "Undo")] : null)),
           el("details", { class: "reads-raw", open: ui.promptOpen, ontoggle: (e) => { ui.promptOpen = e.target.open; } },
             el("summary", { text: "Show the exact text the model reads" }), el("pre", { text: view.prompt })))),
       el("section", { class: "section" },
