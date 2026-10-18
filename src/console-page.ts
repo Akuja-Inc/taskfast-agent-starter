@@ -373,7 +373,7 @@ function writeDestination(replace = false) {
   history[replace ? "replaceState" : "pushState"]({ consoleNavigation: navigationIndex }, "", url);
   navigationUrl = url;
 }
-function briefingDirty() { return !!ui.specDraft && !!view && JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec); }
+function briefingDirty() { return !!ui.specDraft && (!view || JSON.stringify(ui.specDraft) !== JSON.stringify(view.spec)); }
 function navigate(next, traversed = false) {
   const leaving = next.agent !== ui.agent || next.tab !== ui.tab || JSON.stringify(next.capability) !== JSON.stringify(ui.capability) || next.invalid !== ui.invalidDestination;
   if (leaving) {

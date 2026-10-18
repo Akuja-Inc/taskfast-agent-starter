@@ -191,6 +191,17 @@ it("cancels configuration navigation and history traversal without changing URL,
   expect(page.ui.specDraft).toBeNull();
 });
 
+it("still guards unsaved Briefing edits when the agent stops before navigation", () => {
+  const page = bootPage(); page.setView(demoView()); page.render(); page.selectTab('briefing');
+  page.ui.specDraft = { ...demoView().spec, instructions: 'Keep these unsaved edits' };
+  const url = page.location.href;
+  page.setRoster([{ id: 'shop', state: 'stopped', generation: 1 }, { id: 'other', state: 'starting', generation: 1 }]);
+  page.setDiscard(false); page.selectAgent('other');
+  expect(page.ui.agent).toBe('shop');
+  expect(page.ui.specDraft).toMatchObject({ instructions: 'Keep these unsaved edits' });
+  expect(page.location.href).toBe(url);
+});
+
 it("restores every panel and mounts older referenced turns without trusting visible row positions", () => {
   const page = bootPage(undefined, '/agents/shop?open=old%3Acall&raw=old', { token: 'test' });
   const timeline = Array.from({ length: 30 }, (_, i) => ({ id: i ? 'turn-' + i : 'old', kind: 'event', at: i, text: 'Event ' + i, event: { event: 'event-' + i }, replies: [{ text: 'Reply', calls: [{ id: i ? 'call-' + i : 'call', name: 'me', arguments: {}, outcome: 'ok' }], tasks: [] }] }));

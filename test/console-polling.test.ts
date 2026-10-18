@@ -4,7 +4,7 @@ import type { Turn } from "../src/core/timeline.js";
 import { TOOLS } from "../src/core/tools.js";
 
 const poll = (at: number): Turn => ({
-  kind: "poll", at, text: "Check your marketplace work", complete: true,
+  id: `turn-${at}`, kind: "poll", at, text: "Check your marketplace work", complete: true,
   replies: [
     { text: "", tasks: [], calls: [{ id: `read-${at}`, name: "task_list", arguments: { kind: "open" }, outcome: "ok", result: '{"tasks":[]}', comparable: true }] },
     { text: "No suitable jobs. No action taken.", calls: [], tasks: [] },
