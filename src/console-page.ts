@@ -104,6 +104,8 @@ aside { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; ga
 .row-actions { flex: none; margin-left: auto; display: inline-flex; gap: 16px; }
 .row-actions .sq { position: relative; min-height: 28px; padding: 0; border: none; border-radius: 0; }
 .row-actions .sq::before { content: ""; position: absolute; inset: -8px; }
+.order-edit { flex: 1; }
+.order-edit input { flex: 1 1 280px; width: auto; }
 .reads-raw > summary { min-height: 44px; padding: 12px 18px; cursor: pointer; }
 .reads-raw > pre { margin: 0 18px 16px; }
 .note { padding: 12px 16px; border-radius: 2px; background: var(--warn-bg); border: 1px solid var(--warn); color: var(--ink); font-size: 14px; }
@@ -319,6 +321,7 @@ const ICON = {
   both: ["M10 4H3v7h2V7.4L9.6 12 5 16.6V14H1v7h7v-2H4.4L9 14.4 13.6 19 11 21h7v-7h-2v2.6L11.4 12 16 7.4V10h2V3h-7v1z"],
   wrench: ["M22 6.5a5.5 5.5 0 01-7.6 5.07L8 18l-2.5 2.5a2.12 2.12 0 01-3-3L5 15l6.43-6.4A5.5 5.5 0 0117.5 1l-3 3 2.5 2.5 3-3c.33.63.5 1.32.5 2z"],
   x: ["M5.7 4.3L4.3 5.7 10.6 12l-6.3 6.3 1.4 1.4L12 13.4l6.3 6.3 1.4-1.4L13.4 12l6.3-6.3-1.4-1.4L12 10.6z"],
+  pencil: ["M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75z"],
 };
 // Stroke glyphs for plain controls outside pictogram squares.
 const GLYPH = {
@@ -387,7 +390,10 @@ async function changeOrders(method, action, body, done) {
   let focus = null;
   try { await api(method, "/api/agents/" + encodeURIComponent(ui.agent) + "/" + action, body); focus = done(); }
   // A 409 says the list was stale (another tab or the TUI changed it): show the current one.
-  catch (error) { ui.orderNotice = { text: error.status === 409 ? "Orders changed. The list now shows the current orders." : error.message }; }
+  catch (error) {
+    ui.orderNotice = { text: error.status === 409 ? "Orders changed. The list now shows the current orders." : error.message };
+    if (error.status === 409) ui.editingOrder = null;
+  }
   await refresh();
   render(true);
   (focus && document.querySelector(focus) || document.querySelector("#order-input"))?.focus({ preventScroll: true });
@@ -419,7 +425,7 @@ function navigate(next, traversed = false) {
   if (leaving) {
     if (settingsDirty() && !confirm("Discard unsaved Settings edits?")) return false;
     if (!capabilities.leave()) return false;
-    ui.specDraft = null; ui.orderDraft = "";
+    ui.specDraft = null; ui.orderDraft = ""; ui.editingOrder = null;
   }
   if (next.agent !== ui.agent) {
     ui.orderNotice = null;
@@ -1228,6 +1234,12 @@ function settingsTab() {
     ui.orderNotice = { text: notice };
     added();
   });
+  // Opens an order's row for editing, or closes it and hands focus back to its pencil.
+  const editOrder = (editing, index) => {
+    ui.editingOrder = editing;
+    render(true);
+    document.querySelector(editing ? "#order-edit" : '[data-focus="order-edit:' + index + '"]')?.focus({ preventScroll: true });
+  };
   // A sample or a typed draft: the hint follows the draft without rebuilding the focused input.
   const draftOrder = (text, input) => {
     ui.orderDraft = text;
@@ -1245,9 +1257,25 @@ function settingsTab() {
           block("agent", "The agent's notes", "the agent adds and drops these",
             rows(view.notes, (note) => el("span", { text: note }))),
           block("you", "Your standing orders", "apply from the next turn, only you can change them",
-            rows(op.orders, (order, index) => [el("span", {}, inlineMarkdown(order)),
+            rows(op.orders, (order, index) => ui.editingOrder && ui.editingOrder.index === index
+              ? el("form", { class: "inline order-edit", onsubmit: (e) => {
+                e.preventDefault();
+                const text = ui.editingOrder.text.trim();
+                // The edit pins the text it started from, so a list that moved under it answers 409.
+                if (text) changeOrders("PUT", "orders/" + index, { expect: ui.editingOrder.expect, text }, () => {
+                  view.operator.orders = view.operator.orders.map((at, i) => i === index ? text : at);
+                  ui.editingOrder = null;
+                  ui.orderNotice = { text: "Order saved. The agent reads it from its next turn." };
+                  return '[data-focus="order-edit:' + index + '"]';
+                });
+              } },
+                el("input", { id: "order-edit", type: "text", maxlength: 4000, "aria-label": "Order " + (index + 1), value: ui.editingOrder.text, oninput: (e) => { ui.editingOrder.text = e.target.value; }, onkeydown: (e) => { if (e.key === "Escape") { e.preventDefault(); editOrder(null, index); } } }),
+                el("button", { type: "submit", class: "primary", text: "Save" }),
+                el("button", { type: "button", onclick: () => editOrder(null, index), text: "Cancel" }))
+              : [el("span", {}, inlineMarkdown(order)),
+              el("span", { class: "row-actions" }, el("button", { class: "sq", "data-focus": "order-edit:" + index, "aria-label": "Edit order " + (index + 1), title: "Edit order " + (index + 1), onclick: () => editOrder({ index, expect: order, text: order }, index) }, pict("pencil", 13)),
               // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
-              el("span", { class: "row-actions" }, el("button", { class: "sq", "data-focus": "order-x:" + index, "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => changeOrders("DELETE", "orders/" + index, { expect: order }, () => {
+              el("button", { class: "sq", "data-focus": "order-x:" + index, "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => changeOrders("DELETE", "orders/" + index, { expect: order }, () => {
                 view.operator.orders = view.operator.orders.filter((_, at) => at !== index);
                 ui.orderNotice = { text: "Order removed.", undo: order };
                 return '[data-focus="order-x:' + index + '"]';

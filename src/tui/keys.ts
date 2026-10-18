@@ -25,7 +25,7 @@ export interface Ui {
   sidebar: boolean;
   alerts: boolean;
   // Which line has the keyboard. The message composer also handles Ctrl+S.
-  editing?: "message" | "order" | Field;
+  editing?: "message" | "order" | "orderEdit" | Field;
   messageText: string;
   // Settings: selected order and field, and the agent file being edited.
   order: number;
@@ -173,6 +173,7 @@ export function press(ui: Ui, key: string, view: ConsoleView | undefined, agents
       return { ui, effect: call("DELETE", `orders/${at}`, { expect: view.operator.orders[at] }) };
     }
     if (key === "enter" && ui.panel === "fields") return { ui: { ...ui, editing: FIELDS[ui.field] } };
+    if (key === "enter" && ui.panel === "orders" && view.operator.orders.length) return { ui: { ...ui, editing: "orderEdit" } };
     if (key === "ctrl+s" && ui.draft) {
       const before = view.spec.limits ?? {};
       const after = ui.draft.limits ?? {};

@@ -90,6 +90,8 @@ export interface OperatorControls {
   withdraw(requestId: string): Promise<WithdrawResult>;
   addOrder(order: string): Promise<void>;
   removeOrder(index: number): Promise<void>;
+  // Replaces one order's text in place, in one commit, so no turn runs without it.
+  replaceOrder(index: number, order: string): Promise<void>;
   markChecked(id: string): Promise<void>;
   // Admitted marketplace events by `event:<event_id>`, with their run state.
   events(): Promise<Record<string, EventWork>>;
@@ -456,6 +458,13 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         await conversation.commit(async (tx) => {
           const state = await tx.doc(Operator);
           state.orders = state.orders.filter((_, at) => at !== index);
+        }, context);
+      },
+      replaceOrder: async (index, order) => {
+        await conversation.commit(async (tx) => {
+          const state = await tx.doc(Operator);
+          // One prompt line per order, as addOrder keeps it.
+          if (index < state.orders.length) state.orders[index] = order.replace(/[\r\n]+/g, " ");
         }, context);
       },
       events: async () => (await owner.snapshot(Events, context))?.events ?? {},

@@ -271,15 +271,18 @@ export async function startConsole(o: ConsoleOptions): Promise<{ url: string; po
         default: { const exhaustive: never = result; throw new Error(`unknown withdraw result: ${exhaustive}`); }
       }
     }
-    if (req.method === "DELETE" && action === "orders" && arg !== undefined) {
+    // DELETE removes an order and PUT replaces its text in place.
+    if ((req.method === "DELETE" || req.method === "PUT") && action === "orders" && arg !== undefined) {
       if (!/^\d+$/.test(arg)) return send(res, 400, { error: "order index must be a whole number" });
-      // The page sends the text it rendered, so a stale render cannot remove the wrong order.
-      const expected = field(await readJson(req), "expect");
+      // The page sends the text it rendered, so a stale render cannot change the wrong order.
+      const body = await readJson(req);
+      const expected = field(body, "expect"), text = field(body, "text");
       if (typeof expected !== "string") return send(res, 400, { error: "expect must be the current order text" });
+      if (req.method === "PUT" && !words(text)) return send(res, 400, { error: `text must be 1-${MAX_TEXT} characters` });
       if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
       if ((await controls.state()).orders[Number(arg)] !== expected) return send(res, 409, { error: "orders changed; refresh" });
       if (!stillReady()) return send(res, 409, { error: "agent lifecycle changed; refresh before trying again" });
-      await controls.removeOrder(Number(arg));
+      await (req.method === "PUT" ? controls.replaceOrder(Number(arg), text as string) : controls.removeOrder(Number(arg)));
       return send(res, 204, "");
     }
     if (req.method === "PUT" && action === "spec" && arg === undefined && item.saveSpec) {

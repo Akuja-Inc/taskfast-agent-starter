@@ -1068,6 +1068,7 @@ it("pins queue prose below its mode even without a promotion button", () => {
 });
 
 // gh#122: Settings shows what the agent reads, in the order the model reads it.
+const removeSquares = (page: { app: FakeNode }) => page.app.querySelectorAll('.row-actions button').filter((button) => button.getAttribute('aria-label')!.startsWith('Remove'));
 const readsView = () => ({ ...demoView(), prompt: 'You are Demo.\nYour notes:\n1: Note <script>x</script>\nYour operator\'s standing orders:\n- Keep **bold** [docs](https://example.com/a)', notes: ['Note <script>x</script>', 'Second note'], operator: { ...demoView().operator, orders: ['Keep **bold** [docs](https://example.com/a)', '<script>alert(1)</script>'] } });
 it("shows instructions, notes, then standing orders, and the exact prompt behind a disclosure", () => {
   const page = bootPage(); page.setView(readsView()); page.ui.tab = 'settings'; page.render();
@@ -1096,7 +1097,7 @@ it("gives each order a named remove square that pins the text it removes", () =>
   const requests: [unknown, unknown][] = [];
   const page = bootPage((path, init) => { requests.push([path, JSON.parse(String((init as RequestInit).body))]); return new Promise<never>(() => {}); });
   page.setView(readsView()); page.ui.tab = 'settings'; page.render();
-  const squares = page.app.querySelectorAll('.row-actions button');
+  const squares = removeSquares(page);
   expect(squares.map((button) => button.getAttribute('aria-label'))).toEqual(['Remove order 1', 'Remove order 2']);
   expect(squares.every((button) => button.getAttribute('title') === button.getAttribute('aria-label'))).toBe(true);
   expect(squares.every((button) => button.getAttribute('class') === 'sq')).toBe(true);
@@ -1487,7 +1488,7 @@ it("reports an added order beside the list, clears the input and keeps focus the
 
 it("offers Undo after a removal, moves focus to the next row, and Undo adds the order back at the end", async () => {
   const { page, calls, notice } = ordersPage(['First', 'Second', 'Third'], ok);
-  page.app.querySelectorAll('.row-actions button')[1].listeners.click[0]({});
+  removeSquares(page)[1].listeners.click[0]({});
   await settle();
   expect(calls).toEqual([['DELETE', '/api/agents/shop/orders/1', { expect: 'Second' }]]);
   expect(notice().textContent).toContain('Order removed.');
@@ -1503,14 +1504,14 @@ it("offers Undo after a removal, moves focus to the next row, and Undo adds the 
 
 it("moves focus to the add input when the last order is removed", async () => {
   const { page } = ordersPage(['Only'], ok);
-  page.app.querySelector('.row-actions button')!.listeners.click[0]({});
+  removeSquares(page)[0].listeners.click[0]({});
   await settle();
   expect(page.document.activeElement).toBe(page.app.querySelector('#order-input'));
 });
 
 it("shows a stale remove beside the list and redraws the current orders", async () => {
   const { page, notice } = ordersPage(['Old'], () => new Response(JSON.stringify({ error: 'orders changed; refresh' }), { status: 409, headers: { 'content-type': 'application/json' } }));
-  page.app.querySelector('.row-actions button')!.listeners.click[0]({});
+  removeSquares(page)[0].listeners.click[0]({});
   // Another tab changed the orders; the stream brings the current list.
   page.setView({ ...demoView(), operator: { ...demoView().operator, orders: ['Newer'] } });
   await settle();
@@ -1539,4 +1540,36 @@ it("asks before leaving Settings with an order typed but not added", () => {
   expect(page.ui.tab).toBe('timeline');
   page.selectTab('settings');
   expect(page.app.querySelector('#order-input')!.getAttribute('value')).toBe('');
+});
+
+// gh#123: an order's wording changes in place, in one request, keeping its position.
+it("edits an order in its row and saves it in place, returning focus to its pencil", async () => {
+  const { page, calls, notice } = ordersPage(['Keep **bids** small', 'Be brief'], ok);
+  const squares = page.app.querySelectorAll('.row-actions button');
+  expect(squares.map((button) => button.getAttribute('aria-label'))).toEqual(['Edit order 1', 'Remove order 1', 'Edit order 2', 'Remove order 2']);
+  squares[0].listeners.click[0]({});
+  const editor = page.app.querySelector('#order-edit')!;
+  expect(editor.getAttribute('value')).toBe('Keep **bids** small');
+  expect(editor.getAttribute('aria-label')).toBe('Order 1');
+  expect(page.document.activeElement).toBe(editor);
+  editor.listeners.input[0]({ target: { value: 'Keep **bids** tiny' } });
+  editor.closest('form')!.listeners.submit[0]({ preventDefault() {} });
+  await settle();
+  expect(calls).toEqual([['PUT', '/api/agents/shop/orders/0', { expect: 'Keep **bids** small', text: 'Keep **bids** tiny' }]]);
+  expect(page.app.querySelector('#order-edit')).toBeNull();
+  expect(page.app.querySelectorAll('.reads-block')[2].querySelectorAll('li').map((li) => li.textContent)).toEqual(['Keep bids tiny', 'Be brief']);
+  expect(notice().textContent).toBe('Order saved. The agent reads it from its next turn.');
+  expect(page.document.activeElement!.getAttribute('aria-label')).toBe('Edit order 1');
+});
+
+it("cancels an order edit with Escape or Cancel without sending anything", () => {
+  const { page, calls } = ordersPage(['Be brief'], ok);
+  page.app.querySelector('.row-actions button')!.listeners.click[0]({});
+  page.app.querySelector('#order-edit')!.listeners.keydown[0]({ key: 'Escape', preventDefault() {} });
+  expect(page.app.querySelector('#order-edit')).toBeNull();
+  expect(page.document.activeElement!.getAttribute('aria-label')).toBe('Edit order 1');
+  page.app.querySelector('.row-actions button')!.listeners.click[0]({});
+  nodes(page.app).find((node) => node.tagName === 'BUTTON' && node.textContent === 'Cancel')!.listeners.click[0]({});
+  expect(page.app.querySelector('#order-edit')).toBeNull();
+  expect(calls).toEqual([]);
 });

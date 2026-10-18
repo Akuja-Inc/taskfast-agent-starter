@@ -601,6 +601,13 @@ test("reports an added and a removed order on the notice line", async () => {
     await keys.typeText("Skip phone jobs");
     keys.pressEnter();
     await until((frame) => frame.includes("Order added.") && frame.includes("1. Skip phone jobs"));
+    // gh#123: enter edits the selected order in place.
+    keys.pressEnter();
+    await until(() => setup.renderer.currentFocusedEditor !== null);
+    keys.pressKey("e", { ctrl: true }); // End of the line.
+    await keys.typeText(" today");
+    keys.pressEnter();
+    await until((frame) => frame.includes("Order saved.") && frame.includes("1. Skip phone jobs today"));
     keys.pressKey("d");
     await until((frame) => frame.includes("Order removed.") && !frame.includes("1. Skip phone jobs"));
   } finally { setup.renderer.destroy(); other.host.kill("SIGTERM"); }

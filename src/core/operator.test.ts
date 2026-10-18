@@ -190,6 +190,20 @@ it("puts standing orders in every system prompt, where the agent's own forget ca
   expect((await kit.agent.operator.state()).orders).toEqual(["Keep every job under $15 this week."]);
 });
 
+// gh#123: an edited order keeps its place, and its line breaks cannot forge prompt lines.
+it("replaces a standing order in place, and the next prompt carries the new text in the same position", async () => {
+  const kit = await open();
+  await kit.agent.operator.addOrder("First order.");
+  await kit.agent.operator.addOrder("Second order.");
+  await kit.agent.operator.addOrder("Third order.");
+  await kit.agent.operator.replaceOrder(1, "Second,\nnow edited.");
+  expect((await kit.agent.operator.state()).orders).toEqual(["First order.", "Second, now edited.", "Third order."]);
+  const prompts: string[] = [];
+  kit.faux.setResponses([(ctx) => (prompts.push(JSON.stringify(ctx)), fauxAssistantMessage("Noted."))]);
+  await run(kit.agent);
+  expect(prompts[0]).toContain("- First order.\\n- Second, now edited.\\n- Third order.");
+});
+
 it("marks an uncertain action checked without letting it run again", async () => {
   const kit = await open(undefined, async () => { throw new Error("timed out"); });
   kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("post_task", post)], { stopReason: "toolUse" }), fauxAssistantMessage("Unsure.")]);

@@ -39,7 +39,7 @@ function fakeAgent({ id = "foo", actions = {}, events = {}, transcript = [], sta
         steer: async (requestId: string) => { asked.push(["steer", requestId]); return steerResult; },
         withdraw: async (requestId: string) => { asked.push(["withdraw", requestId]); return withdrawResult; },
         setFrozen: record("setFrozen"), setPaused: record("setPaused"), message: record("message"),
-        addOrder: record("addOrder"), removeOrder: record("removeOrder"), markChecked: record("markChecked"), retryEvent: record("retryEvent"),
+        addOrder: record("addOrder"), removeOrder: record("removeOrder"), replaceOrder: record("replaceOrder"), markChecked: record("markChecked"), retryEvent: record("retryEvent"),
       },
     },
   };
@@ -73,6 +73,7 @@ it.each([
   { method: "POST", path: "messages", next: "starting" },
   { method: "POST", path: "messages", next: "ready" },
   { method: "DELETE", path: "orders/0", next: "starting" },
+  { method: "PUT", path: "orders/0", next: "starting" },
   { method: "PUT", path: "spec", next: "ready" },
 ] as const)("rejects $method $path whose body spans a transition to $next", async ({ method, path, next }) => {
   const fake = fakeAgent({ state: { ...initialOperator(), orders: ["old order"] } });
@@ -86,7 +87,7 @@ it.each([
     observed();
     return [{ id: "foo", generation, ...(state === "ready" ? { state } : { state, phase: "waiting-for-close" as const }) }];
   } });
-  const body = JSON.stringify(path === "spec" ? fake.agent.spec : path.startsWith("orders") ? { expect: "old order" } : { requestId: "chunked-1", text: "Do work" });
+  const body = JSON.stringify(path === "spec" ? fake.agent.spec : path.startsWith("orders") ? { expect: "old order", text: "new order" } : { requestId: "chunked-1", text: "Do work" });
   let finish!: () => void;
   const response = new Promise<number>((resolve, reject) => {
     const req = request({ host: "127.0.0.1", port: server.port, path: `/api/agents/foo/${path}`, method,
@@ -619,4 +620,21 @@ it("removes an order only when the rendered text still matches", async () => {
   expect(JSON.parse(stale.text)).toEqual({ error: "orders changed; refresh" });
   expect((await remove(1, { expect: "Be brief." })).status).toBe(204);
   expect(asked).toEqual([["removeOrder", 1]]);
+});
+
+// gh#123: replacing an order's text in place leaves no turn without the rule.
+it("replaces an order in place only when the rendered text still matches and the new text is valid", async () => {
+  const { agent, asked } = fakeAgent({ state: { ...initialOperator(), orders: ["Keep jobs small.", "Be brief."] } });
+  const { port } = await serve([agent]);
+  const put = (index: number | string, body: unknown) =>
+    call(port, `/api/agents/foo/orders/${index}`, { method: "PUT", headers: { ...auth, "content-type": "application/json" }, body });
+  expect((await put("x", { expect: "Be brief.", text: "Be briefer." })).status).toBe(400);
+  expect((await put(1, { text: "Be briefer." })).status).toBe(400);
+  for (const text of ["", "   ", "x".repeat(4001), 7]) expect((await put(1, { expect: "Be brief.", text })).status).toBe(400);
+  const stale = await put(1, { expect: "Keep jobs small.", text: "Be briefer." });
+  expect(stale.status).toBe(409);
+  expect(JSON.parse(stale.text)).toEqual({ error: "orders changed; refresh" });
+  expect((await put(5, { expect: "Be brief.", text: "Be briefer." })).status).toBe(409);
+  expect((await put(1, { expect: "Be brief.", text: "Be briefer,\nalways." })).status).toBe(204);
+  expect(asked).toEqual([["replaceOrder", 1, "Be briefer,\nalways."]]);
 });

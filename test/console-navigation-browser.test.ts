@@ -47,7 +47,7 @@ async function fixture() {
         steer: async (requestId) => { calls.push({ agent: id, action: "steer", body: requestId }); return "steered"; },
         withdraw: async (requestId) => { calls.push({ agent: id, action: "withdraw", body: requestId }); return "withdrawn"; },
         setFrozen: record(id, "setFrozen"), setPaused: record(id, "setPaused"), message: record(id, "message"),
-        addOrder: record(id, "addOrder"), removeOrder: record(id, "removeOrder"), markChecked: record(id, "markChecked"), retryEvent: record(id, "retryEvent"),
+        addOrder: record(id, "addOrder"), removeOrder: record(id, "removeOrder"), replaceOrder: record(id, "replaceOrder"), markChecked: record(id, "markChecked"), retryEvent: record(id, "retryEvent"),
       },
     },
   }));
