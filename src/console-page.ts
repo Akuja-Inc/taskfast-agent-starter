@@ -231,8 +231,12 @@ ${CAPABILITIES_CSS}
 "use strict";
 const app = document.getElementById("app");
 const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} }, drop: (k) => { try { sessionStorage.removeItem(k); } catch {} } };
-const fromLink = /^#token=([0-9a-f]{64})$/.exec(location.hash);
+const tokenLink = /^#token=([0-9a-f]{64})$/;
+const fromLink = tokenLink.exec(location.hash);
 if (fromLink) { store.set("token", fromLink[1]); history.replaceState(history.state, "", location.pathname + (location.search || "")); }
+// A token link in an open tab is same-document navigation, so startup above never sees it.
+// Reload rather than install in place: old requests' 401s could clear the new token.
+addEventListener("hashchange", () => { if (tokenLink.test(location.hash)) location.reload(); });
 const destinations = (${consoleNavigation.toString()})();
 const initialDestination = destinations.read(location.pathname, location.search || "");
 let navigationIndex = history.state && Number.isInteger(history.state.consoleNavigation) ? history.state.consoleNavigation : 0;

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { LIVE, PAGE } from "../src/console-page.js";
 
 // The page script expects a browser. A tiny fake DOM is enough to boot it and inspect
@@ -74,7 +74,7 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   const app = new FakeNode("div");
   const values = new Map(Object.entries(saved));
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
-  const location = new URL(url, "http://127.0.0.1");
+  const location = Object.assign(new URL(url, "http://127.0.0.1"), { reload: vi.fn() });
   const events = new Map<string, (event: unknown) => void>();
   const entries: { url: string; state: unknown }[] = [{ url: location.href, state: null }];
   let position = 0;
@@ -101,13 +101,42 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
     "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval", "confirm", "innerHeight", "scrollY", "scrollBy",
     `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, selectTab, destination, navigate, capabilities, location, history, setDiscard(value) { confirm = () => value; }, acceptView(next) { view = next; render(); }, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
   );
-  return boot(
+  return Object.assign(boot(
     fakeDocument, FakeNode, storage, storage,
     location, history,
     (name: string, listener: (event: unknown) => void) => { events.set(name, listener); }, class { observe() {} disconnect() {} },
     fetch, () => ({ matches: false }), () => 0, () => discard, 800, 0, (_x: number, y: number) => { fakeDocument.scrollMoves.push(y); },
-  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; location: URL; history: typeof history; selectTab: (tab: string) => void; setDiscard: (value: boolean) => void; acceptView: (view: unknown) => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; draft: string; tab: string; agent: string; capability: { screen: string; item: string; step: number }; specDraft: unknown; windowN: number; focusComposer: boolean }; viaLabel: (via: string | undefined) => string };
+  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; location: typeof location; history: typeof history; selectTab: (tab: string) => void; setDiscard: (value: boolean) => void; acceptView: (view: unknown) => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; draft: string; tab: string; agent: string; capability: { screen: string; item: string; step: number }; specDraft: unknown; windowN: number; focusComposer: boolean }; viaLabel: (via: string | undefined) => string }, { events, values });
 };
+
+it("reloads automatically on a valid token hashchange without installing it in the old document", () => {
+  const page = bootPage();
+  expect(page.events.has('hashchange')).toBe(true);
+  page.location.hash = '#token=' + 'b'.repeat(64);
+  page.events.get('hashchange')!({});
+  expect(page.location.reload).toHaveBeenCalledTimes(1);
+  expect(page.values.has('token')).toBe(false);
+  expect(page.location.hash).toBe('#token=' + 'b'.repeat(64));
+});
+
+it.each(['', '#timeline', '#token=bad', '#token=' + 'a'.repeat(63), '#token=' + 'a'.repeat(65), '#token=' + 'A'.repeat(64), '#token=' + 'g'.repeat(64), '#token=' + 'a'.repeat(64) + '&extra=1'])("ignores an unrelated or malformed hashchange: %s", (hash) => {
+  const page = bootPage();
+  page.location.hash = hash;
+  page.events.get('hashchange')?.({});
+  expect(page.location.reload).not.toHaveBeenCalled();
+});
+
+it("accepts a startup token, strips its fragment and authenticates the roster request", async () => {
+  const token = 'a'.repeat(64);
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ env: 'local', agents: [] })));
+  const page = bootPage(fetch, '/#token=' + token);
+  await settle();
+  expect(page.values.get('token')).toBe(token);
+  expect(page.location.hash).toBe('');
+  expect(fetch).toHaveBeenCalledWith('/api/agents', expect.objectContaining({ headers: { authorization: 'Bearer ' + token } }));
+  expect(page.app.querySelector('input[type="password"]')).toBeNull();
+  expect(page.location.reload).not.toHaveBeenCalled();
+});
 
 const nodes = (root: FakeNode): FakeNode[] => [root, ...root.children.flatMap((child) => child instanceof FakeNode ? nodes(child) : [])];
 const demoView = () => ({
