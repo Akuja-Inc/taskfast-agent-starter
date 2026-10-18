@@ -25,6 +25,9 @@ Rules, one line per violation:
   5. disposition is one of skill, agents_md, lesson, check, discard.
   6. A non-discard row's target is a path tracked in this repository, or for a
      check row a GitHub issue URL in Akuja-Inc/taskfast-agent-starter.
+  7. Every tracked .agents/lessons/*.md file except README.md is the target of
+     at least one row with disposition lesson: a lesson file the ledger does
+     not name is invisible to the dedup this index exists for.
 
 Usage:
   scripts/check-lessons-ledger.py [path]      default .agents/lessons/LEDGER.tsv
@@ -85,6 +88,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     seen: dict[str, int] = {}
+    lesson_targets: set[str] = set()
     for lineno, line in enumerate(lines[1:], start=2):
         if not line.strip():
             fail(lineno, "blank line; the ledger has no blank rows")
@@ -105,6 +109,8 @@ def main(argv: list[str]) -> int:
         if disposition not in DISPOSITIONS:
             fail(lineno, f"disposition {disposition!r} is not one of {', '.join(sorted(DISPOSITIONS))}")
             continue
+        if disposition == "lesson":
+            lesson_targets.add(target)
         if disposition == "discard":
             continue
         if disposition == "check" and ISSUE_URL.match(target):
@@ -112,6 +118,14 @@ def main(argv: list[str]) -> int:
         if target not in tracked:
             what = "a tracked path or an Akuja-Inc/taskfast-agent-starter issue URL" if disposition == "check" else "a tracked path"
             fail(lineno, f"target {target!r} is not {what}")
+
+    lessons_dir = ".agents/lessons/"
+    readme = lessons_dir + "README.md"
+    uncovered = sorted(p for p in tracked
+                       if p.startswith(lessons_dir) and p.endswith(".md")
+                       and p != readme and p not in lesson_targets)
+    for lesson in uncovered:
+        fail(1, f"tracked lesson file {lesson!r} has no row with disposition lesson")
 
     if bad:
         return 1

@@ -37,7 +37,15 @@ setup_repo() {
 }
 
 # run_case <name> <expected-exit> <ledger-body-after-header> [expected-substring]
+# Every case repo tracks .agents/lessons/tui.md, so run_case prepends ROW_OK
+# to keep that file covered and a case trips only the rule it names.
+# run_case_raw writes the body verbatim, for cases about the coverage rule.
 run_case() {
+  run_case_raw "$1" "$2" "$ROW_OK${3:+
+$3}" "${4:-}"
+}
+
+run_case_raw() {
   local name="$1" expected="$2" body="$3" want="${4:-}"
   local dir actual output
   dir="$(setup_repo)"
@@ -58,9 +66,7 @@ run_case() {
   echo "PASS: $name (exit $actual)"
 }
 
-run_case "header only passes" 0 ""
-run_case "rows that agree with the contract pass" 0 "$ROW_OK
-$ROW_SKILL
+run_case "rows that agree with the contract pass" 0 "$ROW_SKILL
 $ROW_CHECK
 $ROW_DISCARD"
 run_case "GitHub keys that agree with the contract pass" 0 $'ci:0123456789ab:3\tgithub\t2026-10-09T12:00:00Z\tdiscard\t\tflaky probe
@@ -76,13 +82,17 @@ run_case "a mem key with a path in the filename fires" 1 $'mem:claude:notes/trap
 run_case "a mem filename without .md fires" 1 $'mem:claude:feedback_trap\tx\t2026-10-08T12:00:00Z\tdiscard\t\t' "matches no key format"
 run_case "a 40-hex ci anchor fires" 1 $'ci:0123456789abcdef0123456789abcdef01234567:1\tx\t2026-10-08T12:00:00Z\tdiscard\t\t' "matches no key format"
 run_case "a wrong column count fires" 1 $'mem:claude:a.md\tclaude-memory\t2026-10-08T12:00:00Z\tlesson' "columns, expected 6"
-run_case "a duplicate source_id fires" 1 "$ROW_OK
-$ROW_OK" "already recorded on line 2"
+run_case "a duplicate source_id fires" 1 "$ROW_OK" "already recorded on line 2"
 run_case "a non-UTC first_seen fires" 1 $'mem:claude:a.md\tx\t2026-10-08 12:00\tdiscard\t\t' "YYYY-MM-DDTHH:MM:SSZ"
 run_case "an unknown disposition fires" 1 $'mem:claude:a.md\tx\t2026-10-08T12:00:00Z\tmaybe\t\t' "is not one of"
 run_case "a lesson whose target is untracked fires" 1 $'mem:claude:a.md\tx\t2026-10-08T12:00:00Z\tlesson\t.agents/lessons/missing.md\t' "is not a tracked path"
 run_case "a check row with a foreign URL fires" 1 $'mem:claude:a.md\tx\t2026-10-08T12:00:00Z\tcheck\thttps://example.com/1\t' "issue URL"
 run_case "a discard row needs no target" 0 "$ROW_DISCARD"
+run_case_raw "a lesson file with no ledger row fires" 1 "" "no row with disposition lesson"
+run_case "the same lesson file with a row passes" 0 ""
+# an empty ledger still passes when the tree tracks no lesson files
+dir="$(setup_repo)"; (cd "$dir" && git rm -q .agents/lessons/tui.md)
+if (cd "$dir" && python3 "$CHECK" >/dev/null 2>&1); then echo "PASS: an empty ledger without tracked lesson files passes"; else echo "FAIL: an empty ledger without tracked lesson files should pass"; failures=$((failures + 1)); fi
 # run_case always writes the real header, so the wrong-header case is explicit
 dir="$(setup_repo)"; printf 'id\tx\n' >"$dir/.agents/lessons/LEDGER.tsv"
 if (cd "$dir" && python3 "$CHECK" >/dev/null 2>&1); then echo "FAIL: a wrong header should exit 1"; failures=$((failures + 1)); else echo "PASS: a wrong header fires"; fi
