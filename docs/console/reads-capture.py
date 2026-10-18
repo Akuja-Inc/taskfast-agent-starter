@@ -36,10 +36,6 @@ async def reads_raw(page):
     await expect(page.locator('details.reads-raw pre')).to_be_visible()
 
 
-async def settled(page, mode):
-    pass
-
-
 async def money_hint(page):
     """gh#120: a draft order that names a dollar amount points at the limits."""
     await page.locator('#order-input').fill('Never spend more than $5 on a job')
@@ -55,8 +51,8 @@ LIMITS = {'perJobUsd': 20, 'dailyUsd': 50}
 # name: (before ref, fixture state, check run on every shot, extra after-only shots)
 SCENARIOS = {
     'reads': ('8d20d20', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, reads, {'raw': reads_raw}),
-    'limits-empty': ('7516c0a', {'notes': NOTES}, settled, {'money': money_hint, 'timeline': timeline}),
-    'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, settled, {}),
+    'limits-empty': ('7516c0a', {'notes': NOTES}, None, {'money': money_hint, 'timeline': timeline}),
+    'limits-set': ('7516c0a', {'orders': ORDERS, 'notes': NOTES, 'limits': LIMITS}, None, {}),
 }
 
 
@@ -75,7 +71,8 @@ async def capture(link, mode, scenario):
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 await page.goto(link)
                 await expect(page.get_by_text('INSTRUCTIONS.md and agent.json')).to_be_visible()
-                await check(page, mode)
+                if check:
+                    await check(page, mode)
                 await page.screenshot(path=str(OUT / f'settings-{scenario}-{mode}-{size}-{theme}.png'), full_page=True)
                 if mode == 'after' and size == 'desktop':
                     for name, extra in extras.items():

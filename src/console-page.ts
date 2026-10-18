@@ -1151,6 +1151,7 @@ function timelineTab() {
   const op = view.operator;
   const waiting = Object.values(view.events).filter((w) => w.kind === "admitted").length + view.queuedMessages.length;
   const n = view.timeline.length, rows = timelineRows(), groups = rows.filter((row) => row.kind === "unchanged").length;
+  const edit = el("a", { href: destinations.href(destinationAt({ tab: "settings" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "settings") }, "Edit in Settings", pict("arrow", 14));
   return el("div", { class: "page" },
     el("main", {},
       op.paused ? el("div", { class: "note", role: "status" }, el("strong", { text: "Paused. " }), "New events are still received and stored, so nothing is lost. " + waiting + " waiting; they run in order when you resume. Check-ins are skipped while paused.") : null,
@@ -1181,10 +1182,7 @@ function timelineTab() {
     el("aside", {}, readiness(), tasksPanel(), spendPanel(),
       el("section", { class: "section" },
         band("Standing orders", "· " + op.orders.length),
-        ...(() => {
-          const edit = el("a", { href: destinations.href(destinationAt({ tab: "settings" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "settings") }, "Edit in Settings", pict("arrow", 14));
-          return op.orders.length ? [el("div", { class: "card" }, op.orders.map((order) => el("div", { text: order })), edit)] : [el("div", { class: "small", text: "None yet." }), edit];
-        })())));
+        op.orders.length ? el("div", { class: "card" }, op.orders.map((order) => el("div", { text: order })), edit) : [el("div", { class: "small", text: "None yet." }), edit])));
 }
 
 function settingsTab() {
