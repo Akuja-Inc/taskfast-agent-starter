@@ -3,6 +3,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { expect, it } from "vitest";
 import type { ConsoleView } from "../src/console.js";
+import { eventProblem } from "../src/core/event.js";
 import { initialOperator, MESSAGE_PREFIX } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { buildTimeline } from "../src/core/timeline.js";
@@ -397,6 +398,20 @@ it("links tasks on each environment's web host, flags production, and stacks bel
   const staging = screen(fixtureView("staging"), 100, NOW);
   expect(staging).toMatchObject({ banner: { tone: "staging" }, narrow: false });
   expect(staging.turns[0].replies[0].tasks[0].link).toBe(`https://staging.taskfast.app/tasks/${TASK}`);
+});
+
+it.each(["\ud800", "\udfff", "not-a-uuid", "", 42, null, undefined])("keeps an admitted event with invalid task ID %j readable without a link", (taskId) => {
+  const event = { event_id: "e1", event: "task.assigned", task_id: taskId };
+  expect(eventProblem(event)).toBeNull();
+  const timeline = buildTimeline([{ role: "user", content: `Marketplace event:\n${JSON.stringify(event)}`, timestamp: 1 }]);
+  for (const env of ["local", "staging", "prod"] as const) {
+    const view = { ...fixtureView(env), timeline };
+    const turn = screen(view, 100, NOW).turns[0];
+    expect(turn.link).toBeUndefined();
+    expect(turn.title).toContain("task.assigned");
+    expect(turn.raw).toBe(JSON.stringify(event, null, 2));
+    expect(press(initialUi(), "o", view, 1).effect).toBeUndefined();
+  }
 });
 
 it("strips escape and control sequences from marketplace and model text", () => {

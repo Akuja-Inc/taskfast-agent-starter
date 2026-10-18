@@ -1039,15 +1039,30 @@ it("renders the event turn head as a native button", () => {
 it("links every task to its page on the environment's web host, once per turn", () => {
   const page = bootPage();
   page.setView(demoView());
-  const event = { id: "event", kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: "t-1" }, replies: [] };
+  const taskId = "11111111-1111-4111-8111-111111111111";
+  const event = { id: "event", kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: taskId }, replies: [] };
   const hrefs = (card: FakeNode) => card.querySelectorAll("a.task").map((a) => [a.getAttribute("href"), a.getAttribute("target")]);
   page.setEnv("prod");
-  expect(hrefs(page.turnCard(event, 0))).toEqual([["https://taskfast.app/tasks/t-1", "_blank"]]);
+  expect(hrefs(page.turnCard(event, 0))).toEqual([[`https://taskfast.app/tasks/${taskId}`, "_blank"]]);
   page.setEnv("staging");
-  const answered = { ...event, replies: [{ text: "", calls: [], tasks: [{ id: "t-1", via: "bid_accept" }] }] };
-  expect(hrefs(page.turnCard(answered, 0))).toEqual([["https://staging.taskfast.app/tasks/t-1", "_blank"]]);
+  const answered = { ...event, replies: [{ text: "", calls: [], tasks: [{ id: taskId, via: "bid_accept" }] }] };
+  expect(hrefs(page.turnCard(answered, 0))).toEqual([[`https://staging.taskfast.app/tasks/${taskId}`, "_blank"]]);
   page.setEnv("local");
-  expect(hrefs(page.turnCard(event, 0))).toEqual([["http://localhost:4000/tasks/t-1", "_blank"]]);
+  expect(hrefs(page.turnCard(event, 0))).toEqual([[`http://localhost:4000/tasks/${taskId}`, "_blank"]]);
+});
+
+it.each(["\ud800", "\udfff", "not-a-uuid", "", 42, null, undefined])("keeps an event with invalid task ID %j readable without a link", (taskId) => {
+  const page = bootPage();
+  page.setView(demoView());
+  const event = { id: "event", kind: "event", at: 1, event: { event: "task.assigned", task_id: taskId }, replies: [] };
+  page.ui.raw.add(event.id);
+  for (const env of ["local", "staging", "prod"]) {
+    page.setEnv(env);
+    const card = page.turnCard(event, 0);
+    expect(card.querySelectorAll("a.task")).toHaveLength(0);
+    expect(card.textContent).toContain("task.assigned");
+    expect(card.textContent).toContain(JSON.stringify(event.event, null, 2));
+  }
 });
 
 it("keeps a non-event turn head as a plain row", () => {

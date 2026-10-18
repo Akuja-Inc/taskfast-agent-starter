@@ -698,7 +698,8 @@ function turnCard(turn, index) {
   const isEvent = turn.kind === "event";
   // The head is a button, so an event's task gets its own card unless a reply already shows it.
   const id = isEvent && turn.event && turn.event.task_id;
-  const eventTask = typeof id === "string" && !turn.replies.some((reply) => reply.tasks.some((ref) => ref.id === id)) ? id : null;
+  // Admission does not validate task IDs; malformed Unicode must stay out of URL encoding.
+  const eventTask = typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) && !turn.replies.some((reply) => reply.tasks.some((ref) => ref.id === id)) ? id : null;
   return el("article", { class: "card turn", "data-i": index, "data-timeline-anchor": "turn:" + key },
     el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "data-focus": "raw:" + key, "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),

@@ -68,7 +68,8 @@ function eventTask(turn: Turn): string | undefined {
 }
 function eventLink(env: ConsoleView["env"], turn: Turn): string | undefined {
   const taskId = eventTask(turn);
-  return taskId === undefined ? undefined : taskLink(env, taskId);
+  // Match reply-task validation without importing host runtime code into the TUI.
+  return taskId !== undefined && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId) ? taskLink(env, taskId) : undefined;
 }
 function title(turn: Turn): string {
   if (turn.kind !== "event") return clean(turn.text);
