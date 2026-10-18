@@ -1007,7 +1007,7 @@ it("scrolls the composer into view when a sample prompt drafts a message", () =>
 // composer focus must wait for the timeline's composer instead.
 it("keeps a pending composer focus away from the Settings tab's instructions field", () => {
   const page = bootPage();
-  page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { model: 'faux:test', instructions: 'You are Demo.\n\nWhat you want right now: Win copy-editing jobs.', dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
+  page.setView({ ...demoView(), prompt: 'You are Demo.', spec: { role: 'poster', model: 'faux:test', instructions: 'You are Demo.\n\nWhat you want right now: Win copy-editing jobs.', dials: { temperament: 'patient', competence: 0.5, diligence: 0.5, priceSensitivity: 0.5 }, limits: { dailyUsd: 50 } } });
   page.render();
   page.ui.focusComposer = true;
   page.document.activeElement = page.app.querySelector('nav a');
@@ -1102,6 +1102,63 @@ it("gives each order a named remove square that pins the text it removes", () =>
   expect(squares.every((button) => button.getAttribute('class') === 'sq')).toBe(true);
   squares[1].listeners.click[0]({});
   expect(requests).toEqual([['/api/agents/shop/orders/1', { expect: '<script>alert(1)</script>' }]]);
+});
+
+// gh#120: an empty orders block teaches what an order is, and samples only fill the input.
+it("offers the role's sample orders when there are none, and a sample fills the input without adding", () => {
+  const requests: unknown[] = [];
+  const page = bootPage((path) => { requests.push(path); return new Promise<never>(() => {}); });
+  page.setView(demoView()); page.ui.tab = 'settings'; page.render();
+  const orders = page.app.querySelectorAll('.reads-block')[2];
+  expect(orders.textContent).toContain('None yet. Anything you add here is the last thing the agent reads before it acts.');
+  expect(orders.querySelector('label')!.textContent).toContain('Add at the end of what the agent reads');
+  const samples = orders.querySelectorAll('.sample');
+  expect(samples.map((sample) => sample.textContent)).toEqual(['Post at most two jobs a day', 'Write each job description in under 150 words', 'Skip bids that arrive without a delivery date']);
+  samples[0].listeners.click[0]({});
+  expect(requests).toEqual([]);
+  expect(page.app.querySelector('#order-input')!.value).toBe('Post at most two jobs a day');
+  expect(page.app.querySelector('#order-input')!.focusCalls).toHaveLength(1);
+  page.document.activeElement = null;
+  page.setView({ ...demoView(), operator: { ...demoView().operator, orders: ['Skip phone jobs'] } }); page.render();
+  expect(page.app.querySelectorAll('.sample')).toEqual([]);
+});
+
+it("hints that nothing enforces an order only while the draft names a dollar amount", () => {
+  const page = bootPage(); page.setView(demoView()); page.ui.tab = 'settings'; page.render();
+  const input = page.app.querySelector('#order-input')!, hint = page.app.querySelector('#order-money')!;
+  expect(hint.textContent).toBe('Orders guide the agent. Nothing enforces them. The cap that holds is in Limits, at the side.');
+  expect(hint.hidden).toBe(true);
+  input.listeners.input[0]({ target: { value: 'Never spend more than $5' } });
+  expect(hint.hidden).toBe(false);
+  input.listeners.input[0]({ target: { value: 'Skip phone jobs' } });
+  expect(hint.hidden).toBe(true);
+});
+
+it("shows the saved limits in an enforced Limits card that ignores unsaved edits", () => {
+  const page = bootPage(); page.setView(demoView()); page.ui.tab = 'settings'; page.render();
+  const card = () => page.app.querySelector('aside')!;
+  expect(card().textContent).toContain('Limits');
+  expect(card().textContent).toContain('enforced by code');
+  const rows = () => card().querySelectorAll('.limit').map((row) => row.textContent);
+  expect(rows()).toEqual(['Per jobNo limit', 'Daily (UTC)$50.00']);
+  expect(card().querySelectorAll('.limit .sq').map((sq) => sq.getAttribute('class'))).toEqual(['sq warn', 'sq ok']);
+  expect(card().textContent).toContain('Nothing the agent reads can raise these.');
+  expect(card().querySelector('.note')).toBeNull();
+  page.ui.specDraft = { ...demoView().spec, limits: { dailyUsd: 5, perJobUsd: 1 } }; page.render();
+  expect(rows()).toEqual(['Per jobNo limit', 'Daily (UTC)$50.00']);
+  page.ui.specDraft = null;
+  page.setView({ ...demoView(), spec: { ...demoView().spec, limits: undefined } }); page.render();
+  expect(card().querySelector('.note')!.textContent).toBe("Nothing caps what this agent commits. Standing orders can't do it. Set both limits below.");
+});
+
+it("shows one muted line instead of an empty orders card on the timeline", () => {
+  const page = bootPage(); page.setView(demoView()); page.render();
+  const section = page.app.querySelectorAll('aside .section').find((node) => node.textContent.includes('Standing orders'))!;
+  expect(section.querySelector('.card')).toBeNull();
+  expect(section.querySelector('.small')!.textContent).toBe('None yet.');
+  page.setView({ ...demoView(), operator: { ...demoView().operator, orders: ['Skip phone jobs'] } }); page.render();
+  const filled = page.app.querySelectorAll('aside .section').find((node) => node.textContent.includes('Standing orders'))!;
+  expect(filled.querySelector('.card')!.textContent).toContain('Skip phone jobs');
 });
 
 it("marks each queued row with a muted sentence-case Queued that screen readers skip and text never runs under", () => {

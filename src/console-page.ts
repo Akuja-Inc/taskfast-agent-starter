@@ -2,12 +2,14 @@ import { capabilitiesPage, CAPABILITIES_CSS, readCapabilityFolder } from "./cons
 import { follow } from "./console-live.js";
 import { consoleNavigation } from "./console-navigation.js";
 import { markdown } from "./console-markdown.js";
+import { mentionsMoney, ORDER_SAMPLES } from "./console-orders.js";
 import { foldPolls } from "./console-polling.js";
 import { MAX_INSTRUCTIONS, POLL_MINUTES } from "./core/spec.js";
 
 // The page runs the same stream follower and markdown subset as the terminal UI.
 export const LIVE = follow.toString();
 const MARKDOWN = markdown.toString();
+const MENTIONS_MONEY = mentionsMoney.toString();
 const FOLD_POLLS = foldPolls.toString();
 
 // The console's single page. Kept as a module because the TypeScript build copies no
@@ -380,6 +382,8 @@ async function act(method, action, body) {
 ${LIVE}
 ${MARKDOWN}
 ${FOLD_POLLS}
+${MENTIONS_MONEY}
+const ORDER_SAMPLES = ${JSON.stringify(ORDER_SAMPLES)};
 const capabilities = (${capabilitiesPage.toString()})({ el, api, readFolder: ${readCapabilityFolder.toString()}, navigate: (route) => {
   ui.capability = route;
   writeDestination();
@@ -1177,9 +1181,10 @@ function timelineTab() {
     el("aside", {}, readiness(), tasksPanel(), spendPanel(),
       el("section", { class: "section" },
         band("Standing orders", "· " + op.orders.length),
-        el("div", { class: "card" },
-          op.orders.map((order) => el("div", { text: order })),
-          el("a", { href: destinations.href(destinationAt({ tab: "settings" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "settings") }, "Edit in Settings", pict("arrow", 14))))));
+        ...(() => {
+          const edit = el("a", { href: destinations.href(destinationAt({ tab: "settings" })), style: "display:inline-flex;gap:6px;align-items:center", onclick: (e) => followTab(e, "settings") }, "Edit in Settings", pict("arrow", 14));
+          return op.orders.length ? [el("div", { class: "card" }, op.orders.map((order) => el("div", { text: order })), edit)] : [el("div", { class: "small", text: "None yet." }), edit];
+        })())));
 }
 
 function settingsTab() {
@@ -1204,7 +1209,14 @@ function settingsTab() {
     el("div", { class: "reads-head" }, el("span", { class: "sq " + author }, pict(author === "you" ? "person" : "agent", 16)),
       el("span", { class: "reads-title", text: title }), el("span", { class: "small", text: when })),
     el("div", { class: "reads-body" }, body));
-  const rows = (items, row) => items.length ? el("ol", { class: "reads-list" }, items.map((item, index) => el("li", {}, el("div", { class: "reads-row" }, row(item, index))))) : el("div", { class: "small", text: "None yet." });
+  const rows = (items, row, empty = "None yet.") => items.length ? el("ol", { class: "reads-list" }, items.map((item, index) => el("li", {}, el("div", { class: "reads-row" }, row(item, index))))) : el("div", { class: "small", text: empty });
+  const limits = view.spec.limits || {};
+  // A sample or a typed draft: the hint follows the draft without rebuilding the focused input.
+  const draftOrder = (text, input) => {
+    ui.orderDraft = text;
+    document.querySelector("#order-money").hidden = !mentionsMoney(text);
+    if (input) { input.value = text; input.focus(); }
+  };
   return el("div", { class: "page" },
     el("main", {},
       el("section", { class: "section" },
@@ -1218,10 +1230,14 @@ function settingsTab() {
           block("you", "Your standing orders", "apply from the next turn, only you can change them",
             rows(op.orders, (order, index) => [el("span", {}, inlineMarkdown(order)),
               // Removal pins the exact text shown; the server refuses with a 409 when that index no longer holds it.
-              el("span", { class: "row-actions" }, el("button", { class: "sq", "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index, { expect: order }) }, pict("x", 13)))]),
+              el("span", { class: "row-actions" }, el("button", { class: "sq", "aria-label": "Remove order " + (index + 1), title: "Remove order " + (index + 1), onclick: () => act("DELETE", "orders/" + index, { expect: order }) }, pict("x", 13)))],
+              "None yet. Anything you add here is the last thing the agent reads before it acts."),
+            op.orders.length ? null : el("div", { class: "samples" }, el("span", { class: "samples-label", text: "Try:" }),
+              ORDER_SAMPLES[view.spec.role].map((sample) => el("button", { type: "button", class: "sample", onclick: () => draftOrder(sample, document.querySelector("#order-input")), text: sample }))),
             el("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); const text = ui.orderDraft.trim(); if (text) act("POST", "orders", { text }).then(() => { if (!ui.error) { ui.orderDraft = ""; render(); } }); } },
-              el("label", {}, "New order", el("input", { type: "text", value: ui.orderDraft, oninput: (e) => { ui.orderDraft = e.target.value; } })),
-              el("button", { type: "submit", class: "primary", text: "Add" }))),
+              el("label", {}, "Add at the end of what the agent reads", el("input", { id: "order-input", type: "text", value: ui.orderDraft, oninput: (e) => draftOrder(e.target.value) })),
+              el("button", { type: "submit", class: "primary", text: "Add" })),
+            el("div", { id: "order-money", class: "small", hidden: !mentionsMoney(ui.orderDraft), text: "Orders guide the agent. Nothing enforces them. The cap that holds is in Limits, at the side." })),
           el("details", { class: "reads-raw", open: ui.promptOpen, ontoggle: (e) => { ui.promptOpen = e.target.open; } },
             el("summary", { text: "Show the exact text the model reads" }), el("pre", { text: view.prompt })))),
       el("section", { class: "section" },
@@ -1245,7 +1261,16 @@ function settingsTab() {
         el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" },
           el("button", { class: "primary", onclick: saveSettings, text: limitChanges.length ? "Confirm, save & reopen" : "Save & reopen" }),
           el("button", { onclick: () => { ui.specDraft = null; render(); }, text: "Discard" })),
-        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))));
+        el("div", { class: "small", text: "Checked against the strict agent schema first; nothing is written if it fails. If the agent cannot reopen, both files go back to what they were. Saving while the agent is mid-turn interrupts it: a write in flight is recorded as uncertain, as after a restart." })))),
+    el("aside", {}, el("section", { class: "section" },
+      band("Limits", "enforced by code"),
+      // The saved spec, never the unsaved draft: these are the caps policy holds right now.
+      el("div", { class: "card" },
+        [["Per job", limits.perJobUsd], ["Daily (UTC)", limits.dailyUsd]].map(([label, value]) => el("div", { class: "check limit" },
+          el("span", { class: "sq " + (value === undefined ? "warn" : "ok") }, pict(value === undefined ? "exclaim" : "check", 16)),
+          el("span", { style: "flex:1", text: label }), el("span", { class: "num", text: value === undefined ? "No limit" : money(value) }))),
+        limits.perJobUsd === undefined && limits.dailyUsd === undefined ? el("div", { class: "note", text: "Nothing caps what this agent commits. Standing orders can't do it. Set both limits below." }) : null,
+        el("div", { class: "small", text: "Nothing the agent reads can raise these." })))));
 }
 
 function unlock() {
