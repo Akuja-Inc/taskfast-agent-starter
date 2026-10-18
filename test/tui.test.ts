@@ -3,6 +3,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { expect, it } from "vitest";
 import type { ConsoleView } from "../src/console.js";
+import { eventProblem } from "../src/core/event.js";
 import { initialOperator, MESSAGE_PREFIX } from "../src/core/operator.js";
 import { parseAgentSpec } from "../src/core/spec.js";
 import { buildTimeline } from "../src/core/timeline.js";
@@ -71,6 +72,8 @@ it("draws a view: banner, state, alerts, badges, task cards, sidebar", () => {
 
   expect(drawn.turns.map((turn) => turn.tag)).toEqual(["POLL", "EVENT", "YOU"]);
   expect(drawn.turns[1].title).toBe(`bid.created · task ${TASK}`);
+  expect(drawn.turns[1].link).toBe(`http://localhost:4000/tasks/${TASK}`);
+  expect(drawn.turns[0].link).toBeUndefined();
   const [check, done] = drawn.turns[0].replies;
   expect(check.badge).toBe("4 tool calls · 1 failed");
   expect(check.calls.find((call) => call.name === "escrow_sign")).toMatchObject({ outcome: "failed", error: "insufficient balance" });
@@ -87,7 +90,7 @@ it("draws a view: banner, state, alerts, badges, task cards, sidebar", () => {
     { label: "Model", detail: "anthropic:claude-haiku-5-5", ok: true },
     { label: "Spending limits", detail: "$20.00 per job · $50.00 per day", ok: true },
   ]);
-  expect(drawn.sidebar.tasks).toEqual({ POSTED: [{ id: TASK, title: "Edit a page" }], BIDDING: [], "WORKING ON": [] });
+  expect(drawn.sidebar.tasks).toEqual({ POSTED: [{ id: TASK, title: "Edit a page", link: `http://localhost:4000/tasks/${TASK}` }], BIDDING: [], "WORKING ON": [] });
   expect(drawn.sidebar.orders).toEqual(["Keep every job under $15."]);
 });
 
@@ -263,6 +266,9 @@ it("turns timeline keys into console actions, and asks y/n before freezing", () 
   k.run("enter");
   expect(k.ui.open).toEqual([`${Date.parse("2026-10-13T09:00:00Z")}r0`]);
   expect(k.run("o")).toEqual([{ kind: "open", url: `http://localhost:4000/tasks/${TASK}` }]);
+  // An event the agent has not answered yet still opens its task.
+  const unanswered = { ...view, env: "staging" as const, timeline: [{ id: "x", kind: "event" as const, at: 1, text: "", event: { event: "task.assigned", task_id: TASK }, replies: [] }] };
+  expect(keys(unanswered).run("o")).toEqual([{ kind: "open", url: `https://staging.taskfast.app/tasks/${TASK}` }]);
   k.run("j", "j", "r");
   expect(k.ui.reply).toBe(2);
   expect(k.ui.raw).toContain(`turn:${Date.parse("2026-10-13T10:00:00Z")}`);
@@ -382,12 +388,30 @@ it("strips escapes from tool names and host facts too", () => {
   expect(drawn.sidebar.readiness.find((check) => check.label === "Model")?.detail).toBe("anthropic:x");
 });
 
-it("links tasks only in development, flags production, and stacks below 100 columns", () => {
+it("links tasks on each environment's web host, flags production, and stacks below 100 columns", () => {
   const production = screen(fixtureView("prod"), 99, NOW);
   expect(production.banner.tone).toBe("production");
   expect(production.narrow).toBe(true);
-  expect(production.turns[0].replies[0].tasks[0].link).toBeUndefined();
-  expect(screen(fixtureView("staging"), 100, NOW)).toMatchObject({ banner: { tone: "staging" }, narrow: false });
+  expect(production.turns[0].replies[0].tasks[0].link).toBe(`https://taskfast.app/tasks/${TASK}`);
+  expect(production.turns[1].link).toBe(`https://taskfast.app/tasks/${TASK}`);
+  expect(production.sidebar.tasks.POSTED[0].link).toBe(`https://taskfast.app/tasks/${TASK}`);
+  const staging = screen(fixtureView("staging"), 100, NOW);
+  expect(staging).toMatchObject({ banner: { tone: "staging" }, narrow: false });
+  expect(staging.turns[0].replies[0].tasks[0].link).toBe(`https://staging.taskfast.app/tasks/${TASK}`);
+});
+
+it.each(["\ud800", "\udfff", "not-a-uuid", "", 42, null, undefined])("keeps an admitted event with invalid task ID %j readable without a link", (taskId) => {
+  const event = { event_id: "e1", event: "task.assigned", task_id: taskId };
+  expect(eventProblem(event)).toBeNull();
+  const timeline = buildTimeline([{ role: "user", content: `Marketplace event:\n${JSON.stringify(event)}`, timestamp: 1 }]);
+  for (const env of ["local", "staging", "prod"] as const) {
+    const view = { ...fixtureView(env), timeline };
+    const turn = screen(view, 100, NOW).turns[0];
+    expect(turn.link).toBeUndefined();
+    expect(turn.title).toContain("task.assigned");
+    expect(turn.raw).toBe(JSON.stringify(event, null, 2));
+    expect(press(initialUi(), "o", view, 1).effect).toBeUndefined();
+  }
 });
 
 it("strips escape and control sequences from marketplace and model text", () => {

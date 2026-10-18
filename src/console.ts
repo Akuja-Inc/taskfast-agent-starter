@@ -139,7 +139,7 @@ export type ConsoleView = Awaited<ReturnType<typeof view>>;
 async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
   const [policy, operator, events, transcript, queuedMessages] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES), agent.operator.queued()]);
   const timeline = buildTimeline(transcript);
-  const taskIds = [...new Set(timeline.flatMap((turn) => turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))))].slice(-TASK_READS);
+  const taskIds = [...new Set(timeline.flatMap((turn) => [field(turn.event, "task_id"), ...turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))].filter((id): id is string => typeof id === "string")))].slice(-TASK_READS);
   const facts = await host?.(taskIds, { actions: policy.actions, events });
   const deadLetters = (facts?.deadLetters ?? []).map((record) => ({ kind: "dead-letter" as const, id: `dead-letter:${eventIdOf(record.line) ?? record.at}`, ...record }));
   const attention = [

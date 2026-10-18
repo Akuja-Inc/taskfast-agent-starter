@@ -99,14 +99,14 @@ const bootPage = (fetch: (path?: unknown, init?: unknown) => Promise<unknown> = 
   const boot = new Function(
     "document", "Node", "sessionStorage", "localStorage", "location", "history",
     "addEventListener", "ResizeObserver", "fetch", "matchMedia", "setInterval", "confirm", "innerHeight", "scrollY", "scrollBy",
-    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, selectTab, destination, navigate, capabilities, location, history, setDiscard(value) { confirm = () => value; }, acceptView(next) { view = next; render(); }, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; } };`,
+    `${script}\nreturn { header, turnCard, replyBlock, lastSaid, timelineTab, showFrom, jumpTo, onScroll, render, refresh, selectAgent, selectTab, destination, navigate, capabilities, location, history, setDiscard(value) { confirm = () => value; }, acceptView(next) { view = next; render(); }, startupAction, ui, document, app, unlock, submitMessage, promoteMessage, withdrawMessage, viaLabel, setRoster(entries) { token = 'test'; list = { env: 'local', agents: entries }; if (!ui.agent) ui.agent = entries[0]?.id; syncSelection(); render(); }, setView(next) { token = 'test'; ui.agent = 'shop'; list = { env: 'local', agents: [{ id: 'shop', name: 'Demo', role: 'poster' }] }; view = next; following.key = 'test shop 0'; following.up = true; }, setEnv(env) { list = { ...list, env }; } };`,
   );
   return Object.assign(boot(
     fakeDocument, FakeNode, storage, storage,
     location, history,
     (name: string, listener: (event: unknown) => void) => { events.set(name, listener); }, class { observe() {} disconnect() {} },
     fetch, () => ({ matches: false }), () => 0, () => discard, 800, 0, (_x: number, y: number) => { fakeDocument.scrollMoves.push(y); },
-  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; location: typeof location; history: typeof history; selectTab: (tab: string) => void; setDiscard: (value: boolean) => void; acceptView: (view: unknown) => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; draft: string; tab: string; agent: string; capability: { screen: string; item: string; step: number }; specDraft: unknown; windowN: number; focusComposer: boolean }; viaLabel: (via: string | undefined) => string }, { events, values });
+  ) as { showFrom: (i: number) => void; jumpTo: (i: number) => void; onScroll: () => void; location: typeof location; history: typeof history; selectTab: (tab: string) => void; setDiscard: (value: boolean) => void; acceptView: (view: unknown) => void; refresh: () => Promise<void>; selectAgent: (id: string) => void; startupAction: (action: string) => Promise<void>; setRoster: (entries: unknown[]) => void; header: () => FakeNode[]; turnCard: (turn: unknown, index: number) => FakeNode; replyBlock: (reply: unknown, key: string, live: boolean) => FakeNode; lastSaid: (turn: unknown) => string; timelineTab: () => FakeNode; render: () => void; document: typeof fakeDocument; app: FakeNode; unlock: () => FakeNode; submitMessage: (mode: string) => Promise<void>; promoteMessage: (id: string, agent: string) => Promise<void>; withdrawMessage: (id: string, agent: string) => Promise<void>; setView: (view: unknown) => void; setEnv: (env: string) => void; ui: { raw: Set<string>; open: Set<string>; folds: Set<string>; checks: Set<string>; draft: string; tab: string; agent: string; capability: { screen: string; item: string; step: number }; specDraft: unknown; windowN: number; focusComposer: boolean }; viaLabel: (via: string | undefined) => string }, { events, values });
 };
 
 it("reloads automatically on a valid token hashchange without installing it in the old document", () => {
@@ -1021,7 +1021,8 @@ it("says when each queued message runs, lists the rows and keeps focus on Steer 
 });
 
 it("renders the event turn head as a native button", () => {
-  const { turnCard, ui } = bootPage();
+  const { turnCard, ui, setView } = bootPage();
+  setView(demoView());
   const card = turnCard({ id: "event", kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: "t-1" }, replies: [] }, 0);
   const head = card.children[0] as FakeNode;
   expect(head.tagName).toBe("BUTTON");
@@ -1033,6 +1034,35 @@ it("renders the event turn head as a native button", () => {
   // A native button fires click on Enter and Space by itself, so no keydown shim remains.
   head.listeners.click[0]({});
   expect(ui.raw.size).toBe(1);
+});
+
+it("links every task to its page on the environment's web host, once per turn", () => {
+  const page = bootPage();
+  page.setView(demoView());
+  const taskId = "11111111-1111-4111-8111-111111111111";
+  const event = { id: "event", kind: "event", at: Date.now(), event: { event: "bid_accept", task_id: taskId }, replies: [] };
+  const hrefs = (card: FakeNode) => card.querySelectorAll("a.task").map((a) => [a.getAttribute("href"), a.getAttribute("target")]);
+  page.setEnv("prod");
+  expect(hrefs(page.turnCard(event, 0))).toEqual([[`https://taskfast.app/tasks/${taskId}`, "_blank"]]);
+  page.setEnv("staging");
+  const answered = { ...event, replies: [{ text: "", calls: [], tasks: [{ id: taskId, via: "bid_accept" }] }] };
+  expect(hrefs(page.turnCard(answered, 0))).toEqual([[`https://staging.taskfast.app/tasks/${taskId}`, "_blank"]]);
+  page.setEnv("local");
+  expect(hrefs(page.turnCard(event, 0))).toEqual([[`http://localhost:4000/tasks/${taskId}`, "_blank"]]);
+});
+
+it.each(["\ud800", "\udfff", "not-a-uuid", "", 42, null, undefined])("keeps an event with invalid task ID %j readable without a link", (taskId) => {
+  const page = bootPage();
+  page.setView(demoView());
+  const event = { id: "event", kind: "event", at: 1, event: { event: "task.assigned", task_id: taskId }, replies: [] };
+  page.ui.raw.add(event.id);
+  for (const env of ["local", "staging", "prod"]) {
+    page.setEnv(env);
+    const card = page.turnCard(event, 0);
+    expect(card.querySelectorAll("a.task")).toHaveLength(0);
+    expect(card.textContent).toContain("task.assigned");
+    expect(card.textContent).toContain(JSON.stringify(event.event, null, 2));
+  }
 });
 
 it("keeps a non-event turn head as a plain row", () => {

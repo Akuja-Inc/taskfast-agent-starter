@@ -13,12 +13,14 @@ import { runAgents } from "../../dist/src/run.js";
 const TASK = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 const BID = "44444444-4444-4444-8444-444444444444";
+// The CLI is fake either way; another environment only changes banners and task links.
+const env = process.env.TUI_HOST_ENV ?? "local";
 const dir = mkdtempSync(join(tmpdir(), "tui-host-"));
 const examples = new URL("../../examples/", import.meta.url);
 for (const [id, name] of [["shop", "brisk-poster"], ["worker", "careful-worker"]]) {
   cpSync(new URL(name, examples), join(dir, id), { recursive: true });
   mkdirSync(join(dir, id, ".taskfast"), { recursive: true });
-  writeFileSync(join(dir, id, ".taskfast", "config.json"), JSON.stringify({ environment: "local" }));
+  writeFileSync(join(dir, id, ".taskfast", "config.json"), JSON.stringify({ environment: env }));
   writeFileSync(join(dir, id, ".taskfast", "wallet-password"), "synthetic", { mode: 0o400 });
 }
 writeFileSync(join(dir, "shop", ".taskfast", "dead-letter.jsonl"), `${JSON.stringify({ at: "2026-10-13T08:00:00Z", reason: "event has no name", line: JSON.stringify({ event_id: "bad-1", task_id: OTHER }) })}\n`);
@@ -83,7 +85,7 @@ process.once("SIGTERM", () => stop.abort());
 process.once("SIGINT", () => stop.abort());
 try {
   await runAgents({
-    agentsDir: dir, env: "local", signal: stop.signal, console: { port: Number(process.env.TUI_HOST_PORT ?? 0) }, command,
+    agentsDir: dir, env, signal: stop.signal, console: { port: Number(process.env.TUI_HOST_PORT ?? 0) }, command,
     log: (line) => process.stdout.write(`${line}\n`),
     openAgent: async ({ id, spec, runtime, storePath }) => {
       const faux = fauxProvider({ models: [{ id: "test" }] });

@@ -548,7 +548,8 @@ const rel = (ms) => {
 };
 const today = () => new Date().toISOString().slice(0, 10);
 const money = (n) => "$" + Number(n || 0).toFixed(2);
-function taskLink(id) { return list && list.env === "local" ? "http://localhost:4000/tasks/" + encodeURIComponent(id) : null; }
+const WEB = { local: "http://localhost:4000", staging: "https://staging.taskfast.app", prod: "https://taskfast.app" };
+function taskLink(id) { return list ? WEB[list.env] + "/tasks/" + encodeURIComponent(id) : null; }
 function usdc(wallet) {
   const raw = wallet && wallet.balance && wallet.balance.available_balance;
   if (typeof raw !== "string") return wallet && wallet.error ? "unavailable: " + wallet.error : "unknown";
@@ -695,6 +696,10 @@ function turnCard(turn, index) {
   const [cls, glyph, origin] = TAG[turn.kind];
   const key = turn.id;
   const isEvent = turn.kind === "event";
+  // The head is a button, so an event's task gets its own card unless a reply already shows it.
+  const id = isEvent && turn.event && turn.event.task_id;
+  // Admission does not validate task IDs; malformed Unicode must stay out of URL encoding.
+  const eventTask = typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) && !turn.replies.some((reply) => reply.tasks.some((ref) => ref.id === id)) ? id : null;
   return el("article", { class: "card turn", "data-i": index, "data-timeline-anchor": "turn:" + key },
     el(isEvent ? "button" : "div", { class: "head" + (isEvent ? " raw" : ""), ...(isEvent ? { type: "button", "data-focus": "raw:" + key, "aria-expanded": String(ui.raw.has(key)), title: "Show the raw event", onclick: () => toggle(ui.raw, key) } : {}) },
       el("span", { class: "sq " + cls }, pict(glyph, 16)),
@@ -703,7 +708,7 @@ function turnCard(turn, index) {
       el("span", { class: "head-msg", text: headText(turn) }),
       isEvent ? el("span", { class: "raw-chev" }, icon(GLYPH.chevron, 15)) : null),
     ui.raw.has(key) ? el("div", { style: "padding:0 18px 12px" }, jsonBlock("e:" + key, turn.event === undefined ? turn.text : turn.event), el("div", { class: "small", text: "Shown as plain text. HTML in marketplace content is never rendered." })) : null,
-    el("div", { class: "body" }, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, replyKey(turn, reply, r), index === view.timeline.length - 1)) : el("div", { class: "small", text: "No reply yet." })));
+    el("div", { class: "body" }, eventTask ? taskCard({ id: eventTask, via: "" }) : null, turn.replies.length ? turn.replies.map((reply, r) => replyBlock(reply, replyKey(turn, reply, r), index === view.timeline.length - 1)) : el("div", { class: "small", text: "No reply yet." })));
 }
 // live marks the newest turn: its call dots pulse so current failures stay visible,
 // while an idle page's history stands still.

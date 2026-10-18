@@ -414,6 +414,16 @@ it("shows one agent's turns, alerts and prompt", async () => {
   expect((await call(port, "/api/agents/nobody", { headers: auth })).status).toBe(404);
 });
 
+it("reads the task an event names, so its card shows the title", async () => {
+  const task = "22222222-2222-4222-8222-222222222222";
+  const { agent } = fakeAgent({ transcript: [{ role: "user", content: `Marketplace event:\n${JSON.stringify({ event_id: "e1", event: "task.assigned", task_id: task })}`, timestamp: 1 }] });
+  const asked: string[][] = [];
+  agent.host = async (taskIds) => { asked.push(taskIds); return { tasks: {} } as never; };
+  const { port } = await serve([agent]);
+  await call(port, "/api/agents/foo", { headers: auth });
+  expect(asked).toEqual([[task]]);
+});
+
 it("turns console actions into the agent's operator controls and refuses malformed ones", async () => {
   const { agent, asked } = fakeAgent({ state: { ...initialOperator(), orders: ["Decline weekend work."] } });
   const { port } = await serve([agent]);

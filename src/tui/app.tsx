@@ -384,7 +384,7 @@ export function App(p: AppProps) {
                   <scrollbox ref={(box: ScrollBoxRenderable) => { scroll = box; }} flexGrow={1} border borderColor={ui().panel === "timeline" ? ACCENT : MUTED} title=" Timeline " stickyScroll stickyStart="bottom">
                     <For each={s().turns}>{(turn) => (
                       <box flexDirection="column" paddingX={1} marginBottom={1}>
-                        <text><Span fg={TAG[turn.tag]}><b>{turn.tag}</b></Span><Span fg={MUTED}>{`  ${time(turn.at)}  `}</Span>{turn.title}</text>
+                        <text><Span fg={TAG[turn.tag]}><b>{turn.tag}</b></Span><Span fg={MUTED}>{`  ${time(turn.at)}  `}</Span><Show when={turn.link} fallback={turn.title}><a href={turn.link!}>{turn.title}</a></Show></text>
                         <Show when={turn.raw && ui().raw.includes(`turn:${turn.at}`)}>
                           <box border borderColor={MUTED} title=" raw event · plain text " paddingX={1}><text fg={MUTED}>{turn.raw}</text></box>
                         </Show>
@@ -414,7 +414,7 @@ export function App(p: AppProps) {
                               </Show>
                               <For each={reply.tasks}>{(task) => (
                                 <text>{"    "}<Span fg={MUTED}>{`${task.via}  `}</Span><b>{task.title}</b><Span fg={MUTED}>{task.summary ? `  ${task.summary}  ` : "  "}</Span>
-                                  <Show when={task.link} fallback={<Span fg={MUTED}>{task.id}</Span>}><a href={task.link!}>{task.link}</a></Show>
+                                  <a href={task.link}>{task.link}</a>
                                 </text>
                               )}</For>
                             </box>
@@ -448,7 +448,7 @@ export function App(p: AppProps) {
                     <For each={Object.entries(s().sidebar.tasks)}>{([group, refs]) => (
                       <box flexDirection="column">
                         <text fg={MUTED}>{`${group} · ${refs.length}`}</text>
-                        <For each={refs}>{(ref) => <text>{`  ${ref.title}`}</text>}</For>
+                        <For each={refs}>{(ref) => <text>{"  "}<a href={ref.link}>{ref.title}</a></text>}</For>
                       </box>
                     )}</For>
                     <text> </text>
