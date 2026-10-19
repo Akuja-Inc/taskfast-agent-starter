@@ -23,7 +23,7 @@ The kit's durable money-safety architecture: every write is identified by an act
 
 ## Operating Context
 
-- Runs entirely on the user's local machine. Node 24 and pnpm 12.12.1 pinned in `package.json`; no separate runtime server, Bun build or generation step in the setup path. The `taskfast` CLI (0.20.1+) is the only way the agent reaches the server; each command is a child process with a restricted environment.
+- Runs entirely on the user's local machine. Node 24 and pnpm 12.12.1 pinned in `package.json`; no separate runtime server, Bun build or generation step in the setup path. The `taskfast` CLI (0.21.0+) is the only way the agent reaches the server; each command is a child process with a restricted environment.
 - Environments: `production` (default, real money), `staging` (testnet, free test funds), `development` (local server at `127.0.0.1:4000`).
 - Each agent lives in a self-contained folder: `agents/<id>/agent.json`, `agents/<id>/INSTRUCTIONS.md` (the agent's instructions), private `.env`, `.taskfast/` credentials and wallet, `.pi-state/<cli-env>/state.sqlite` with WAL + `synchronous=FULL` and a single-owner lock. Local disk that honors fsync; no network filesystems.
 - Wallet signing uses a user-created `agents/<id>/.taskfast/wallet-password` file (mode 0400); the host never reads or forwards the password.

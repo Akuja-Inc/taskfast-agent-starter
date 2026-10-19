@@ -38,7 +38,7 @@ it.each(["stdio", "http"])("runs a generated agent's capabilities through compac
       // Offline stand-in for the CLI export, using its unchanged, captured bundle.
       capture: (cmd, args, cwd) => {
         expect(cmd).toBe("taskfast");
-        if (args[0] === "--version") return { status: 0, stdout: "taskfast 0.20.1\n" };
+        if (args[0] === "--version") return { status: 0, stdout: "taskfast 0.21.0\n" };
         expect(args).toEqual(["--env", "staging", `--config=${cwd}/absent.json`, "--no-trace", "skills", "--yes"]);
         for (const folder of [".agents", ".claude"]) cpSync(BUNDLE, join(cwd, folder, "skills/taskfast-agent"), { recursive: true });
         return { status: 0, stdout: "" };
@@ -51,7 +51,7 @@ it.each(["stdio", "http"])("runs a generated agent's capabilities through compac
     const provenance = readFileSync(join(folder, ".agents/provenance.json"), "utf8");
     expect(skillFiles).toHaveLength(7);
     const hashes = Object.fromEntries(skillFiles.map((file) => [file, createHash("sha256").update(readFileSync(join(folder, ".agents/skills/taskfast-agent", file))).digest("hex")]));
-    expect(JSON.parse(provenance)).toMatchObject({ "taskfast-agent": { source: "taskfast-cli", version: "0.20.1", files: hashes } });
+    expect(JSON.parse(provenance)).toMatchObject({ "taskfast-agent": { source: "taskfast-cli", version: "0.21.0", files: hashes } });
     expect(existsSync(join(folder, ".claude"))).toBe(false);
     // Only synthetic MCP credentials. No account, wallet or model-provider service is used.
     const secret = "synthetic-generated-docs-token";

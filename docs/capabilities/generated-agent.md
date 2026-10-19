@@ -13,7 +13,7 @@ pnpm vitest run test/generated-capabilities.test.ts
 
 Expect two passing cases, `stdio` and `http`. The test creates a temporary kit, runs fully flagged setup with `--env staging`, `--no-init` and `--taskfast-skill`, and removes only its own temporary files after closing their owners. It never opens `agents/` in your checkout. No account, wallet, provider key or installed `taskfast` binary is required for this offline test.
 
-Setup's injected CLI exporter copies the unchanged `taskfast` 0.20.1 capture, including both export destinations, rather than inventing a skill. Setup publishes only `.agents` and records provenance. The test checks all seven installed files against those hashes. [Capture provenance](../../test/fixtures/cli/README.md) explains the original export and how to recapture it. This test does not revalidate an installed CLI binary on every run.
+Setup's injected CLI exporter copies the unchanged `taskfast` 0.21.0 capture, including both export destinations, rather than inventing a skill. Setup publishes only `.agents` and records provenance. The test checks all seven installed files against those hashes. [Capture provenance](../../test/fixtures/cli/README.md) explains the original export and how to recapture it. This test does not revalidate an installed CLI binary on every run.
 
 Setup writes a normal `ollama:fixture` agent. The test substitutes Pi's scripted model in memory, leaving the generated file unchanged. Marketplace commands return scripted results through the existing command seam. MCP uses real local stdio processes and loopback Streamable HTTP sockets, with synthetic credentials and exact fixture-tool fingerprints. These fingerprints approve only the test fixture, not a third-party service.
 
