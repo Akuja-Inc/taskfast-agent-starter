@@ -6,8 +6,8 @@ import { TOOLS } from "../src/core/tools.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):
-// spec/openapi.yaml at tag taskfast-cli-v0.21.0. Its SHA-256 is asserted below.
-// To refresh, copy that file from the newest CLI release and update the tag and hash here:
+// spec/openapi.yaml at tag taskfast-cli-v0.21.0.
+// To refresh, copy that file from the newest CLI release, update the tag here and the hash in the pin test:
 //   curl -fL -o test/fixtures/openapi.yaml https://raw.githubusercontent.com/Akuja-Inc/taskfast-cli/<tag>/spec/openapi.yaml
 const OPENAPI = join(import.meta.dirname, "fixtures", "openapi.yaml");
 
@@ -21,10 +21,11 @@ function enumAfter(yaml: string, marker: RegExp): string[] {
 }
 
 describe("tools match the server contract", () => {
-  const yaml = readFileSync(OPENAPI, "utf8");
+  const bytes = readFileSync(OPENAPI);
+  const yaml = bytes.toString("utf8");
 
   it("pins the byte-identical released spec", () => {
-    expect(createHash("sha256").update(readFileSync(OPENAPI)).digest("hex"))
+    expect(createHash("sha256").update(bytes).digest("hex"))
       .toBe("fa40b515c868c9d089b9b1bd4900676e7043e0bee2984ab76c409e6a1ba0f213");
   });
 
