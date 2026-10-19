@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -5,8 +6,8 @@ import { TOOLS } from "../src/core/tools.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):
-// spec/openapi.yaml at tag taskfast-cli-v0.20.1, sha256 51c0bba22cff86dd9c06962064af583993852cfbb5873212262d37bc5b232a47.
-// To refresh, copy that file from the newest CLI release and update the tag and hash here:
+// spec/openapi.yaml at tag taskfast-cli-v0.21.0.
+// To refresh, copy that file from the newest CLI release, update the tag here and the hash in the pin test:
 //   curl -fL -o test/fixtures/openapi.yaml https://raw.githubusercontent.com/Akuja-Inc/taskfast-cli/<tag>/spec/openapi.yaml
 const OPENAPI = join(import.meta.dirname, "fixtures", "openapi.yaml");
 
@@ -20,7 +21,21 @@ function enumAfter(yaml: string, marker: RegExp): string[] {
 }
 
 describe("tools match the server contract", () => {
-  const yaml = readFileSync(OPENAPI, "utf8");
+  const bytes = readFileSync(OPENAPI);
+  const yaml = bytes.toString("utf8");
+
+  it("pins the byte-identical released spec", () => {
+    expect(createHash("sha256").update(bytes).digest("hex"))
+      .toBe("fa40b515c868c9d089b9b1bd4900676e7043e0bee2984ab76c409e6a1ba0f213");
+  });
+
+  it("publishes video types and the server's upload cap", () => {
+    const upload = yaml.slice(yaml.indexOf("  /tasks/{task_id}/artifacts:"), yaml.indexOf("  /tasks/{task_id}/artifacts/uploads:"));
+    for (const type of ["video/mp4", "video/webm", "video/quicktime"]) expect(upload).toContain(type);
+    expect(upload).toContain("200MB for video, 50MB for every other type");
+    // The server's video cap is binary bytes, independent of the kit's 50 MiB capture cap.
+    expect(yaml).toMatch(/max_bytes:[\s\S]*?example: 209715200/);
+  });
 
   it("bid_list offers exactly the bid statuses BidDetail publishes", () => {
     const published = enumAfter(yaml, /\n {4}BidDetail:\n/);

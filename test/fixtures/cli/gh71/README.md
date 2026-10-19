@@ -1,6 +1,6 @@
 # Captured artifact output (gh#71)
 
-Real stdout of the `taskfast` 0.20.1 binary (the version this kit pins), run with
+Real stdout of the `taskfast` 0.20.1 binary, run with
 `--env local` against `stand-in-server.py` in this folder. The server answers the shapes
 `test/fixtures/openapi.yaml` documents, so nothing here touches a marketplace account.
 

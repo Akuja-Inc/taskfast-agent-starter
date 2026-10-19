@@ -23,7 +23,7 @@ const BUNDLE = join(ROOT, "test/fixtures/cli/skills/taskfast-agent");
 // both folders the CLI writes, under its working directory.
 function fakeCli(cmd: string, args: string[], cwd: string): { status: number; stdout: string } {
   if (cmd !== "taskfast") return { status: 127, stdout: "" };
-  if (args[0] === "--version") return { status: 0, stdout: "taskfast 0.20.1\n" };
+  if (args[0] === "--version") return { status: 0, stdout: "taskfast 0.21.0\n" };
   for (const folder of [".agents", ".claude"]) cpSync(BUNDLE, join(cwd, folder, "skills/taskfast-agent"), { recursive: true });
   return { status: 0, stdout: '{"ok":true}\n' };
 }
@@ -418,10 +418,10 @@ describe("--taskfast-skill", () => {
     expect(readdirSync(join(k.root, "agents", "flagged", ".agents")).sort()).toEqual(["provenance.json", "skills"]);
     expect(existsSync(join(k.root, "agents", "flagged", ".claude"))).toBe(false);
     const provenance = JSON.parse(readFileSync(join(k.root, "agents", "flagged", ".agents/provenance.json"), "utf8"));
-    expect(provenance["taskfast-agent"]).toMatchObject({ source: "taskfast-cli", version: "0.20.1", files: { "SKILL.md": "f775a3b40a870b1074ff583fd8e7092ee1c7e8f7a99fb9b13d7e3b1baf254564" } });
+    expect(provenance["taskfast-agent"]).toMatchObject({ source: "taskfast-cli", version: "0.21.0", files: { "SKILL.md": "f775a3b40a870b1074ff583fd8e7092ee1c7e8f7a99fb9b13d7e3b1baf254564" } });
     expect(Object.keys(provenance["taskfast-agent"].files)).toHaveLength(7);
     expect(loadSkills(join(k.root, "agents", "flagged")).map((skill) => skill.name)).toEqual(["taskfast-agent"]);
-    expect(k.logs).toContain("Added the taskfast-agent skill from taskfast 0.20.1 to agents/flagged/.agents/skills (file hashes in .agents/provenance.json)");
+    expect(k.logs).toContain("Added the taskfast-agent skill from taskfast 0.21.0 to agents/flagged/.agents/skills (file hashes in .agents/provenance.json)");
   });
   it("never runs the export without the flag", async () => {
     const k = kit([]);
