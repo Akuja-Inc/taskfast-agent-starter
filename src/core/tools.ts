@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { MEDIA_PATH } from "./media.js";
+import { MEDIA_PATH, MEDIA_TYPES, VIDEO_LIMIT, type MediaType } from "./media.js";
 
 // The tools an agent's model can call. Each one maps to a taskfast command (or, for
 // memory, to the agent's own notes). The model only fills in values: every value is
@@ -126,9 +126,9 @@ const page = (i: Record<string, unknown>) => [...opt("cursor", i.cursor, cursor)
 export const ARTIFACTS_PATH = ".pi-state/artifacts";
 const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.([a-z0-9]+)$/;
 const TEXT_NAMES = ["txt", "md", "csv", "json", "xml", "html", "css", "js", "svg"];
-// Each binary extension a name may end in, by the extension of its media file.
-const MEDIA_NAMES: Record<string, string> = { png: "png", jpg: "jpg", jpeg: "jpg", gif: "gif", webp: "webp", mp4: "mp4", webm: "webm", mov: "mov" };
-const MEDIA_HANDLE = /^media:([0-9a-f]{16})\.(png|jpg|gif|webp|mp4|webm|mov)$/;
+// Each binary extension a name may end in, by the media type of its file; .jpeg names a .jpg.
+const MEDIA_NAMES: Record<string, MediaType> = { ...Object.fromEntries(Object.values(MEDIA_TYPES).map((type) => [type.ext, type])), jpeg: MEDIA_TYPES["image/jpeg"]! };
+const MEDIA_HANDLE = new RegExp(`^media:([0-9a-f]{16})\\.(${Object.values(MEDIA_TYPES).map((type) => type.ext).join("|")})$`);
 const NAMES = [...TEXT_NAMES, ...Object.keys(MEDIA_NAMES)].map((ext) => `.${ext}`).join(", ");
 const MAX_ARTIFACTS = 5;
 const MAX_ARTIFACT_BYTES = 256 * 1024;
@@ -146,10 +146,10 @@ function artifacts(v: unknown, task: string): ArtifactFile[] {
       const handle = typeof media === "string" ? MEDIA_HANDLE.exec(media) : null;
       if (!handle) bad(`artifact ${name as string} media must be a handle a tool result gave you, like media:0123456789abcdef.png`);
       const [, hash, type] = handle!;
-      if (MEDIA_NAMES[ext!] !== type) bad(`artifact ${name as string} must end in .${type}${type === "jpg" ? " or .jpeg" : ""} to match its media`);
+      if (MEDIA_NAMES[ext!]?.ext !== type) bad(`artifact ${name as string} must end in ${Object.keys(MEDIA_NAMES).filter((n) => MEDIA_NAMES[n]!.ext === type).map((n) => `.${n}`).join(" or ")} to match its media`);
       return { path: `${ARTIFACTS_PATH}/${task}/${hash}/${name as string}`, media: `${MEDIA_PATH}/${hash}.${type}`, digest: hash! };
     }
-    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is ${["mp4", "webm", "mov"].includes(ext!) ? "a video" : "an image"}: deliver it as { name, media } with a handle a tool result gave you`);
+    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is ${MEDIA_NAMES[ext!]!.kind === "video" ? "a video" : "an image"}: deliver it as { name, media } with a handle a tool result gave you`);
     const bytes = typeof content === "string" ? Buffer.byteLength(content) : 0;
     if (bytes < 1 || bytes > MAX_ARTIFACT_BYTES) bad(`artifact ${name as string} content must be 1 to ${MAX_ARTIFACT_BYTES} bytes of text`);
     return { path: `${ARTIFACTS_PATH}/${task}/${digest(content as string)}/${name as string}`, content: content as string };
@@ -158,7 +158,7 @@ function artifacts(v: unknown, task: string): ArtifactFile[] {
 const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
 const artifactList = {
   type: "array",
-  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or an image or video a tool result saved as media:<file> as { name, media }. Video capture supports MP4, WebM and MOV up to 50 MiB per file. You cannot make binary media bytes yourself; deliver them only by handle`,
+  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or an image or video a tool result saved as media:<file> as { name, media }. ${VIDEO_LIMIT} You cannot make binary media bytes yourself; deliver them only by handle`,
   items: obj({
     name: s(`file name a criterion may require, e.g. results.json or chart.png; ends in ${NAMES}`),
     content: s("the file's full text, for a text file"),

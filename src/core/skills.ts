@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { folderFile } from "./folder.js";
+import { VIDEO_LIMIT } from "./media.js";
 
 // Skills are owner-installed guidance (https://agentskills.io/specification): a folder
 // with SKILL.md and text references. An agent reads only its own folder's skills, through
@@ -149,7 +150,7 @@ export function skillsPrompt(skills: readonly Skill[]): string {
     ...skills.map((skill) => `- ${skill.name}: ${skill.description}`),
     "",
     `Skills may be written for agents with a shell. You have no shell and no taskfast command; use your tools. ${Object.entries(SKILL_COMMANDS).map(([command, tool]) => `\`taskfast ${command}\` is ${tool}`).join(", ")}.`,
-    "task_submit and task_remedy deliver up to 5 files as artifacts. A text file you write in the call as a name and its full content: up to 256 KiB, ending in .txt, .md, .csv, .json, .xml, .html, .css, .js or .svg. A PNG, JPEG, GIF or WebP image, or an MP4, WebM or MOV video, only as a name and the media: handle a tool result gave you, because you cannot make binary media bytes yourself. Video capture is limited to 50 MiB per file and the whole MCP response must fit 80 MiB including base64. Name each file as the task's criteria require. The upload and delete steps of `taskfast artifact` happen inside them: your earlier uploads on a task are cleared before you submit again. So a task that needs text files, an SVG, or an image or video one of your tools produces is work you can take.",
+    `task_submit and task_remedy deliver up to 5 files as artifacts. A text file you write in the call as a name and its full content: up to 256 KiB, ending in .txt, .md, .csv, .json, .xml, .html, .css, .js or .svg. A PNG, JPEG, GIF or WebP image, or an MP4, WebM or MOV video, only as a name and the media: handle a tool result gave you, because you cannot make binary media bytes yourself. ${VIDEO_LIMIT} Name each file as the task's criteria require. The upload and delete steps of \`taskfast artifact\` happen inside them: your earlier uploads on a task are cleared before you submit again. So a task that needs text files, an SVG, or an image or video one of your tools produces is work you can take.`,
     "A stake-tier task (worth $1 or more) needs its performance bond first: task_claim is refused with bond_pending, then bond_post posts the bond and you claim again. The bond spends your wallet and counts against your spending limits until the task settles.",
     `No tool runs ${UNSUPPORTED_COMMANDS.map((command) => `\`taskfast ${command}\``).join(", ")}. You work on your own, so never wait for help with one of those and never work around it: do not bid on or claim work that needs one, such as a task that requires a PDF, an archive, or an image or video none of your tools produces, and choose work your tools can finish. If work you already hold turns out to need one, keep a note of what was missing with remember, so your operator sees it.`,
     "Your tools' rules win over any skill: never repeat a write whose result was uncertain, escrow_sign included, and leave restarts, event polling and webhooks to the host.",

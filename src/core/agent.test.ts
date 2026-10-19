@@ -12,6 +12,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { failingStorage } from "../../test/failing-storage.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
+import { MEDIA_TYPES, mediaDigest } from "./media.js";
 import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
@@ -937,8 +938,8 @@ it("delivers an image an approved MCP tool returned by its media handle, also af
 it.each(Object.entries(VIDEO))("delivers an approved MCP %s blob after a restart and never repeats an uncertain submit", async (mimeType, bytes) => {
   const dir = agentFolder(false);
   writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { video: approve("video") } } });
-  const ext = mimeType === "video/mp4" ? "mp4" : mimeType === "video/webm" ? "webm" : "mov";
-  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  const ext = MEDIA_TYPES[mimeType]!.ext;
+  const hash = mediaDigest(bytes);
   const commands: string[][] = [];
   const command = async (_rt: unknown, args: string[]): Promise<CliResult> => {
     commands.push(args);
@@ -971,14 +972,15 @@ it.each(Object.entries(VIDEO))("delivers an approved MCP %s blob after a restart
 });
 
 it.each([
-  ["missing", undefined, /media file not found/],
-  ["changed since it was saved", Buffer.from("other bytes"), /media file changed since it was saved/],
-])("refuses a media artifact whose file is %s, before reserving or calling the CLI", async (_n, bytes, why) => {
+  ["missing", undefined, /media file not found/, "png"],
+  ["changed since it was saved", Buffer.from("other bytes"), /media file changed since it was saved/, "png"],
+  ["a missing video", undefined, /media file not found/, "mp4"],
+])("refuses a media artifact whose file is %s, before reserving or calling the CLI", async (_n, bytes, why, ext) => {
   const commands: string[][] = [];
   const kit = await open({ command: async (_rt, args): Promise<CliResult> => { commands.push(args); return args[0] === "me" ? me : { outcome: "ok", data: null }; } });
   const hash = createHash("sha256").update(Buffer.from(PNG, "base64")).digest("hex").slice(0, 16);
-  if (bytes) { mkdirSync(join(kit.dir, ".pi-state/media"), { recursive: true }); writeFileSync(join(kit.dir, ".pi-state/media", `${hash}.png`), bytes); }
-  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Logo", artifacts: [{ name: "logo.png", media: `media:${hash}.png` }] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
+  if (bytes) { mkdirSync(join(kit.dir, ".pi-state/media"), { recursive: true }); writeFileSync(join(kit.dir, ".pi-state/media", `${hash}.${ext}`), bytes); }
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Logo", artifacts: [{ name: `file.${ext}`, media: `media:${hash}.${ext}` }] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
   await run(kit.agent);
   expect((await toolResults(kit.agent))[0]).toMatch(why);
   expect(commands.filter((args) => args[0] !== "me")).toEqual([]);
