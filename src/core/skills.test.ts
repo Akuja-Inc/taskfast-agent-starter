@@ -136,11 +136,12 @@ it("lists names and one-line descriptions, the tool mapping and the precedence r
   expect(prompt).not.toContain("summary only");
   // `taskfast artifact` stays unsupported as a command, but artifact work is not off limits.
   expect(prompt).toContain("The upload and delete steps of `taskfast artifact` happen inside them");
-  expect(prompt).toContain("an image or video one of your tools produces is work you can take");
+  expect(prompt).toContain("an image, video, document or archive one of your tools produces is work you can take");
+  expect(prompt).toContain("A binary file, an image (.png, .jpg, .gif or .webp), a video (.mp4, .webm or .mov), a document (.pdf or .doc) or an archive (.zip, .tar or .gz), only as a name");
   expect(prompt).toContain("only as a name and the media: handle a tool result gave you");
-  expect(prompt).toContain("MP4, WebM or MOV video");
   expect(prompt).toContain("50 MiB");
-  expect(prompt).toContain("such as a task that requires a PDF, an archive, or an image or video none of your tools produces");
+  expect(prompt).toContain("such as a task that requires a .docx, .xls or .xlsx file, audio, or a binary file none of your tools produces");
+  expect(prompt).not.toMatch(/requires a PDF|an archive, or/);
   expect(prompt).not.toContain("a PDF, an image or an archive");
   expect(prompt).not.toContain("requires file artifacts");
   expect(prompt).toContain("do not bid on or claim work that needs one");

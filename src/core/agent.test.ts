@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
-import { PNG, VIDEO } from "../../test/fixtures/mcp/server.mjs";
+import { FILES, PNG, VIDEO } from "../../test/fixtures/mcp/server.mjs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -935,9 +935,10 @@ it("delivers an image an approved MCP tool returned by its media handle, also af
   expect(commands.filter((args) => args[1] === "remedy")).toEqual([["task", "remedy", "--summary=Same logo", `--artifact=${path}`, "--", task]]);
 });
 
-it.each(Object.entries(VIDEO))("delivers an approved MCP %s blob after a restart and never repeats an uncertain submit", async (mimeType, bytes) => {
+// The restart path is the same for every kind, so one document stands for the rest.
+it.each(Object.entries({ ...VIDEO, "application/pdf": FILES["application/pdf"] }))("delivers an approved MCP %s blob after a restart and never repeats an uncertain submit", async (mimeType, bytes) => {
   const dir = agentFolder(false);
-  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { video: approve("video") } } });
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { blob: approve("blob") } } });
   const ext = MEDIA_TYPES[mimeType]!.ext;
   const hash = mediaDigest(bytes);
   const commands: string[][] = [];
@@ -948,16 +949,16 @@ it.each(Object.entries(VIDEO))("delivers an approved MCP %s blob after a restart
     return { outcome: "uncertain", error: "lost acknowledgement" };
   };
   const first = await open({ dir, command });
-  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_video", { mimeType })], { stopReason: "toolUse" }), fauxAssistantMessage("Saved")]);
+  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_blob", { mimeType })], { stopReason: "toolUse" }), fauxAssistantMessage("Saved")]);
   await run(first.agent);
   expect((await toolResults(first.agent))[0]).toContain(`saved as media:${hash}.${ext}`);
   expect(readFileSync(join(dir, ".pi-state/media", `${hash}.${ext}`))).toEqual(bytes);
   await first.agent.close();
-  const input = { task_id: task, summary: "Clip", artifacts: [{ name: `clip.${ext}`, media: `media:${hash}.${ext}` }, results] };
+  const input = { task_id: task, summary: "Clip", artifacts: [{ name: `report.${ext}`, media: `media:${hash}.${ext}` }, results] };
   const second = await open({ dir, command });
   second.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", input)], { stopReason: "toolUse" }), fauxAssistantMessage("Unknown")]);
   await run(second.agent);
-  const path = `.pi-state/artifacts/${task}/${hash}/clip.${ext}`;
+  const path = `.pi-state/artifacts/${task}/${hash}/report.${ext}`;
   expect(readFileSync(join(dir, path))).toEqual(bytes);
   expect(statSync(join(dir, path)).mode & 0o777).toBe(0o600);
   const submit = commands.find((args) => args[0] === "task");

@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { expect, it } from "vitest";
 import { mcpOutput } from "./mcp-output.js";
+import { FILES } from "../../test/fixtures/mcp/server.mjs";
 
 const textResult = (text: string): CallToolResult => ({ content: [{ type: "text", text }] });
 const MAX_BYTES = 32 * 1024;
@@ -48,14 +49,18 @@ it("keeps normal text and omits direct and embedded image data", () => {
   ] }, [])).toBe("Preview:\n[image/png image omitted]\n[image/jpeg image omitted]");
 });
 
-it("hands direct and embedded images to the image callback and keeps its line", () => {
+it("hands direct and embedded media to the callback and keeps its line", () => {
   const seen: string[] = [];
+  const files = Object.keys(FILES);
+  const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   expect(mcpOutput({ content: [
     { type: "image", mimeType: "image/png", data: "aW1n" },
     { type: "resource", resource: { uri: "file:///preview", mimeType: "image/jpeg", blob: "YmxvYg==" } },
-    { type: "resource", resource: { uri: "file:///report", mimeType: "application/pdf", blob: "cGRm" } },
-  ] }, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`))).toBe("[image/png saved]\n[image/jpeg saved]\n[binary resource file:///report (application/pdf) omitted]");
-  expect(seen).toEqual(["image/png aW1n", "image/jpeg YmxvYg=="]);
+    ...files.map((mimeType) => ({ type: "resource" as const, resource: { uri: "file:///report", mimeType, blob: "cGRm" } })),
+    // The CLI cannot upload .docx yet, so it stays a placeholder.
+    { type: "resource", resource: { uri: "file:///letter", mimeType: docx, blob: "ZG9jeA==" } },
+  ] }, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`))).toBe(["image/png", "image/jpeg", ...files].map((type) => `[${type} saved]\n`).join("") + `[binary resource file:///letter (${docx}) omitted]`);
+  expect(seen).toEqual(["image/png aW1n", "image/jpeg YmxvYg==", ...files.map((type) => `${type} cGRm`)]);
 });
 
 it("captures video blob resources before Pi replaces them with placeholders, without following links", () => {

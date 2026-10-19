@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { MAX_VIDEO_BYTES, MEDIA_TYPES, mediaDigest as digest, saveMedia, VIDEO_CAP } from "./media.js";
-import { VIDEO } from "../../test/fixtures/mcp/server.mjs";
+import { FILES, VIDEO } from "../../test/fixtures/mcp/server.mjs";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })));
@@ -48,7 +48,7 @@ it("saves an image larger than the old 8,000,000-byte upload limit", () => {
   expect(statSync(join(dir, ".pi-state/media", `${digest(big)}.png`)).size).toBe(big.length);
 });
 
-it.each(Object.entries(VIDEO))("saves a %s container by its bytes with private permissions", (mimeType, bytes) => {
+it.each(Object.entries({ ...VIDEO, ...FILES }))("saves a %s file by its bytes with private permissions", (mimeType, bytes) => {
   const dir = agentDir();
   const ext = MEDIA_TYPES[mimeType]!.ext;
   expect(saveMedia(dir, mimeType, bytes.toString("base64"))).toBe(`[${mimeType} saved as media:${digest(bytes)}.${ext}, ${bytes.length} bytes]`);
@@ -63,9 +63,15 @@ it.each([
   ["video/webm", Buffer.from("1a45dfa38b4282886d6174726f736b61", "hex")],
   ["video/mp4", PNG],
   ["video/webm", VIDEO["video/webm"].subarray(0, 8)],
+  ["application/pdf", Buffer.from("PDF-1.7 without its percent sign")],
+  ["application/msword", FILES["application/zip"]],
+  ["application/zip", Buffer.from("504b0506000000000000000000000000000000000000", "hex")],
+  ["application/x-tar", Buffer.alloc(512)],
+  ["application/x-tar", FILES["application/x-tar"].subarray(0, 300)],
+  ["application/gzip", FILES["application/pdf"]],
 ])("omits bytes that do not match %s", (mimeType, bytes) => {
   const dir = agentDir();
-  expect(saveMedia(dir, mimeType, bytes.toString("base64"))).toBe(`[${mimeType} video omitted]`);
+  expect(saveMedia(dir, mimeType, bytes.toString("base64"))).toBe(`[${mimeType} ${MEDIA_TYPES[mimeType]!.kind} omitted]`);
   expect(existsSync(join(dir, ".pi-state/media"))).toBe(false);
 });
 

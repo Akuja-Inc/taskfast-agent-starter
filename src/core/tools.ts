@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { MEDIA_PATH, MEDIA_TYPES, VIDEO_LIMIT, type MediaType } from "./media.js";
+import { MEDIA_FILES, MEDIA_PATH, MEDIA_TYPES, VIDEO_LIMIT, type MediaType } from "./media.js";
 
 // The tools an agent's model can call. Each one maps to a taskfast command (or, for
 // memory, to the agent's own notes). The model only fills in values: every value is
@@ -149,7 +149,7 @@ function artifacts(v: unknown, task: string): ArtifactFile[] {
       if (MEDIA_NAMES[ext!]?.ext !== type) bad(`artifact ${name as string} must end in ${Object.keys(MEDIA_NAMES).filter((n) => MEDIA_NAMES[n]!.ext === type).map((n) => `.${n}`).join(" or ")} to match its media`);
       return { path: `${ARTIFACTS_PATH}/${task}/${hash}/${name as string}`, media: `${MEDIA_PATH}/${hash}.${type}`, digest: hash! };
     }
-    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is ${MEDIA_NAMES[ext!]!.kind === "video" ? "a video" : "an image"}: deliver it as { name, media } with a handle a tool result gave you`);
+    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is a binary file: deliver it as { name, media } with a handle a tool result gave you`);
     const bytes = typeof content === "string" ? Buffer.byteLength(content) : 0;
     if (bytes < 1 || bytes > MAX_ARTIFACT_BYTES) bad(`artifact ${name as string} content must be 1 to ${MAX_ARTIFACT_BYTES} bytes of text`);
     return { path: `${ARTIFACTS_PATH}/${task}/${digest(content as string)}/${name as string}`, content: content as string };
@@ -158,11 +158,11 @@ function artifacts(v: unknown, task: string): ArtifactFile[] {
 const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
 const artifactList = {
   type: "array",
-  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or an image or video a tool result saved as media:<file> as { name, media }. ${VIDEO_LIMIT} You cannot make binary media bytes yourself; deliver them only by handle`,
+  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or a binary file a tool result saved as media:<file>, ${MEDIA_FILES}, as { name, media }. ${VIDEO_LIMIT} You cannot make binary bytes yourself; deliver them only by handle`,
   items: obj({
     name: s(`file name a criterion may require, e.g. results.json or chart.png; ends in ${NAMES}`),
     content: s("the file's full text, for a text file"),
-    media: s("for an image or video, the handle a tool result gave you, e.g. media:0123456789abcdef.mp4"),
+    media: s("for a binary file, the handle a tool result gave you, e.g. media:0123456789abcdef.pdf"),
   }, ["name"]),
 };
 // The CLI uploads each file, then submits exactly those uploads.
