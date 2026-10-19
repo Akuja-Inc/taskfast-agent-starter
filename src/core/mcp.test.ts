@@ -118,6 +118,26 @@ it("carries an image whose message is larger than Pi-mcp's default limit over st
   expect(text(await call(mcp, "mcp_docs_image", { bytes }))).toMatch(new RegExp(`^\\[image/png saved as media:[0-9a-f]{16}\\.png, ${bytes} bytes\\]$`));
 }, 20_000);
 
+it.each(["stdio", "http"])("captures a video larger than Pi's default message limit over %s", async (transport) => {
+  const dir = agentDir();
+  if (transport === "stdio") writeMcp(dir, { docs: local({ video: approve("video") }) });
+  else {
+    const http = await httpFixture();
+    servers.push(http);
+    writeMcp(dir, { docs: { url: http.url, tools: { video: approve("video") } } });
+  }
+  const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
+  open.push(mcp);
+  const bytes = 13 * 1024 * 1024;
+  const output = text(await call(mcp, "mcp_docs_video", { bytes }));
+  const handle = /saved as media:([0-9a-f]{16}\.mp4),/.exec(output)?.[1];
+  expect(handle).toBeDefined();
+  const file = readFileSync(join(dir, ".pi-state/media", handle!));
+  expect(file.length).toBe(bytes);
+  expect(output).toBe(`[video/mp4 saved as media:${createHash("sha256").update(file).digest("hex").slice(0, 16)}.mp4, ${bytes} bytes]`);
+  expect(mcp.tools[0]).toMatchObject({ replay: "unsafe", executionMode: "sequential" });
+}, 20_000);
+
 it("follows paged tool lists", async () => {
   const dir = agentDir();
   writeMcp(dir, { docs: local({ big: approve("big") }, { env: { FIXTURE_MODE: "MODE" } }) }, { MODE: "paged" });

@@ -20,9 +20,16 @@ export const TOOLS = [
   { name: "delete", description: "Deletes a document.", inputSchema: object({ id: { type: "string" } }, ["id"]), annotations: { destructiveHint: true } },
   { name: "sample", description: "Asks the client for a model completion first.", inputSchema: object() },
   { name: "image", description: "Answers with a PNG image block and the same image as an embedded resource; with `bytes`, one PNG of that size.", inputSchema: object({ bytes: { type: "number" } }) },
+  { name: "video", description: "Answers with a video blob resource; with `bytes`, pads the container header to that size.", inputSchema: object({ mimeType: { type: "string" }, bytes: { type: "number" } }) },
 ];
 // The smallest bytes the host accepts as a PNG: the signature and a few bytes after it.
 export const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("fixture")]).toString("base64");
+// Container headers only, like PNG above. These are signature fixtures, not playable clips.
+export const VIDEO = {
+  "video/mp4": Buffer.from("000000186674797069736f6d0000020069736f6d6d703432", "hex"),
+  "video/quicktime": Buffer.from("0000001466747970717420200000000071742020", "hex"),
+  "video/webm": Buffer.from("1a45dfa39f4286810142f7810142f2810442f381084282847765626d4287810442858102", "hex"),
+};
 const text = (value) => ({ content: [{ type: "text", text: value }] });
 // Requests this server sends its client (stdio only), answered through `handle`.
 let send = () => { throw new Error("no channel to the client"); };
@@ -57,6 +64,12 @@ export async function handle(message) {
     if (params.name === "big") return reply(text("x".repeat(args.size)));
     if (params.name === "image" && args.bytes) return reply({ content: [{ type: "image", mimeType: "image/png", data: Buffer.concat([Buffer.from(PNG, "base64"), Buffer.alloc(args.bytes - Buffer.from(PNG, "base64").length)]).toString("base64") }] });
     if (params.name === "image") return reply({ content: [{ type: "text", text: "Rendered:" }, { type: "image", mimeType: "image/png", data: PNG }, { type: "resource", resource: { uri: "file:///chart", mimeType: "image/png", blob: PNG } }] });
+    if (params.name === "video") {
+      const mimeType = args.mimeType ?? "video/mp4";
+      const header = VIDEO[mimeType];
+      const blob = Buffer.concat([header, Buffer.alloc(Math.max(0, (args.bytes ?? 0) - header.length))]).toString("base64");
+      return reply({ content: [{ type: "resource", resource: { uri: "file:///clip", mimeType, blob } }] });
+    }
     if (params.name === "exit") { setTimeout(() => process.exit(0), 5); return reply(text("bye")); }
     if (params.name === "sample") {
       const answer = await ask("sampling/createMessage", { messages: [{ role: "user", content: { type: "text", text: "hi" } }], maxTokens: 10 });

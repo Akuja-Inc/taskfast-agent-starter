@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
-import { PNG } from "../../test/fixtures/mcp/server.mjs";
+import { PNG, VIDEO } from "../../test/fixtures/mcp/server.mjs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -12,6 +12,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { failingStorage } from "../../test/failing-storage.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
+import { MEDIA_TYPES, mediaDigest } from "./media.js";
 import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";
@@ -934,15 +935,52 @@ it("delivers an image an approved MCP tool returned by its media handle, also af
   expect(commands.filter((args) => args[1] === "remedy")).toEqual([["task", "remedy", "--summary=Same logo", `--artifact=${path}`, "--", task]]);
 });
 
+it.each(Object.entries(VIDEO))("delivers an approved MCP %s blob after a restart and never repeats an uncertain submit", async (mimeType, bytes) => {
+  const dir = agentFolder(false);
+  writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { video: approve("video") } } });
+  const ext = MEDIA_TYPES[mimeType]!.ext;
+  const hash = mediaDigest(bytes);
+  const commands: string[][] = [];
+  const command = async (_rt: unknown, args: string[]): Promise<CliResult> => {
+    commands.push(args);
+    if (args[0] === "me") return me;
+    if (args[0] === "artifact") return { outcome: "ok", data: { artifacts: [] } };
+    return { outcome: "uncertain", error: "lost acknowledgement" };
+  };
+  const first = await open({ dir, command });
+  first.faux.setResponses([fauxAssistantMessage([fauxToolCall("mcp_docs_video", { mimeType })], { stopReason: "toolUse" }), fauxAssistantMessage("Saved")]);
+  await run(first.agent);
+  expect((await toolResults(first.agent))[0]).toContain(`saved as media:${hash}.${ext}`);
+  expect(readFileSync(join(dir, ".pi-state/media", `${hash}.${ext}`))).toEqual(bytes);
+  await first.agent.close();
+  const input = { task_id: task, summary: "Clip", artifacts: [{ name: `clip.${ext}`, media: `media:${hash}.${ext}` }, results] };
+  const second = await open({ dir, command });
+  second.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", input)], { stopReason: "toolUse" }), fauxAssistantMessage("Unknown")]);
+  await run(second.agent);
+  const path = `.pi-state/artifacts/${task}/${hash}/clip.${ext}`;
+  expect(readFileSync(join(dir, path))).toEqual(bytes);
+  expect(statSync(join(dir, path)).mode & 0o777).toBe(0o600);
+  const submit = commands.find((args) => args[0] === "task");
+  expect(submit).toContain(`--artifact=${path}`);
+  expect((await second.agent.status()).actions[`submit:${task}`]!.status).toBe("uncertain");
+  await second.agent.close();
+  const third = await open({ dir, command });
+  third.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", input, { id: "again" })], { stopReason: "toolUse" }), fauxAssistantMessage("Skipped")]);
+  await run(third.agent);
+  expect(commands.filter((args) => args[0] === "task")).toEqual([submit]);
+  expect((await third.agent.status()).actions[`submit:${task}`]!.status).toBe("uncertain");
+});
+
 it.each([
-  ["missing", undefined, /media file not found/],
-  ["changed since it was saved", Buffer.from("other bytes"), /media file changed since it was saved/],
-])("refuses a media artifact whose file is %s, before reserving or calling the CLI", async (_n, bytes, why) => {
+  ["missing", undefined, /media file not found/, "png"],
+  ["changed since it was saved", Buffer.from("other bytes"), /media file changed since it was saved/, "png"],
+  ["a missing video", undefined, /media file not found/, "mp4"],
+])("refuses a media artifact whose file is %s, before reserving or calling the CLI", async (_n, bytes, why, ext) => {
   const commands: string[][] = [];
   const kit = await open({ command: async (_rt, args): Promise<CliResult> => { commands.push(args); return args[0] === "me" ? me : { outcome: "ok", data: null }; } });
   const hash = createHash("sha256").update(Buffer.from(PNG, "base64")).digest("hex").slice(0, 16);
-  if (bytes) { mkdirSync(join(kit.dir, ".pi-state/media"), { recursive: true }); writeFileSync(join(kit.dir, ".pi-state/media", `${hash}.png`), bytes); }
-  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Logo", artifacts: [{ name: "logo.png", media: `media:${hash}.png` }] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
+  if (bytes) { mkdirSync(join(kit.dir, ".pi-state/media"), { recursive: true }); writeFileSync(join(kit.dir, ".pi-state/media", `${hash}.${ext}`), bytes); }
+  kit.faux.setResponses([fauxAssistantMessage([fauxToolCall("task_submit", { task_id: task, summary: "Logo", artifacts: [{ name: `file.${ext}`, media: `media:${hash}.${ext}` }] })], { stopReason: "toolUse" }), fauxAssistantMessage("Stopped")]);
   await run(kit.agent);
   expect((await toolResults(kit.agent))[0]).toMatch(why);
   expect(commands.filter((args) => args[0] !== "me")).toEqual([]);
