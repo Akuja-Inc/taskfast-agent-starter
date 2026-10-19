@@ -247,13 +247,17 @@ describe("artifacts", () => {
     ["a folder", { name: "out/results.json", content: "x" }, /artifact name/],
     ["a hidden file", { name: ".env.txt", content: "x" }, /artifact name/],
     ["a flag", { name: "--env=prod.txt", content: "x" }, /artifact name/],
-    ["a binary type", { name: "report.pdf", content: "x" }, /artifact name/],
+    ["a type the CLI cannot upload", { name: "letter.docx", media: `media:${D}.pdf` }, /artifact name/],
+    ["audio", { name: "voice.mp3", media: `media:${D}.mp3` }, /artifact name/],
+    ["PDF text from the model", { name: "report.pdf", content: "x" }, /report.pdf is a binary file: deliver it as \{ name, media \}/],
+    ["a document type mismatch", { name: "report.doc", media: `media:${D}.pdf` }, /report.doc must end in .pdf/],
+    ["an archive named for a tarball", { name: "bundle.tar", media: `media:${D}.gz` }, /bundle.tar must end in .gz/],
     ["empty content", { name: "a.txt", content: "" }, /a.txt content must be 1 to 262144 bytes/],
     ["content over 256 KiB", { name: "a.txt", content: "é".repeat(131073) }, /content must be 1 to 262144 bytes/],
     ["an extra field", { name: "a.txt", content: "x", path: "/etc/passwd" }, /each artifact is \{ name, content \}/],
     ["both content and media", { name: "logo.png", content: "x", media: `media:${D}.png` }, /each artifact is \{ name, content \} or \{ name, media \}/],
     ["neither content nor media", { name: "a.txt" }, /each artifact is \{ name, content \} or \{ name, media \}/],
-    ["image text from the model", { name: "logo.png", content: "x" }, /logo.png is an image: deliver it as \{ name, media \}/],
+    ["image text from the model", { name: "logo.png", content: "x" }, /logo.png is a binary file: deliver it as \{ name, media \}/],
     ["video text from the model", { name: "clip.mp4", content: "x" }, /deliver it as \{ name, media \}/],
     ["a video type mismatch", { name: "clip.mov", media: `media:${D}.mp4` }, /clip.mov must end in .mp4/],
     ["an image name for a video", { name: "clip.png", media: `media:${D}.webm` }, /clip.png must end in .webm/],
@@ -283,16 +287,17 @@ describe("artifacts", () => {
     expect(call.args).toEqual(["task", "submit", "--summary=Done", `--artifact=.pi-state/artifacts/${T}/${D}/logo.png`, `--artifact=.pi-state/artifacts/${T}/${D}/photo.jpeg`, `--artifact=${at("results.json", results.content)}`, "--", T]);
   });
 
-  it.each(["mp4", "webm", "mov"])("delivers a saved %s video beside text and images, with stable remedy keys", (ext) => {
-    const video = { name: `clip.${ext}`, media: `media:${D}.${ext}` };
-    const path = `.pi-state/artifacts/${T}/${D}/clip.${ext}`;
-    const input = { task_id: T, summary: "Done", artifacts: [video, { name: "logo.png", media: `media:${D}.png` }, results] };
+  // The CLI types each upload by the name's last extension, so bundle.tar.gz uploads as gzip.
+  it.each([["clip.mp4", "mp4"], ["clip.webm", "webm"], ["clip.mov", "mov"], ["report.pdf", "pdf"], ["letter.doc", "doc"], ["site.zip", "zip"], ["data.tar", "tar"], ["bundle.tar.gz", "gz"]])("delivers a saved %s beside text and images, with stable remedy keys", (name, ext) => {
+    const file = { name, media: `media:${D}.${ext}` };
+    const path = `.pi-state/artifacts/${T}/${D}/${name}`;
+    const input = { task_id: T, summary: "Done", artifacts: [file, { name: "logo.png", media: `media:${D}.png` }, results] };
     const call = prepare("task_submit", input);
     expect(call.files[0]).toEqual({ path, media: `.pi-state/media/${D}.${ext}`, digest: D });
     expect(call.args).toContain(`--artifact=${path}`);
     const key = prepare("task_remedy", input).key;
     expect(prepare("task_remedy", input).key).toBe(key);
-    expect(prepare("task_remedy", { ...input, artifacts: [{ ...video, media: `media:${"f".repeat(16)}.${ext}` }] }).key).not.toBe(key);
+    expect(prepare("task_remedy", { ...input, artifacts: [{ ...file, media: `media:${"f".repeat(16)}.${ext}` }] }).key).not.toBe(key);
   });
 
   it("keys a remedy with media by the image's bytes", () => {

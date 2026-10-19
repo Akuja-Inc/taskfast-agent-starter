@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TOOLS } from "../src/core/tools.js";
+import { MEDIA_TYPES } from "../src/core/media.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):
@@ -35,6 +36,11 @@ describe("tools match the server contract", () => {
     expect(upload).toContain("200MB for video, 50MB for every other type");
     // The server's video cap is binary bytes, independent of the kit's 50 MiB capture cap.
     expect(yaml).toMatch(/max_bytes:[\s\S]*?example: 209715200/);
+  });
+
+  it("publishes every media type the kit captures", () => {
+    const upload = yaml.slice(yaml.indexOf("  /tasks/{task_id}/artifacts:"), yaml.indexOf("  /tasks/{task_id}/artifacts/uploads:"));
+    for (const type of Object.keys(MEDIA_TYPES)) expect(upload).toContain(type);
   });
 
   it("bid_list offers exactly the bid statuses BidDetail publishes", () => {

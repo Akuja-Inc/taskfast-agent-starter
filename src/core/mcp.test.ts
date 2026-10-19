@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { afterEach, expect, it, vi } from "vitest";
 import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
-import { PNG } from "../../test/fixtures/mcp/server.mjs";
+import { FILES, PNG } from "../../test/fixtures/mcp/server.mjs";
 import { connectMcp, discoverMcp, type McpTools } from "./mcp.js";
 import { loadMcpConfig } from "./mcp-config.js";
+import { mediaDigest, MEDIA_TYPES } from "./media.js";
 
 const dirs: string[] = [];
 const open: McpTools[] = [];
@@ -120,16 +121,16 @@ it("carries an image whose message is larger than Pi-mcp's default limit over st
 
 it.each(["stdio", "http"])("captures a video larger than Pi's default message limit over %s", async (transport) => {
   const dir = agentDir();
-  if (transport === "stdio") writeMcp(dir, { docs: local({ video: approve("video") }) });
+  if (transport === "stdio") writeMcp(dir, { docs: local({ blob: approve("blob") }) });
   else {
     const http = await httpFixture();
     servers.push(http);
-    writeMcp(dir, { docs: { url: http.url, tools: { video: approve("video") } } });
+    writeMcp(dir, { docs: { url: http.url, tools: { blob: approve("blob") } } });
   }
   const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
   open.push(mcp);
   const bytes = 13 * 1024 * 1024;
-  const output = text(await call(mcp, "mcp_docs_video", { bytes }));
+  const output = text(await call(mcp, "mcp_docs_blob", { bytes }));
   const handle = /saved as media:([0-9a-f]{16}\.mp4),/.exec(output)?.[1];
   expect(handle).toBeDefined();
   const file = readFileSync(join(dir, ".pi-state/media", handle!));
@@ -137,6 +138,17 @@ it.each(["stdio", "http"])("captures a video larger than Pi's default message li
   expect(output).toBe(`[video/mp4 saved as media:${createHash("sha256").update(file).digest("hex").slice(0, 16)}.mp4, ${bytes} bytes]`);
   expect(mcp.tools[0]).toMatchObject({ replay: "unsafe", executionMode: "sequential" });
 }, 20_000);
+
+it.each(Object.entries(FILES))("saves a %s blob from an approved tool and issues its handle", async (mimeType, bytes) => {
+  const dir = agentDir();
+  writeMcp(dir, { docs: local({ blob: approve("blob") }) });
+  const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
+  open.push(mcp);
+  const handle = `${mediaDigest(bytes)}.${MEDIA_TYPES[mimeType]!.ext}`;
+  expect(text(await call(mcp, "mcp_docs_blob", { mimeType }))).toBe(`[${mimeType} saved as media:${handle}, ${bytes.length} bytes]`);
+  expect(readFileSync(join(dir, ".pi-state/media", handle))).toEqual(bytes);
+  expect(mcp.prompt).toContain("When a result says a file was saved as media:<file>");
+});
 
 it("follows paged tool lists", async () => {
   const dir = agentDir();
