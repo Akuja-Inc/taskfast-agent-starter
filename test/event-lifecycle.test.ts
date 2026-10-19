@@ -56,9 +56,9 @@ function selectedModels(responses: FauxResponseStep[] = []) {
   faux.setResponses(responses);
   return { faux, models };
 }
-function spec() {
+function spec(name = "careful-worker") {
   return parseAgentSpec({
-    ...example("careful-worker"),
+    ...example(name),
     model: "faux:test",
   });
 }
@@ -67,8 +67,8 @@ const identityCommand: Command = async (_runtime, args) => {
   if (JSON.stringify(args) !== JSON.stringify(["me"])) throw new Error("event lifecycle fixture permits only the identity read");
   return { outcome: "ok", data: { profile: { id: "33333333-3333-4333-8333-333333333333" } } };
 };
-async function open({ dir, selected, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand, now, log, openStorage }: { dir: string; selected: ReturnType<typeof selectedModels>; recoverEveryMs?: number; runtime?: Runtime; command?: Command; now?: () => Date; log?: (line: string) => void; openStorage?: (file: string) => Promise<Storage> }) {
-  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(), runtime, models: selected.models, recoverEveryMs, command, now, log, openStorage });
+async function open({ dir, selected, example, recoverEveryMs = 20, runtime = { env: "staging", configPath: join(dir, "config.json") }, command = identityCommand, now, log, openStorage }: { dir: string; selected: ReturnType<typeof selectedModels>; example?: string; recoverEveryMs?: number; runtime?: Runtime; command?: Command; now?: () => Date; log?: (line: string) => void; openStorage?: (file: string) => Promise<Storage> }) {
+  const agent = await openMarketplaceAgent({ storePath: join(dir, "state.sqlite"), spec: spec(example), runtime, models: selected.models, recoverEveryMs, command, now, log, openStorage });
   agents.push(agent);
   return agent;
 }
@@ -219,6 +219,26 @@ it("automatically drains queued follow-up events after a model failure, without 
   expect(inputs.length).toBeGreaterThanOrEqual(2);
   expect(inputs.some((input) => input.includes('"event_id":"queued-one"'))).toBe(true);
   expect(inputs.some((input) => input.includes('"event_id":"queued-two"'))).toBe(true);
+});
+
+it("gives a poster one turn per bid_received, even when the bids are on the same task", async () => {
+  const dir = directory();
+  const selected = selectedModels([fauxAssistantMessage("Reviewed first bid"), fauxAssistantMessage("Reviewed second bid")]);
+  const agent = await open({ dir, selected, example: "brisk-poster" });
+  // Shaped like the spec's WebhookBidReceived: one task, so only event_id and data.bid_id differ.
+  const task = "11111111-1111-4111-8111-111111111111";
+  const bid = (n: number): MarketEvent => ({
+    event_id: `bid-received-${n}`, event: "bid_received", task_id: task,
+    data: { bid_id: `2222222${n}-2222-4222-8222-222222222222`, task_id: task, amount: "90.00", agent_id: "44444444-4444-4444-8444-444444444444" },
+  });
+  await agent.deliver(bid(1));
+  await agent.deliver(bid(2));
+  await expect.poll(() => selected.faux.state.callCount, { timeout: 4000 }).toBe(2);
+  await agent.waitForIdle();
+  const inputs = await eventInputs(agent);
+  expect(inputs).toHaveLength(2);
+  expect(inputs.some((input) => input.includes('"bid_id":"22222221-'))).toBe(true);
+  expect(inputs.some((input) => input.includes('"bid_id":"22222222-'))).toBe(true);
 });
 
 it("reopening recovers an admitted event whose model run failed before shutdown", async () => {
