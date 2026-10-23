@@ -3,10 +3,12 @@
 // `cloudflare:workers`, so Node tests drive it with any Pi storage.
 import type { Models } from "@earendil-works/pi-ai";
 import type { Storage } from "@earendil-works/pi-durable";
+import { join } from "node:path";
 import { openMarketplaceAgent, type MarketplaceAgent } from "../../src/core/agent.js";
+import { eventProblem } from "../../src/core/event.js";
 import type { Command } from "../../src/core/policy.js";
 import { POLL_MINUTES } from "../../src/core/spec.js";
-import type { AgentSpec, Env } from "../../src/core/types.js";
+import type { AgentSpec, Env, MarketEvent } from "../../src/core/types.js";
 import { view } from "../../src/console.js";
 import { reply } from "./gate.js";
 
@@ -17,22 +19,22 @@ export interface HostOptions {
   load(): Promise<{ spec: AgentSpec; models: Models }>;
   storage(): Promise<Storage>;
   command: Command;
+  // An existing, writable folder that stands in for the agent's folder. Policy writes
+  // a submit's files here just before it dispatches; nothing else is kept in it.
+  folder: string;
   log?: (line: string) => void;
 }
 export interface AgentHost {
   fetch(request: Request): Promise<Response>;
   // Runs one work check to completion and returns the delay before the next one.
   alarm(): Promise<number>;
+  // Admits one verified webhook body durably and returns the status to answer with,
+  // and the work it started, which the DO keeps alive until it is idle.
+  deliver(body: string): Promise<{ status: number; work?: Promise<void> }>;
   // A DO never closes its agent; tests do.
   close(): Promise<void>;
 }
 
-// The CLI path arrives in #144 PR4. Until then every marketplace command is a known
-// refusal before anything is sent, so policy releases its reservation.
-export const unavailable: Command = async () => ({ outcome: "failed", error: "unavailable: the marketplace path is not deployed yet" });
-
-// A fixed path the DO never reads: the agent's folder is the bundle and its secrets.
-const CONFIG_PATH = "/bundle/agent/.taskfast/config.json";
 export const RETRY_MS = 60_000;
 
 export function agentHost(o: HostOptions): AgentHost {
@@ -41,11 +43,13 @@ export function agentHost(o: HostOptions): AgentHost {
   let failure: string | undefined;
   let role: AgentSpec["role"] | undefined;
   // Concurrent requests share one open; a failure is kept for the console and retried on the next request.
+  // Never read: the TaskFast config travels with each Container call.
+  const configPath = join(o.folder, ".taskfast", "config.json");
   function open() {
     return opening ??= (async () => {
       const { spec, models } = await o.load();
       role = spec.role;
-      const agent = await openMarketplaceAgent({ spec, models, runtime: { env: o.env, configPath: CONFIG_PATH }, storePath: CONFIG_PATH, openStorage: () => o.storage(), command: o.command, log });
+      const agent = await openMarketplaceAgent({ spec, models, runtime: { env: o.env, configPath }, storePath: join(o.folder, "state"), openStorage: () => o.storage(), command: o.command, log });
       failure = undefined;
       void agent.closed.then((end) => {
         if (end.reason !== "failed") return;
@@ -88,6 +92,22 @@ export function agentHost(o: HostOptions): AgentHost {
       try { await agent.ping(); await agent.waitForIdle(); }
       catch (error) { log(`ping failed: ${error instanceof Error ? error.message : String(error)}`); }
       return (spec.pollIntervalMinutes ?? POLL_MINUTES.default) * 60_000;
+    },
+    async deliver(body) {
+      let event: unknown;
+      try { event = JSON.parse(body); } catch { return { status: 400 }; }
+      if (typeof event === "object" && event !== null && (event as { event?: unknown }).event === "test") return { status: 200 };
+      const problem = eventProblem(event);
+      // saved_search_match alerts carry no event_id, so they cannot be deduplicated.
+      if (problem) { log(`webhook ignored: ${problem}`); return { status: 200 }; }
+      let agent: MarketplaceAgent;
+      try { agent = (await open()).agent; } catch { return { status: 503 }; }
+      // A 2xx only after durable admission; otherwise the platform retries (3 attempts).
+      try { await agent.deliver(event as MarketEvent); }
+      catch (error) { log(`webhook not admitted: ${error instanceof Error ? error.message : String(error)}`); return { status: 503 }; }
+      // deliver() starts recovery in the background; run it here so the turn is
+      // submitted before the DO waits for idle.
+      return { status: 200, work: agent.recover().then(() => agent.waitForIdle()).catch(() => {}) };
     },
     async close() {
       const open = opening;

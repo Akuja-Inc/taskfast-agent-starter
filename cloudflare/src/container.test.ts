@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TOOLS } from "../../src/core/tools.js";
@@ -9,6 +10,10 @@ const runtime = { env: "staging" as const, configPath: "/bundle/agent/.taskfast/
 const capture = (path: string) => readFileSync(join(import.meta.dirname, "../../test/fixtures/cli", path), "utf8");
 const TASK = "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b";
 const wallet = { keystore: '{"version":3}', password: "correct horse battery" };
+const dir = mkdtempSync(join(tmpdir(), "container-"));
+const ARTIFACT = `.pi-state/artifacts/${TASK}/abc123/results.json`;
+mkdirSync(join(dir, ".pi-state/artifacts", TASK, "abc123"), { recursive: true });
+writeFileSync(join(dir, ARTIFACT), '{"results":[1,2,3]}\n');
 
 describe("COMMANDS", () => {
   // Policy and money.ts send these themselves (cleanup and the bond token's decimals).
@@ -28,6 +33,7 @@ describe("containerCommand", () => {
     let checks = 0;
     const run = containerCommand({
       config: '{"api_key":"k"}',
+      folder: dir,
       ...(o.wallet === null ? {} : { wallet: o.wallet ?? wallet }),
       ready: async () => { checks++; return o.ready ? o.ready() : true; },
       call: async (body) => { sent.push(body); return reply(); },
@@ -58,6 +64,21 @@ describe("containerCommand", () => {
     const { sent, run, checks } = command(ok, { wallet: null });
     expect(await run(runtime, ["bond", "post", "--dry-run", "--", TASK])).toEqual({ outcome: "failed", error: "keystore: the WALLET_KEYSTORE and WALLET_PASSWORD secrets are not set" });
     expect([sent.length, checks()]).toEqual([0, 0]);
+  });
+  it("ships each artifact a submit names, read from the folder, with its relative path", async () => {
+    const { sent, run } = command(ok);
+    await run(runtime, ["task", "submit", "--summary=Done", `--artifact=${ARTIFACT}`, "--", TASK]);
+    expect(sent[0].args).toContain(`--artifact=${ARTIFACT}`);
+    expect(sent[0].files).toEqual([{ path: ARTIFACT, base64: Buffer.from('{"results":[1,2,3]}\n').toString("base64") }]);
+  });
+  it.each([
+    ["a missing file", `.pi-state/artifacts/${TASK}/abc123/absent.json`],
+    ["a path outside the artifacts folder", ".taskfast/config.json"],
+    ["a traversal", `.pi-state/artifacts/../../etc/passwd`],
+  ])("refuses %s before anything leaves the DO", async (_name, path) => {
+    const { sent, run } = command(ok);
+    expect((await run(runtime, ["task", "submit", "--summary=Done", `--artifact=${path}`, "--", TASK])).outcome).toBe("failed");
+    expect(sent).toEqual([]);
   });
   it("refuses a command the kit never sends", async () => {
     const { sent, run } = command(ok);

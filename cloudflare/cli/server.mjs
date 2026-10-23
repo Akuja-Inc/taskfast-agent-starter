@@ -6,9 +6,10 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-const MAX_BODY = 256 * 1024;
+// Five text artifacts of 256 KiB each, base64-encoded, fit with room to spare.
+const MAX_BODY = 2 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 const text = (value, max) => typeof value === "string" && value.length <= max;
 
@@ -16,15 +17,25 @@ function valid(body) {
   return body && Array.isArray(body.args) && body.args.length <= 64 && body.args.every((arg) => text(arg, 8192) && !arg.includes("\0"))
     && text(body.config, 64 * 1024)
     && (body.keystore === undefined) === (body.password === undefined)
-    && (body.keystore === undefined || (text(body.keystore, 64 * 1024) && text(body.password, 4096)));
+    && (body.keystore === undefined || (text(body.keystore, 64 * 1024) && text(body.password, 4096)))
+    && (body.files === undefined || (Array.isArray(body.files) && body.files.length <= 5 && body.files.every(artifact)));
+}
+// Only the kit's own layout: .pi-state/artifacts/<task>/<digest>/<name>, no traversal.
+function artifact(file) {
+  return file && text(file.path, 512) && text(file.base64, MAX_BODY)
+    && /^\.pi-state\/artifacts\/[\w-]+\/[0-9a-f]+\/[\w.-]+$/.test(file.path) && !file.path.split("/").includes("..");
 }
 
-function run({ args, config, keystore, password }) {
+function run({ args, config, keystore, password, files = [] }) {
   const home = mkdtempSync(join(tmpdir(), "taskfast-"));
   const dir = join(home, ".taskfast");
   mkdirSync(dir, { mode: 0o700 });
   const configPath = join(dir, "config.json");
   writeFileSync(configPath, config, { mode: 0o600 });
+  for (const file of files) {
+    mkdirSync(join(home, dirname(file.path)), { recursive: true, mode: 0o700 });
+    writeFileSync(join(home, file.path), Buffer.from(file.base64, "base64"), { mode: 0o600 });
+  }
   let argv = args;
   if (keystore !== undefined) {
     // The kit's layout: keystore_path is .taskfast/wallet.json, relative to the folder.
