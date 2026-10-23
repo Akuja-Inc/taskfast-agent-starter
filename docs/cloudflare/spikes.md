@@ -21,7 +21,7 @@ The script starts `wrangler dev` with `--persist-to` on a temporary folder. It r
 What it showed (wrangler 4.152.0, workerd 1.20261019.1):
 
 - Both packages bundle and run under workerd with `nodejs_compat`. The spike Worker is 996 KiB (185 KiB gzipped).
-- All 12 provider modules in `@earendil-works/pi-ai/providers/all` and the `@earendil-works/pi-ai` root also bundle and load (4.4 MiB, 594 KiB gzipped). No real model was called.
+- The 12 exports of `@earendil-works/pi-ai/providers/all` and the `@earendil-works/pi-ai` root also bundle and load (4.4 MiB, 594 KiB gzipped). The kit's `providers.json` names 43 providers, and this spike did not load each one through `src/core/model.ts`. No real model was called.
 - One turn ran: one model call, and the transcript holds a user and an assistant message.
 - The second reservation of the same key was refused. After the kill and restart, the transcript (4 messages) and the reserved key were both there.
 - Opening Pi on an existing DO took 6 to 8 ms locally.
@@ -45,7 +45,7 @@ Envelope parity, from `spikes/cloudflare/cli/` after `docker build -t taskfast-c
 node parity.mjs
 ```
 
-The script runs 9 captured commands from `test/fixtures/cli/gh70` and `gh71` against their stand-in servers. Each command runs once with the host `taskfast` 0.21.0 and once in the image. The image runs with `--read-only` and the work folder mounted read-only. The two bond commands decrypt a throwaway keystore made the way `gh70/README.md` says. Expected last line: `ok: the image prints the same envelope and exit code as the host binary for every captured command`.
+The script runs 9 captured commands, plus one against a closed port, from `test/fixtures/cli/gh70` and `gh71` against their stand-in servers. Each command runs once with the host `taskfast` 0.21.0 and once in the image. The image runs with `--read-only` and the work folder mounted read-only. The two bond commands decrypt a throwaway keystore made the way `gh70/README.md` says. Expected last line: `ok: the image prints the same envelope and exit code as the host binary for every captured command`.
 
 | Capture | Exit | Host ms | Image ms | Matches the capture |
 |---|---|---|---|---|
@@ -58,8 +58,9 @@ The script runs 9 captured commands from `test/fixtures/cli/gh70` and `gh71` aga
 | `gh70/claim-bond-pending` | 7 | 11 | 245 | yes |
 | `gh70/bond-dry-run` | 0 | 462 | 683 | yes |
 | `gh70/bond-preflight-balance` | 2 | 522 | 727 | yes |
+| unreachable server (`task claim`) | 6 | 10 | 235 | not captured |
 
-The comparison ignores `environment`, `dry_run` and `security_warnings`, which name the stand-in's address. It also masks the stand-in's port and the random salt that `bond post` draws on every call. Exit codes 2 and 7 still come out unchanged, so `REFUSED` in `cli.ts` keeps its meaning.
+The comparison ignores `environment`, `dry_run` and `security_warnings`, which name the stand-in's address. It also masks the stand-in's port and the random salt that `bond post` draws on every call. Exit codes 2 and 7 still come out unchanged, so `REFUSED` in `cli.ts` keeps its meaning. With no server, both print error code `network` with exit 6. `network` is not in `REFUSED`, so a write that cannot reach the server stays `uncertain`.
 
 Staging, with the `staging-worker` folder and no host running on it:
 
@@ -94,4 +95,4 @@ The parity check fails. Nothing in the CLI's output shows the EIP-712 typed data
 
 Option A. It keeps the CLI's envelope, the exit codes behind `REFUSED`, the captured fixtures and the parity tests. B would rewrite the money path and could not show payload parity.
 
-Open questions for PR4: how the DO calls the Container, so that only the DO can reach it; how the config, keystore and password file reach one call without landing on Container disk; and the cold-start time of a deployed Container on a write.
+Open questions for PR4: how the DO calls the Container, so that only the DO can reach it; how the config, keystore and password file reach one call without landing on Container disk; and the cold-start time of a deployed Container on a write. This spike mounted the whole `.taskfast/` folder for every command. PR4 must pass the keystore and password file only to `post`, `settle`, `escrow sign` and `bond post`, as #144 requires.

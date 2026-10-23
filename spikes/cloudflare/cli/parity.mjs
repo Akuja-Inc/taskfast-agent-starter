@@ -70,6 +70,14 @@ try {
     const matchesCapture = JSON.stringify(shape(host.out)) === JSON.stringify(captured);
     timings.push({ capture: c.capture, exit: host.status, hostMs: host.ms, containerMs: container.ms, matchesCapture });
   }
+  // No server at all: `network` is not in REFUSED (src/core/cli.ts), so a write here stays uncertain.
+  const down = ["--env", "local", "--allow-custom-endpoints", "--api-base=http://127.0.0.1:1", "--config=./absent.json", "--no-trace", "--api-key=test-key", "task", "claim", TASK];
+  const host = run(hostBin, down);
+  const container = run("docker", ["run", "--rm", "--network=host", "--read-only", "-v", `${work}:/agent:ro`, IMAGE, ...down]);
+  assert.equal(container.status, host.status, "unreachable: exit codes differ");
+  assert.deepEqual(JSON.parse(container.out).error, JSON.parse(host.out).error, "unreachable: errors differ");
+  assert.equal(JSON.parse(container.out).error.code, "network");
+  timings.push({ capture: "(unreachable server)", exit: host.status, hostMs: host.ms, containerMs: container.ms, matchesCapture: "-" });
   console.table(timings);
   console.log("ok: the image prints the same envelope and exit code as the host binary for every captured command");
 } finally {
