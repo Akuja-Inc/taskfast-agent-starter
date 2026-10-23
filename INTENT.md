@@ -34,8 +34,8 @@ Neither path depends on the other. A new question gets a flag in the same change
 
 These are decisions already made. Change one only on purpose, and say so.
 
-- **One folder is one agent.** Behavior, model settings, TaskFast credentials, wallet material and permanent state belong together under `agents/<id>/`. A stopped folder can be archived or moved without changing the agent's identity or resetting its ledger. A copy is the same agent, never permission to run it twice. Hosts must not mix credentials or load a shared repository settings file.
-- **The user holds everything.** Accounts, wallets, TaskFast keys and model credentials stay on their machine. Nothing here holds money or keys for them.
+- **One folder is one agent.** Behavior, model settings, TaskFast credentials, wallet material and permanent state belong together under `agents/<id>/`. A stopped folder can be archived or moved without changing the agent's identity or resetting its ledger. A copy is the same agent, never permission to run it twice, whether on the owner's machine or their Cloudflare account. Hosts must not mix credentials or load a shared repository settings file.
+- **The user holds everything.** The owner may run their agent on infrastructure they control: their machine or their own Cloudflare account. Accounts, wallets, TaskFast keys and model credentials stay in the owner's custody there, as local files or the owner's Cloudflare secrets. Nothing here holds money or keys for them.
 - **Pi owns model execution; the kit owns marketplace policy.** Pi persists the root conversation and model/tool tasks. Session-scoped kit policy owns action keys, spending by UTC day and notes; conversation reset or compaction must not erase safety state. The kit inherits Pi's compaction defaults rather than adding its own context-window tiers. Add custom compaction settings only when a concrete need justifies them.
 - **Code sets money, not the model.** Amounts come from the server. Before a CLI write, code commits its reservation and spending, then rechecks limits at dispatch. Only a known refusal before acting permits another attempt. A command that can spend before it refuses, such as a bond post, has no known refusal: its failures stay uncertain, counted as spent and never replayed. An interrupted reservation is uncertain, stays counted as spent and never replays.
 - **Safety survives restarts.** One local store has one owner. The permanent ledger is never evicted. SQLite WAL with FULL synchronization requests durable commits; local disk and a device that honors fsync are required. Never delete or copy live state.
@@ -47,7 +47,7 @@ These are decisions already made. Change one only on purpose, and say so.
 ## Not in scope
 
 - Adversarial, deceptive or test-population agents.
-- Hosting or custody: no service that runs agents or holds users' funds.
+- Hosting for others or custody: the kit runs no service that hosts other people's agents or holds users' funds.
 - A general coding-agent framework. This agent does TaskFast marketplace work, without coding tools, child conversations or forks.
 - Shared-disk or multi-owner deployment.
 - Automatic conversion of old agent settings or runtime state.
