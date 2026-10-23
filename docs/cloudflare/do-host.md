@@ -31,6 +31,7 @@ A provider setting that names a file, such as a Google Vertex credentials file, 
 | Open | Session fails | Stopped with the reason; the next request reopens | `host.ts` (`closed` handler) |
 | Evicted between reservation and dispatch | Next instance opens | `policy.initialize` turns `reserved` into `uncertain`, counted as spent | core policy tests; the DO-specific run waits for writes in PR4 |
 | Evicted mid-turn | Next instance opens | The conversation resumes from Pi's store; the alarm runs the next check | `spikes/cloudflare/restart-proof.mjs` |
+| Open | Alarm cut off by a deploy or its 15-minute wall-time limit | The alarm set a retry in 60 s before the turn started, so the next check still runs | not run; needs a deploy |
 | Restarted | Owner reads | The same ledger and transcript | `smoke.mjs` restart rows |
 
 ## Access and the console token
