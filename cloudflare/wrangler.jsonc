@@ -1,0 +1,23 @@
+// One owner's agent on their own Cloudflare account (#144). Secrets never go here:
+// set CONSOLE_TOKEN, TASKFAST_CONFIG and MODEL_SETTINGS with `wrangler secret put`.
+{
+  "name": "taskfast-agent",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+  "vars": {
+    "AGENT_ID": "my-agent",
+    "CLI_ENV": "staging",
+    "ACCESS_TEAM_DOMAIN": "https://<team>.cloudflareaccess.com",
+    "ACCESS_AUD": "<application AUD tag>"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "AGENT", "class_name": "Agent" },
+      { "name": "CLI", "class_name": "Cli" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Agent", "Cli"] }],
+  "containers": [{ "class_name": "Cli", "image": "./cli/Dockerfile", "max_instances": 1 }]
+}

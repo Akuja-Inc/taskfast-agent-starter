@@ -37,6 +37,8 @@ pnpm test
 
 The terminal UI (`src/tui/`) is an opt-in Bun package with its own exact pins and `bun.lock`. Host code never imports it, and its pure modules import host code by type only. `pnpm typecheck` and `pnpm test` cover `screen.ts`, `keys.ts` and `link.ts`; `app.tsx` is checked only by `pnpm tui:test` (needs Bun), which CI does not run, so run it when you change the TUI or the console API. Never run `pnpm install` inside `src/tui/`.
 
+The Cloudflare host (`cloudflare/`, [docs/cloudflare/do-host.md](docs/cloudflare/do-host.md)) is an opt-in package with its own exact pins and lockfile; install it with `pnpm install --ignore-workspace` from that folder. Host code never imports it. `pnpm typecheck` and `pnpm test` cover everything under `cloudflare/src/` except `worker.ts`, which imports `cloudflare:workers` and is checked only by `node smoke.mjs` under `wrangler dev` (needs Docker), which CI does not run. Its marketplace path sends only `READ_COMMANDS` to the CLI Container and refuses every other command before it leaves the Durable Object; `container.test.ts` checks that list against the read tools. Secrets go through `wrangler secret`, never `wrangler.jsonc`. Never commit `cloudflare/agent/` or `cloudflare/.dev.vars`, and never point the smoke at a production agent.
+
 ### Rules the code depends on
 
 - **Pi owns conversation, model and tool tasks.** `openMarketplaceAgent(AgentOptions)` in `agent.ts` opens persistent storage and one root conversation. No coding tools, child conversations or forks are enabled. Marketplace tools execute sequentially and policy serializes reservation through dispatch.

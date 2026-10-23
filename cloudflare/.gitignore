@@ -1,0 +1,5 @@
+node_modules/
+.wrangler/
+# The owner's agent.json and INSTRUCTIONS.md for this deployment
+agent/
+.dev.vars
