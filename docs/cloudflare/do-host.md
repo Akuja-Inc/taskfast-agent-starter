@@ -73,7 +73,8 @@ TaskFast posts each marketplace event to `POST /webhooks/taskfast`. That one pat
 | Signed, body not JSON | 400 | `host.test.ts` |
 | Signed `test` event | 200; nothing stored | `host.test.ts` |
 | Signed event without `event_id` (`saved_search_match`) | 200 and a log line; it cannot be deduplicated, so it is not stored | `host.test.ts` |
-| Signed event | `deliver()` stores it durably, then 200; the DO stays alive until the turn is idle | `host.test.ts` |
+| Signed event | `deliver()` stores it durably, then 200; `ctx.waitUntil` keeps the DO alive until the turn is idle | `host.test.ts` |
+| Signed event | The turn outlasts `waitUntil`'s 15 minutes, or a deploy cuts it off | The DO may be evicted mid-turn; the next alarm reopens it and recovers the admitted work, and an interrupted write is `uncertain` | not run; needs a deploy |
 | The same event again | 200; `deliver()` dedupes by `event_id`, no second turn | `host.test.ts` |
 | Agent cannot open, or admission fails | 503, so the platform retries | `host.test.ts` |
 
