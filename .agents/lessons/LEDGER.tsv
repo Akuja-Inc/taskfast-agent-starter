@@ -31,3 +31,5 @@ hand:563fe0a1882c	hand	2026-10-18T19:03:58Z	lesson	.agents/lessons/host-tests.md
 hand:56b9ed37651e	hand	2026-10-18T22:15:50Z	agents_md	AGENTS.md	Video capture must fit the base64 MCP message budget, not the server's larger video upload cap.
 hand:e992f51f04b7	hand	2026-10-23T05:38:29Z	lesson	.agents/lessons/host-tests.md	A scripted faux tool call needs stopReason toolUse or the tool never runs
 hand:f10a78bea91e	hand	2026-10-23T05:38:29Z	agents_md	AGENTS.md	The Cloudflare host sends only READ_COMMANDS to its CLI Container until writes land; secrets stay out of wrangler.jsonc.
+hand:d848d11986a1	hand	2026-10-23T05:49:22Z	agents_md	AGENTS.md	The Cloudflare host sends only the kit COMMANDS, gives the wallet only to signing commands, and treats a failed Container health check as a refusal.
+hand:de3eb1901de1	hand	2026-10-23T05:49:22Z	lesson	.agents/lessons/taskfast-cli-images.md	Slim images lack ca-certificates, so the CLI fails HTTPS with network builder error

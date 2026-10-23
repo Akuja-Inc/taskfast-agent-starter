@@ -13,6 +13,7 @@ import instructions from "../agent/INSTRUCTIONS.md";
 import { gate } from "./gate.js";
 import { agentHost, RETRY_MS, type AgentHost } from "./host.js";
 import { containerCommand } from "./container.js";
+import { parseSecrets } from "./secrets.js";
 
 interface Env {
   AGENT: DurableObjectNamespace<Agent>;
@@ -25,6 +26,9 @@ interface Env {
   TASKFAST_CONFIG: string;
   // Provider settings as one JSON object of NAME: value, like the folder's .env.
   MODEL_SETTINGS?: string;
+  // The encrypted keystore's JSON and its one-line password; only signing commands get them.
+  WALLET_KEYSTORE?: string;
+  WALLET_PASSWORD?: string;
 }
 
 export class Cli extends Container {
@@ -37,23 +41,25 @@ export class Agent extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     const cliEnv = env.CLI_ENV as CliEnv;
+    // A bad secret stops the agent with its reason when it opens (load below).
+    let secrets: ReturnType<typeof parseSecrets> | undefined;
+    try { secrets = parseSecrets(env); } catch { secrets = undefined; }
+    const cli = () => env.CLI.getByName(env.AGENT_ID);
     this.host = agentHost({
       id: env.AGENT_ID, env: cliEnv,
       load: async () => {
         if (!ENVS.includes(cliEnv)) throw new Error(`CLI_ENV must be one of ${ENVS.join(", ")}`);
-        if (!env.TASKFAST_CONFIG) throw new Error("the TASKFAST_CONFIG secret is missing");
-        try { JSON.parse(env.TASKFAST_CONFIG); } catch { throw new Error("the TASKFAST_CONFIG secret is not JSON"); }
-        let settings: Record<string, string> = {};
-        try { settings = env.MODEL_SETTINGS ? JSON.parse(env.MODEL_SETTINGS) : {}; } catch { throw new Error("the MODEL_SETTINGS secret is not a JSON object"); }
-        if (typeof settings !== "object" || settings === null || Object.values(settings).some((value) => typeof value !== "string")) throw new Error("the MODEL_SETTINGS secret must map names to strings");
+        const { settings } = parseSecrets(env);
         const spec = parseAgentSpec({ ...parseAgentFile(agentFile), instructions });
         return { spec, models: await createAgentModels(spec.model, { agentDir: "/bundle/agent", settings }) };
       },
       storage: () => openDurableObjectSqliteStorage(ctx.storage),
       command: containerCommand({
-        config: env.TASKFAST_CONFIG,
+        config: secrets?.config ?? "",
+        ...(secrets?.wallet ? { wallet: secrets.wallet } : {}),
         // One Container instance per agent, addressed only through this binding.
-        call: (body) => env.CLI.getByName(env.AGENT_ID).fetch("http://cli/run", { method: "POST", body: JSON.stringify(body) }),
+        ready: async () => (await cli().fetch("http://cli/health")).ok,
+        call: (body) => cli().fetch("http://cli/run", { method: "POST", body: JSON.stringify(body) }),
       }),
       log: (line) => console.log(line),
     });

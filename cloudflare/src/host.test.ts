@@ -81,11 +81,14 @@ describe("agentHost", () => {
   });
 
   it("runs one work check to the end in the alarm and returns the poll interval", async () => {
-    // The real Container command with a stand-in Container that answers the identity read.
+    // The real Container command with a stand-in Container: it answers the identity
+    // read and refuses the bid the way the CLI does (exit 7, code validation).
     const sent: ContainerCall[] = [];
-    const command = containerCommand({ config: "{}", call: async (body) => {
+    const command = containerCommand({ config: "{}", ready: async () => true, call: async (body) => {
       sent.push(body);
-      return Response.json({ stdout: JSON.stringify({ ok: true, data: { profile: { id: AGENT_ID } } }), stderr: "" });
+      return body.args[2] === "me"
+        ? Response.json({ stdout: JSON.stringify({ ok: true, data: { profile: { id: AGENT_ID } } }), stderr: "" })
+        : Response.json({ stdout: JSON.stringify({ ok: false, error: { code: "validation", message: "task is not open" } }), stderr: "", failure: "exit 7" });
     } });
     const { h, faux } = host({ command, responses: [
       fauxAssistantMessage([fauxToolCall("bid_create", { task_id: "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b", price: "10.00", pitch: "I can do this" }, { id: "c1" })], { stopReason: "toolUse" }),
@@ -96,8 +99,8 @@ describe("agentHost", () => {
     // The turn finished inside the alarm: both model steps ran before it returned.
     expect(faux.state.callCount).toBe(2);
     const view = await (await get(h, "/api/agents/my-agent")).json() as { actions: Record<string, { status: string }> };
-    // The write was refused before it left the DO, so policy released it as failed.
+    // The CLI refused the bid, so policy released it as failed. It went out once.
     expect(Object.values(view.actions).map((action) => action.status)).toEqual(["failed"]);
-    expect(sent).toEqual([{ args: ["--env", "staging", "me"], config: "{}" }]);
+    expect(sent.map((body) => body.args.slice(2, 4))).toEqual([["me"], ["bid", "create"]]);
   });
 });

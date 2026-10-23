@@ -1,17 +1,17 @@
 # The Durable Object host
 
-This is how one owner's agent runs on their own Cloudflare account (#144). It covers PR3: the Durable Object (DO) host, the Access check and the CLI Container for reads. Marketplace writes, the wallet, webhooks and R2 come in later PRs. Nothing here has run on a deployed Cloudflare account yet.
+This is how one owner's agent runs on their own Cloudflare account (#144). It covers the Durable Object (DO) host, the Access check and the CLI Container for every marketplace command (PR3 and PR4). Webhooks and R2 artifacts come in PR5, and the console stays read-only until then. Nothing here has run on a deployed Cloudflare account yet.
 
 ## Parts
 
 - **The Worker** (`cloudflare/src/worker.ts`) receives every request. `gate()` in `cloudflare/src/gate.ts` checks the Cloudflare Access token, then the console token, before any DO is touched.
 - **The Agent DO** owns the agent's store. `agentHost()` in `cloudflare/src/host.ts` opens it with `openMarketplaceAgent`, on the DO's SQLite storage through Pi's `openDurableObjectSqliteStorage`. A DO is single-instance, so it takes the place of the local owner lock.
-- **The CLI Container** (`cloudflare/cli/`) runs the pinned `taskfast` release behind one route, `POST /run`. Each call gets a fresh folder holding only the agent's TaskFast config, which the Container deletes afterwards. Only the Agent DO's binding reaches it.
-- **The marketplace path** is `containerCommand()` in `cloudflare/src/container.ts`. It sends only the read tools' commands (`READ_COMMANDS`) and refuses every other command before anything leaves the DO. It maps the CLI's stdout with the same `cliOutcome` as the local host, so `REFUSED` keeps its meaning.
+- **The CLI Container** (`cloudflare/cli/`) runs the pinned `taskfast` release behind `GET /health` and `POST /run`. Each call gets a fresh folder holding the agent's TaskFast config and, for a signing command only, the keystore and password, laid out as `.taskfast/wallet.json` and `.taskfast/wallet-password`. The Container deletes the folder afterwards. Only the Agent DO's binding reaches it.
+- **The marketplace path** is `containerCommand()` in `cloudflare/src/container.ts`. It sends only the commands the kit sends (`COMMANDS`: every tool's, plus policy's upload cleanup and the bond token read) and refuses anything else before it leaves the DO. It sends the wallet only with `post`, `settle`, `escrow sign` and `bond post`, the commands `signs()` in `src/core/cli.ts` names. It maps the CLI's stdout with the same `cliOutcome` as the local host, so `REFUSED` keeps its meaning.
 
-Secrets, set with `wrangler secret put`: `CONSOLE_TOKEN` (64 hex characters, the console page's bearer token), `TASKFAST_CONFIG` (the text of the agent's `.taskfast/config.json`) and `MODEL_SETTINGS` (a JSON object of provider settings, like the folder's `.env`). Vars in `wrangler.jsonc`: `AGENT_ID`, `CLI_ENV` (`prod`, `staging` or `local`), `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The owner's `agent.json` and `INSTRUCTIONS.md` go in the git-ignored `cloudflare/agent/` folder and are bundled at deploy.
+Secrets, set with `wrangler secret put`: `CONSOLE_TOKEN` (64 hex characters, the console page's bearer token), `TASKFAST_CONFIG` (the text of the agent's `.taskfast/config.json`) `MODEL_SETTINGS` (a JSON object of provider settings, like the folder's `.env`), and `WALLET_KEYSTORE` and `WALLET_PASSWORD` (the text of `.taskfast/wallet.json` and the one-line password) for an agent that signs. Signing needs `keystore_path` set to `.taskfast/wallet.json` in the config. Vars in `wrangler.jsonc`: `AGENT_ID`, `CLI_ENV` (`prod`, `staging` or `local`), `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The owner's `agent.json` and `INSTRUCTIONS.md` go in the git-ignored `cloudflare/agent/` folder and are bundled at deploy.
 
-A provider setting that names a file, such as a Google Vertex credentials file, does not work from a secret. Use a provider whose key is a plain setting.
+A provider setting that names a file, such as a Google Vertex credentials file, does not work from a secret. Use a provider whose key is a plain setting. A submit or remedy with files cannot run until R2 artifacts land (PR5): the DO has no folder to write them to. Policy refuses the call before it reserves, and a file that never reaches the Container is the CLI's `usage` refusal.
 
 ## DO lifecycle
 
@@ -25,14 +25,20 @@ A provider setting that names a file, such as a Google Vertex credentials file, 
 | Stopped | Alarm | Retries in 60 s. A misconfigured deployment wakes once a minute until it is fixed | `host.test.ts` "shows a stopped agent" |
 | Open | Alarm | `ping()`, then waits until idle inside the alarm, then schedules the next check after `pollIntervalMinutes` | `host.test.ts` "runs one work check" |
 | Open, paused | Alarm | `ping()` starts no turn; reschedules | covered by `ping()` in `src/core/agent.ts` |
-| Open | The model calls a write | Policy reserves, the command is refused before it leaves the DO, policy releases it as `failed` | `host.test.ts` "runs one work check" |
-| Open | A read reaches the Container and the CLI refuses it | `failed`, as on the local host | `container.test.ts` "keeps a captured refusal" |
-| Open | The Container is unreachable, answers non-2xx, or its reply is unreadable | `uncertain`; for a read the tool fails and the turn continues | `container.test.ts` "is uncertain when" |
+| Open | The model calls a write | Policy reserves, then the Container runs it once; a CLI refusal releases it as `failed` | `host.test.ts` "runs one work check" |
+| Open | A command the kit never sends | `failed` before anything leaves the DO | `container.test.ts` "refuses a command the kit never sends" |
+| Open | A signing command with no wallet secrets | `failed` (`keystore`) before anything leaves the DO | `container.test.ts` "refuses a signing command" |
+| Reserved | The Container is cold or fails its health check | `failed` before the command leaves the DO; policy releases the reservation | `container.test.ts` "is a known refusal" |
+| Reserved | Health passed, then the request fails, answers non-2xx or is unreadable | `uncertain`, spent, never replayed | `container.test.ts` "is uncertain when" |
+| Reserved | The CLI cannot reach TaskFast (`network`, exit 6) | `uncertain`, spent, never replayed | `container.test.ts`; `spikes/cloudflare/cli/parity.mjs` |
+| Reserved | The CLI refuses (`validation`, exit 7) | `failed`; policy releases it | `container.test.ts`, `host.test.ts` |
 | Open | Session fails | Stopped with the reason; the next request reopens | `host.ts` (`closed` handler) |
-| Evicted between reservation and dispatch | Next instance opens | `policy.initialize` turns `reserved` into `uncertain`, counted as spent | core policy tests; the DO-specific run waits for writes in PR4 |
+| Evicted between reservation and dispatch | Next instance opens | `policy.initialize` turns `reserved` into `uncertain`, counted as spent, never re-sent | core policy tests; a deployed eviction has not run |
 | Evicted mid-turn | Next instance opens | The conversation resumes from Pi's store; the alarm runs the next check | `spikes/cloudflare/restart-proof.mjs` |
 | Open | Alarm cut off by a deploy or its 15-minute wall-time limit | The alarm set a retry in 60 s before the turn started, so the next check still runs | not run; needs a deploy |
 | Restarted | Owner reads | The same ledger and transcript | `smoke.mjs` restart rows |
+
+The Container library retries only its readiness ping (`waitForPort`), never a proxied request: `containerFetch` sends each request once. So a write cannot be sent twice under one dispatch.
 
 ## Access and the console token
 
@@ -56,7 +62,7 @@ The webhook route (PR5) must sit outside the Access check and verify its own HMA
 
 ## What the console shows
 
-The page is the local console's page, unchanged. It needs the console token as a `#token=` link, so the owner opens `https://<worker>/#token=<CONSOLE_TOKEN>` once after signing in through Access. Its live stream (`/stream`) is not served yet, so the page polls every 3 s. Host facts (the wallet balance, stream state and dead letters) are absent, so those cards stay empty. Every write control answers 405 until writes land.
+The page is the local console's page, unchanged. It needs the console token as a `#token=` link, so the owner opens `https://<worker>/#token=<CONSOLE_TOKEN>` once after signing in through Access. Its live stream (`/stream`) is not served yet, so the page polls every 3 s. Host facts (the wallet balance, stream state and dead letters) are absent, so those cards stay empty. Every console write control (pause, freeze, messages, orders, notes, limits) answers 405 until a later PR serves them. Until then the spending limits in `agent.json` are what cap money. Removing the wallet secrets makes every signing command a known refusal.
 
 ## Checks
 
@@ -70,4 +76,4 @@ node smoke.mjs ../agents/<staging agent>
 
 It runs the Worker, the DO and the Container under `wrangler dev`, with a stand-in Access key server, then restarts workerd on the same storage. It refuses a production config. Stop that agent's local host first.
 
-On the machine this was built on, local `wrangler dev` cannot start any Container, including Cloudflare's minimal example: Docker creates the proxy container and never the app container. The Access and console-token rows passed there in real workerd. The Container image passed on its own (`POST /run` answered `taskfast 0.21.0`). The read through the Container from the DO has not run end to end.
+On the machine this was built on, local `wrangler dev` cannot start any Container, including Cloudflare's minimal example: Docker creates the proxy container and never the app container. The Access and console-token rows passed there in real workerd. The Container's server image passed under plain `docker run`: `node cli/proof.mjs` decrypts a throwaway keystore sent per call, and `node cli/staging-write.mjs` ran one signed staging `post` and its `task cancel`. A call from the DO to the Container has not run end to end.
