@@ -10,6 +10,8 @@ RUN curl -fsSL -o /cli.tar.xz "https://github.com/Akuja-Inc/taskfast-cli/release
  && tar -xJf /cli.tar.xz -C / && mv /taskfast-cli-x86_64-unknown-linux-gnu/taskfast /usr/local/bin/taskfast
 
 FROM node:24-bookworm-slim
+# The CLI's HTTP client needs the system roots, which the slim image leaves out.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=fetch /usr/local/bin/taskfast /usr/local/bin/taskfast
 COPY server.mjs /srv/server.mjs
 USER node
