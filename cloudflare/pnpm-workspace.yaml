@@ -1,0 +1,14 @@
+# Published packages already contain their JavaScript/platform binaries.
+# Preserve the previous no-dependency-script behavior explicitly on pnpm 12.
+allowBuilds:
+  '@google/genai@2.21.0': false
+  'esbuild@0.28.2': false
+  'protobufjs@7.6.6': false
+
+# Dependency-provided skills must not alter this repository's agent guidance.
+minimumReleaseAgeExclude:
+  - miniflare@5.20261019.2-beta
+  - wrangler@4.152.0
+
+skills:
+  dirs: []

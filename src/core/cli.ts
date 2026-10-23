@@ -47,15 +47,21 @@ export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promis
   }
   return new Promise((resolve) => {
     execFile(taskfastBin(), ["--env", rt.env, ...commandArgs], { env: cliEnv(rt), cwd: agentDirectory(rt), timeout: timeoutMs, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
-      let envelope: { ok?: unknown; data?: Json; error?: { code?: unknown; message?: unknown } } | null = null;
-      try {
-        envelope = JSON.parse(stdout);
-      } catch {}
-      if (!err && envelope?.ok === true) return resolve({ outcome: "ok", data: envelope.data ?? null });
-      const code = typeof envelope?.error?.code === "string" ? envelope.error.code : null;
-      const message = typeof envelope?.error?.message === "string" ? envelope.error.message : (err?.message ?? stderr).slice(0, 500) || "taskfast gave no readable result";
-      const outcome: Outcome = code && REFUSED.has(code) ? "failed" : "uncertain";
-      resolve({ outcome, error: code ? `${code}: ${message}` : message });
+      resolve(cliOutcome(stdout, err ? err.message : undefined, stderr));
     });
   });
+}
+
+// One finished command's stdout as an outcome. `failure` is set when the process
+// did not exit 0 (or never ran); only a known refusal code becomes `failed`.
+export function cliOutcome(stdout: string, failure: string | undefined, stderr = ""): CliResult {
+  let envelope: { ok?: unknown; data?: Json; error?: { code?: unknown; message?: unknown } } | null = null;
+  try {
+    envelope = JSON.parse(stdout);
+  } catch {}
+  if (failure === undefined && envelope?.ok === true) return { outcome: "ok", data: envelope.data ?? null };
+  const code = typeof envelope?.error?.code === "string" ? envelope.error.code : null;
+  const message = typeof envelope?.error?.message === "string" ? envelope.error.message : (failure ?? stderr).slice(0, 500) || "taskfast gave no readable result";
+  const outcome: Outcome = code && REFUSED.has(code) ? "failed" : "uncertain";
+  return { outcome, error: code ? `${code}: ${message}` : message };
 }

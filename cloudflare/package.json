@@ -1,0 +1,15 @@
+{
+  "name": "taskfast-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "smoke": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  }
+}

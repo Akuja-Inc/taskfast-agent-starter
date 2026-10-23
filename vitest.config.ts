@@ -6,6 +6,6 @@ export default defineConfig({
     globalSetup: ["test/build.ts"],
     // A test that asserts nothing can't fail.
     expect: { requireAssertions: true },
-    include: ["test/**/*.test.ts", "src/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "src/**/*.test.ts", "cloudflare/src/**/*.test.ts"],
   },
 });
