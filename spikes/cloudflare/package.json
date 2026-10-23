@@ -1,0 +1,17 @@
+{
+  "name": "taskfast-cloudflare-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "restart-proof": "node restart-proof.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.1.0",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-durable": "1.2.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  }
+}
