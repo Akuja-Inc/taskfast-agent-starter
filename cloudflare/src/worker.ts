@@ -11,7 +11,7 @@ import { ENVS, type Env as CliEnv } from "../../src/core/types.js";
 import agentFile from "../agent/agent.json";
 import instructions from "../agent/INSTRUCTIONS.md";
 import { gate } from "./gate.js";
-import { agentHost, type AgentHost } from "./host.js";
+import { agentHost, RETRY_MS, type AgentHost } from "./host.js";
 import { containerCommand } from "./container.js";
 
 interface Env {
@@ -65,6 +65,9 @@ export class Agent extends DurableObject<Env> {
   }
   fetch(request: Request): Promise<Response> { return this.host.fetch(request); }
   async alarm(): Promise<void> {
+    // Schedule the retry before the turn: an alarm cut off by a deploy or its
+    // 15-minute limit must still leave a next check, or a quiet agent never wakes.
+    await this.ctx.storage.setAlarm(Date.now() + RETRY_MS);
     const delay = await this.host.alarm();
     await this.ctx.storage.setAlarm(Date.now() + delay);
   }
