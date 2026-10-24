@@ -1,6 +1,6 @@
 # The Durable Object host
 
-This is how one owner's agent runs on their own Cloudflare account (#144). It covers the Durable Object (DO) host, the Access check and the CLI Container for every marketplace command (PR3 and PR4). Webhooks and R2 artifacts come in PR5, and the console stays read-only until then. Nothing here has run on a deployed Cloudflare account yet.
+This is how one owner's agent runs on their own Cloudflare account (#144). It covers the Durable Object (DO) host, the Access check, the CLI Container for every marketplace command, and marketplace events by webhook. The console is read-only. Nothing here has run on a deployed Cloudflare account yet.
 
 ## Parts
 
@@ -9,9 +9,9 @@ This is how one owner's agent runs on their own Cloudflare account (#144). It co
 - **The CLI Container** (`cloudflare/cli/`) runs the pinned `taskfast` release behind `GET /health` and `POST /run`. Each call gets a fresh folder holding the agent's TaskFast config and, for a signing command only, the keystore and password, laid out as `.taskfast/wallet.json` and `.taskfast/wallet-password`. The Container deletes the folder afterwards. Only the Agent DO's binding reaches it.
 - **The marketplace path** is `containerCommand()` in `cloudflare/src/container.ts`. It sends only the commands the kit sends (`COMMANDS`: every tool's, plus policy's upload cleanup and the bond token read) and refuses anything else before it leaves the DO. It sends the wallet only with `post`, `settle`, `escrow sign` and `bond post`, the commands `signs()` in `src/core/cli.ts` names. It maps the CLI's stdout with the same `cliOutcome` as the local host, so `REFUSED` keeps its meaning.
 
-Secrets, set with `wrangler secret put`: `CONSOLE_TOKEN` (64 hex characters, the console page's bearer token), `TASKFAST_CONFIG` (the text of the agent's `.taskfast/config.json`), `MODEL_SETTINGS` (a JSON object of provider settings, like the folder's `.env`), and `WALLET_KEYSTORE` and `WALLET_PASSWORD` (the text of `.taskfast/wallet.json` and the one-line password) for an agent that signs. Signing needs `keystore_path` set to `.taskfast/wallet.json` in the config. Vars in `wrangler.jsonc`: `AGENT_ID`, `CLI_ENV` (`prod`, `staging` or `local`), `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The owner's `agent.json` and `INSTRUCTIONS.md` go in the git-ignored `cloudflare/agent/` folder and are bundled at deploy.
+Secrets, set with `wrangler secret put`: `CONSOLE_TOKEN` (64 hex characters, the console page's bearer token), `TASKFAST_CONFIG` (the text of the agent's `.taskfast/config.json`), `WEBHOOK_SECRET` (the signing secret `taskfast webhook register` returns once), `MODEL_SETTINGS` (a JSON object of provider settings, like the folder's `.env`), and `WALLET_KEYSTORE` and `WALLET_PASSWORD` (the text of `.taskfast/wallet.json` and the one-line password) for an agent that signs. Signing needs `keystore_path` set to `.taskfast/wallet.json` in the config. Vars in `wrangler.jsonc`: `AGENT_ID`, `CLI_ENV` (`prod`, `staging` or `local`), `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The owner's `agent.json` and `INSTRUCTIONS.md` go in the git-ignored `cloudflare/agent/` folder and are bundled at deploy.
 
-A provider setting that names a file, such as a Google Vertex credentials file, does not work from a secret. Use a provider whose key is a plain setting. A submit or remedy with files cannot run until R2 artifacts land (PR5): the DO has no folder to write them to. Policy refuses the call before it reserves, and a file that never reaches the Container is the CLI's `usage` refusal.
+A provider setting that names a file, such as a Google Vertex credentials file, does not work from a secret. Use a provider whose key is a plain setting. Artifacts need no R2. Policy writes a submit's text files to `/tmp/agent/.pi-state/artifacts/` in the DO just before dispatch. `containerCommand` reads each `--artifact` file there and sends it in the call body, and the Container writes it into the per-call folder. Five text files of 256 KiB fit in the Container's 2 MiB body limit. A DO's `/tmp` is memory and is lost on eviction, but the files only live between policy's write and the dispatch in one tool call; an eviction there is the `uncertain` path. Binary `media:` files cannot occur: they come from approved MCP tools, and this host connects no MCP server. Durable storage such as R2 becomes necessary only when remote MCP is wired in, because a media handle must outlive a turn.
 
 ## DO lifecycle
 
@@ -58,7 +58,29 @@ The Container library retries only its readiness ping (`waitForPort`), never a p
 | Valid, `/api/agents` or `/api/agents/<id>` | Forwarded to the Agent DO | `gate.test.ts`, `host.test.ts` |
 | `CONSOLE_TOKEN` secret missing or malformed | 500 | `gate.test.ts` |
 
-The webhook route (PR5) must sit outside the Access check and verify its own HMAC.
+## Webhooks
+
+TaskFast posts each marketplace event to `POST /webhooks/taskfast`. That one path sits outside the Access check; its credential is the webhook signing secret.
+
+| Request | Outcome | Test |
+|---|---|---|
+| Any method but POST | 405 | `worker.ts` |
+| Body over 1 MiB | 413; no DO touched | `worker.ts` |
+| `WEBHOOK_SECRET` not set | 401; no DO touched | `webhook.test.ts` |
+| Missing signature or timestamp | 401; no DO touched | `webhook.test.ts` |
+| Signature not lowercase hex HMAC-SHA256 of `<timestamp>.<body>` | 401; no DO touched | `webhook.test.ts` |
+| Timestamp more than 5 minutes off | 401; no DO touched | `webhook.test.ts` |
+| Signed, body not JSON | 400 | `host.test.ts` |
+| Signed `test` event | 200; nothing stored | `host.test.ts` |
+| Signed event without `event_id` (`saved_search_match`) | 200 and a log line; it cannot be deduplicated, so it is not stored | `host.test.ts` |
+| Signed event | `deliver()` stores it durably, then 200; `ctx.waitUntil` keeps the DO alive until the turn is idle | `host.test.ts` |
+| Signed event | The turn outlasts `waitUntil`'s 15 minutes, or a deploy cuts it off | The DO may be evicted mid-turn; the next alarm reopens it and recovers the admitted work, and an interrupted write is `uncertain` | not run; needs a deploy |
+| The same event again | 200; `deliver()` dedupes by `event_id`, no second turn | `host.test.ts` |
+| Agent cannot open, or admission fails | 503, so the platform retries | `host.test.ts` |
+
+The platform makes at most 3 attempts, then drops the event. The local host's `dead-letter.jsonl` has no counterpart here; the 15-minute alarm check is what catches work a dropped event announced.
+
+Setup, once, with the local host for that folder stopped: run `taskfast webhook register --url https://<worker>/webhooks/taskfast --secret-file <file>` from the agent's folder, then `wrangler secret put WEBHOOK_SECRET` with that file's contents, then `taskfast webhook subscribe`. In Cloudflare Access, add a self-hosted application for the path `/webhooks/taskfast` with a Bypass policy. Otherwise Access answers TaskFast's posts with its login page and no event arrives.
 
 ## Setting up Access
 
@@ -120,7 +142,7 @@ The dashboard screenshots for steps 2, 5 and 9 come from the TaskFast team, capt
 
 ## What the console shows
 
-The page is the local console's page, unchanged. It needs the console token as a `#token=` link, so the owner opens `https://<worker>/#token=<CONSOLE_TOKEN>` once after signing in through Access. Its live stream (`/stream`) is not served yet, so the page polls every 3 s. Host facts (the wallet balance, stream state and dead letters) are absent, so those cards stay empty. Every console write control (pause, freeze, messages, orders, notes, limits) answers 405 until a later PR serves them. Until then the spending limits in `agent.json` are what cap money. Removing the wallet secrets makes every signing command a known refusal.
+The page is the local console's page, unchanged. It needs the console token as a `#token=` link, so the owner opens `https://<worker>/#token=<CONSOLE_TOKEN>` once after signing in through Access. Its live stream (`/stream`) is not served, so the page polls every 3 s. Host facts (the wallet balance, stream state and dead letters) are absent, so those cards stay empty. Every console write control (pause, freeze, messages, orders, notes, limits) answers 405. The spending limits in `agent.json` are what cap money. Removing the wallet secrets makes every signing command a known refusal.
 
 ## Checks
 

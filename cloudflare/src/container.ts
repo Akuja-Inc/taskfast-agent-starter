@@ -1,7 +1,10 @@
 // The Durable Object's marketplace path (#144 option A): one `taskfast` process per
 // command in a stateless Container that only this DO can reach. The Container
 // returns the CLI's stdout unchanged, so `cliOutcome` and REFUSED keep their meaning.
+import { readFileSync } from "node:fs";
 import { cliOutcome, signs, type CliResult } from "../../src/core/cli.js";
+import { folderFile } from "../../src/core/folder.js";
+import { ARTIFACTS_PATH } from "../../src/core/tools.js";
 import type { Command } from "../../src/core/policy.js";
 
 // The command paths the kit sends: every tool's (src/core/tools.ts), plus the reads
@@ -28,15 +31,32 @@ export const commandPath = (args: string[]): string => {
 // What the DO posts to the Container: the argv after `taskfast`, the agent's TaskFast
 // config text, and the wallet only for a command that signs. The Container writes
 // them to a per-call folder and deletes it.
-export interface ContainerCall { args: string[]; config: string; keystore?: string; password?: string }
+export interface ContainerCall { args: string[]; config: string; keystore?: string; password?: string; files?: { path: string; base64: string }[] }
 export interface ContainerReply { stdout: string; stderr: string; failure?: string }
 export interface Wallet { keystore: string; password: string }
 
-export function containerCommand(o: { ready(): Promise<boolean>; call(body: ContainerCall): Promise<Response>; config: string; wallet?: Wallet }): Command {
+// The files a submit or remedy names (--artifact=<folder-relative path>), read from the
+// folder policy just wrote them to, so the Container can recreate them per call.
+function artifacts(args: string[], folder: string): ContainerCall["files"] {
+  const files: NonNullable<ContainerCall["files"]> = [];
+  for (const arg of args) {
+    if (arg === "--") break;
+    if (!arg.startsWith("--artifact=")) continue;
+    const path = arg.slice("--artifact=".length);
+    if (!path.startsWith(`${ARTIFACTS_PATH}/`)) throw new Error(`artifact outside ${ARTIFACTS_PATH}: ${path}`);
+    files.push({ path, base64: readFileSync(folderFile({ agentDir: folder, path, resource: "artifact" })).toString("base64") });
+  }
+  return files.length ? files : undefined;
+}
+
+export function containerCommand(o: { ready(): Promise<boolean>; call(body: ContainerCall): Promise<Response>; config: string; wallet?: Wallet; folder: string }): Command {
   return async (runtime, args): Promise<CliResult> => {
     if (!COMMANDS.has(commandPath(args))) return { outcome: "failed", error: `unsupported: the kit does not send "${commandPath(args)}"` };
     const signing = signs(args);
     if (signing && !o.wallet) return { outcome: "failed", error: "keystore: the WALLET_KEYSTORE and WALLET_PASSWORD secrets are not set" };
+    let files: ContainerCall["files"];
+    try { files = artifacts(args, o.folder); }
+    catch (error) { return { outcome: "failed", error: `usage: ${error instanceof Error ? error.message : String(error)}` }; }
     // A cold or failing Container is found before the command leaves the DO, so it
     // stays a known refusal. The library retries only this readiness, never a request.
     let ready = false;
@@ -44,7 +64,7 @@ export function containerCommand(o: { ready(): Promise<boolean>; call(body: Cont
     if (!ready) return { outcome: "failed", error: "unavailable: the CLI Container did not start" };
     let response: Response;
     // Anything after the request leaves the DO may have reached the server.
-    try { response = await o.call({ args: ["--env", runtime.env, ...args], config: o.config, ...(signing ? o.wallet : {}) }); }
+    try { response = await o.call({ args: ["--env", runtime.env, ...args], config: o.config, ...(signing ? o.wallet : {}), ...(files ? { files } : {}) }); }
     catch (error) { return { outcome: "uncertain", error: `container unreachable: ${error instanceof Error ? error.message : String(error)}` }; }
     if (!response.ok) return { outcome: "uncertain", error: `container answered ${response.status}` };
     let reply: ContainerReply;

@@ -33,3 +33,4 @@ hand:e992f51f04b7	hand	2026-10-23T05:38:29Z	lesson	.agents/lessons/host-tests.md
 hand:f10a78bea91e	hand	2026-10-23T05:38:29Z	agents_md	AGENTS.md	The Cloudflare host sends only READ_COMMANDS to its CLI Container until writes land; secrets stay out of wrangler.jsonc.
 hand:d848d11986a1	hand	2026-10-23T05:49:22Z	agents_md	AGENTS.md	The Cloudflare host sends only the kit COMMANDS, gives the wallet only to signing commands, and treats a failed Container health check as a refusal.
 hand:de3eb1901de1	hand	2026-10-23T05:49:22Z	lesson	.agents/lessons/taskfast-cli-images.md	Slim images lack ca-certificates, so the CLI fails HTTPS with network builder error
+hand:c98fd55aff80	hand	2026-10-23T15:19:27Z	agents_md	AGENTS.md	The Cloudflare webhook path sits outside Access, checks its HMAC before the DO, and answers 2xx only after deliver resolves.
