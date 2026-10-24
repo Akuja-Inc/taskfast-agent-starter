@@ -30,6 +30,10 @@ export function parseWalletPasswordFile(value: unknown): string {
   return value;
 }
 
+// The commands that decrypt the wallet, and so the only ones that get its unlock.
+export const signs = (args: string[]): boolean =>
+  args[0] === "post" || args[0] === "settle" || (args[0] === "escrow" && args[1] === "sign") || (args[0] === "bond" && args[1] === "post");
+
 // Runs one command with the agent's env before the subcommand, its own TaskFast
 // config, and a clean environment. Only signing commands receive the host's file
 // path, as one option before the positional delimiter; no password is inherited.
@@ -39,7 +43,7 @@ export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promis
     let file: string;
     try { file = parseWalletPasswordFile(rt.walletPasswordFile); }
     catch { return Promise.resolve({ outcome: "failed", error: "config: wallet password file must be an absolute path without NUL" }); }
-    if (args[0] === "post" || args[0] === "settle" || (args[0] === "escrow" && args[1] === "sign") || (args[0] === "bond" && args[1] === "post")) {
+    if (signs(args)) {
       const delimiter = args.indexOf("--");
       const at = delimiter < 0 ? args.length : delimiter;
       commandArgs = [...args.slice(0, at), `--wallet-password-file=${file}`, ...args.slice(at)];

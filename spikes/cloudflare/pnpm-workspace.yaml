@@ -5,10 +5,11 @@ allowBuilds:
   'esbuild@0.28.2': false
   'protobufjs@7.6.6': false
 
-# Dependency-provided skills must not alter this repository's agent guidance.
+# The pinned wrangler and its miniflare are newer than pnpm's minimum release age.
 minimumReleaseAgeExclude:
   - miniflare@5.20261019.2-beta
   - wrangler@4.152.0
 
+# Dependency-provided skills must not alter this repository's agent guidance.
 skills:
   dirs: []
