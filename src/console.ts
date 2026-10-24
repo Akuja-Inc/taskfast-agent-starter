@@ -136,7 +136,7 @@ async function act(controls: ConsoleAgent["agent"]["operator"], action: string |
 
 // One agent as GET /api/agents/:id and its stream show it.
 export type ConsoleView = Awaited<ReturnType<typeof view>>;
-async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
+export async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
   const [policy, operator, events, transcript, queuedMessages] = await Promise.all([agent.status(), agent.operator.state(), agent.operator.events(), agent.transcript(TRANSCRIPT_ENTRIES), agent.operator.queued()]);
   const timeline = buildTimeline(transcript);
   const taskIds = [...new Set(timeline.flatMap((turn) => [field(turn.event, "task_id"), ...turn.replies.flatMap((reply) => reply.tasks.map((task) => task.id))].filter((id): id is string => typeof id === "string")))].slice(-TASK_READS);
@@ -160,7 +160,7 @@ async function view(env: Env, { id, spec, agent, host }: ConsoleAgent) {
 const { read: readDestination } = consoleNavigation();
 
 // The page may run only its own inline code and talk only to this server.
-const PAGE_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+export const PAGE_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json") {
   const text = type === "application/json" ? JSON.stringify(body) : String(body);
   res.writeHead(status, {
