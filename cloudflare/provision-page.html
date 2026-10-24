@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Protect your agent · TaskFast</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --yellow: #FFCC00; --black: #0B0B0B; --ground: #F2F2EF; --panel: #FFFFFF; --ink: #0B0B0B; --soft: #3D3D38; --muted: #5E5E56;
+  --hair: rgba(11,11,11,.72); --blue: #1D4ED8; --green: #1D6B34; --amber: #B45309; --amber-tint: #FDF3E3; --red: #B3261E; --red-tint: #FBEAE9;
+  --code-ink: #E9E7DC; --font: "Segoe UI", Frutiger, "Frutiger Next", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --ground: #131311; --panel: #1C1C19; --ink: #F2F1EA; --soft: #C9C8BE; --muted: #A3A298; --hair: rgba(242,241,234,.5); --blue: #7AA8FF; --green: #56D364; --amber: #D29922; --amber-tint: #3A2E10; --red: #F85149; --red-tint: #3A1614; }
+  .band { box-shadow: 0 3px 0 #000; }
+  .sq { outline: 1px solid #F2F1EA; }
+  button.primary { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
+}
+* { box-sizing: border-box; }
+::selection { background: var(--yellow); color: var(--black); }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+html { accent-color: var(--blue); }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 400 15px/1.45 var(--font); }
+.env { padding: 6px 24px; font-size: 13px; font-weight: 600; letter-spacing: .04em; display: flex; justify-content: space-between; gap: 16px; }
+.env.prod { background: var(--red); color: #FFF; } .env.staging { background: #F2C14E; color: #2B2000; } .env.local { background: #2E5E8C; color: #FFF; }
+.env .addr { font: 400 12px var(--mono); opacity: .85; }
+header { background: var(--black); color: #FFF; display: flex; align-items: center; gap: 12px; padding: 10px 24px; }
+header b { font-weight: 700; }
+.sq { width: 28px; height: 28px; display: inline-grid; place-items: center; flex: none; background: var(--black); color: #FFF; }
+.sq svg { width: 16px; height: 16px; fill: currentColor; }
+.sq.brand { background: var(--yellow); color: var(--black); }
+.sq.ok { background: var(--green); } .sq.warn { background: var(--amber); } .sq.bad { background: var(--red); }
+main { max-width: 1120px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; gap: 16px; } }
+section { display: grid; gap: 12px; }
+.band { position: sticky; top: 0; z-index: 2; background: var(--yellow); color: var(--black); border: 1px solid var(--black); border-radius: 2px; padding: 8px 18px; font-weight: 700; letter-spacing: .01em; }
+.band span { font-weight: 500; color: rgba(11,11,11,.72); }
+.card { background: var(--panel); border: 1px solid var(--hair); border-radius: 2px; padding: 16px 18px; display: grid; gap: 14px; }
+ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 14px; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+ol.steps > li::before { content: counter(step); width: 28px; height: 28px; display: grid; place-items: center; background: var(--black); color: #FFF; font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (prefers-color-scheme: dark) { ol.steps > li::before { outline: 1px solid #F2F1EA; } }
+ol.steps ul { margin: 6px 0 0; padding-left: 18px; }
+.perm { font-weight: 700; }
+.slot { margin-top: 8px; border: 1px dashed var(--hair); border-radius: 2px; padding: 10px 12px; color: var(--muted); font-size: 13px; }
+.slot img { display: block; max-width: 100%; height: auto; }
+.never { margin: 0; background: var(--amber-tint); border: 1px solid var(--amber); border-radius: 2px; padding: 12px 16px; font-size: 14px; }
+label { display: grid; gap: 6px; font-size: 13px; color: var(--soft); }
+.help { font-size: 13px; color: var(--muted); }
+input[type=text], input[type=email], input[type=password], input[type=url] { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--muted); border-radius: 6px; background: var(--panel); color: var(--ink); font: 400 15px var(--font); }
+input.mono { font-family: var(--mono); font-size: 13px; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--ink); min-height: 44px; }
+.check input { width: 18px; height: 18px; margin-top: 2px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+button { min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--ink); background: var(--panel); color: var(--ink); font: 400 15px var(--font); cursor: pointer; }
+button.primary { background: var(--black); color: #FFF; border-color: var(--black); font-weight: 600; }
+button[aria-disabled=true] { opacity: .55; cursor: progress; }
+.rows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.rows li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: center; }
+.rows .word { font-weight: 700; margin-right: 6px; }
+.rows .ok .word { color: var(--green); } .rows .create .word, .rows .change .word { color: var(--amber); }
+.err { background: var(--red-tint); border: 1px solid var(--red); border-radius: 2px; padding: 12px 16px; font-size: 14px; }
+.err b { color: var(--red); }
+#result p { margin: 0; }
+dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }
+dt { color: var(--soft); } dd { margin: 0; font: 400 13px var(--mono); overflow-wrap: anywhere; }
+code { font: 400 13px var(--mono); }
+a { color: var(--blue); text-underline-offset: 3px; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="env" id="env" role="note"><span id="env-name">Cloudflare setup</span><span class="addr" id="addr"></span></div>
+<header>
+  <span class="sq brand" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M7 1h2v2h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3zM5.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m5 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M0 7h1v3H0zm15 0h1v3h-1zM5 14h6v2H5z"/></svg></span>
+  <b>Protect your agent</b>
+</header>
+<main>
+  <section aria-labelledby="guide-band">
+    <div class="band" id="guide-band">Create the token <span>once, in Cloudflare</span></div>
+    <div class="card">
+      <p class="never"><b>Never paste this token into a chat, issue or message, including to an agent.</b> Paste it only into this page. Cloudflare shows it once; if you lose it, roll it from API Tokens.</p>
+      <ol class="steps">
+        <li><div>Sign in to the <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">Cloudflare dashboard</a> on the account that hosts your agent.</div></li>
+        <li><div>Open <b>Manage Account → API Tokens</b>. If setup later says this token is not accepted, use <b>My Profile → API Tokens</b> instead; the steps are the same.<div class="slot" data-shot="2">Screenshot pending.</div></div></li>
+        <li><div>Click <b>Create Token</b>, then <b>Create Custom Token</b>.</div></li>
+        <li><div>Name it <code>taskfast-access-setup</code>.</div></li>
+        <li><div>Add two permissions, both in the <b>Account</b> group:
+          <ul><li><span class="perm">Access: Apps and Policies</span> → <b>Edit</b> (some dashboards say Write)</li><li><span class="perm">Access: Organizations, Identity Providers, and Groups</span> → <b>Read</b></li></ul>
+          Add nothing else.<div class="slot" data-shot="5">Screenshot pending.</div></div></li>
+        <li><div>Account Resources: <b>Include → your one account</b>, not all accounts.</div></li>
+        <li><div>Client IP Address Filtering is optional. Set it to your home address if that address never changes.</div></li>
+        <li><div>TTL: pick an end date. Seven days is enough for setup; delete the token afterwards.</div></li>
+        <li><div>Click <b>Continue to summary</b>, check it lists only those two permissions on one account, then <b>Create Token</b> and copy it.<div class="slot" data-shot="9">Screenshot pending.</div></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="form-band">
+    <div class="band" id="form-band">Fill in three details <span>your token stays on this computer</span></div>
+    <form class="card" id="form" novalidate autocomplete="off">
+      <label>Scoped API token
+        <input id="token" type="password" class="mono" autocomplete="off" spellcheck="false" autocapitalize="off" required>
+        <span class="help" id="token-help">Sent only to api.cloudflare.com. Setup keeps it in memory until it exits and never saves it.</span>
+      </label>
+      <label>Worker URL
+        <input id="url" type="url" class="mono" placeholder="https://taskfast-agent.your-subdomain.workers.dev" spellcheck="false" autocapitalize="off" required>
+        <span class="help">The address <code>wrangler deploy</code> printed for your agent.</span>
+      </label>
+      <label>Your email
+        <input id="email" type="email" placeholder="you@example.com" autocomplete="email" required>
+        <span class="help">The only address Access lets in. Cloudflare emails it a code at sign-in.</span>
+      </label>
+      <label class="check"><input id="webhooks" type="checkbox"> <span>TaskFast sends this agent events by webhook<br><span class="help">Lets TaskFast post to <code>/webhooks/taskfast</code> without signing in. Its signature is checked instead.</span></span></label>
+      <div class="actions"><button class="primary" id="check" type="submit">Check</button></div>
+    </form>
+
+    <div class="card" id="plan" hidden aria-live="polite">
+      <h2 class="sr">What setup will do</h2>
+      <ul class="rows" id="steps"></ul>
+      <label class="check" id="replace-row" hidden><input id="replace" type="checkbox"> <span id="replace-text"></span></label>
+      <div class="actions"><button class="primary" id="create" type="button">Create</button><button id="edit" type="button">Change details</button></div>
+    </div>
+
+    <div class="card" id="result" hidden aria-live="polite">
+      <ul class="rows"><li class="ok"><span class="sq ok" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6.2 12.2 2.5 8.5l1.4-1.4 2.3 2.3 5.9-5.9 1.4 1.4z"/></svg></span><span><span class="word">Done</span>Your agent is behind Access.</span></li></ul>
+      <dl id="facts"></dl>
+      <p>Open your Worker URL, sign in with the code Cloudflare emails you, then open the console link setup printed. You can close this page; setup has stopped.</p>
+    </div>
+
+    <div class="err" id="error" role="alert" hidden></div>
+  </section>
+</main>
+<script>
+(() => {
+  const link = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+  history.replaceState(null, "", location.pathname);
+  const $ = (id) => document.getElementById(id);
+  const env = (document.querySelector('meta[name="taskfast-env"]') || {}).content || "";
+  const names = { prod: "Production · real money", staging: "Staging · test funds", local: "Development · local server" };
+  if (names[env]) { $("env").classList.add(env); $("env-name").textContent = names[env] + " · Cloudflare Access setup"; } else $("env").classList.add("prod");
+  $("addr").textContent = location.host + " · this computer only";
+  const icon = { ok: '<path d="M6.2 12.2 2.5 8.5l1.4-1.4 2.3 2.3 5.9-5.9 1.4 1.4z"/>', create: '<path d="M7 2h2v8H7zm0 10h2v2H7z"/>', change: '<path d="M7 2h2v8H7zm0 10h2v2H7z"/>' };
+  const word = { ok: "Done", create: "To do", change: "Change" };
+  let token = "";
+  const busy = (button, on) => { button.setAttribute("aria-disabled", on ? "true" : "false"); };
+  const fail = (message) => { const box = $("error"); box.replaceChildren(); const b = document.createElement("b"); b.textContent = "Setup stopped. "; box.append(b, document.createTextNode(message)); box.hidden = false; };
+  async function call(path, body) {
+    const response = await fetch(path, { method: "POST", headers: { authorization: "Bearer " + link, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const reply = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(reply.error || "Setup answered " + response.status + ".");
+    return reply;
+  }
+  function row(kind, text) {
+    const li = document.createElement("li"); li.className = kind;
+    const sq = document.createElement("span"); sq.className = "sq " + (kind === "ok" ? "ok" : "warn"); sq.setAttribute("aria-hidden", "true");
+    sq.innerHTML = '<svg viewBox="0 0 16 16">' + icon[kind] + "</svg>";
+    const label = document.createElement("span"); const w = document.createElement("span"); w.className = "word"; w.textContent = word[kind];
+    label.append(w, document.createTextNode(text)); li.append(sq, label); return li;
+  }
+  $("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if ($("check").getAttribute("aria-disabled") === "true") return;
+    $("error").hidden = true;
+    const typed = $("token").value.trim();
+    if (typed) token = typed;
+    busy($("check"), true);
+    try {
+      const plan = await call("/api/check", { token, workerUrl: $("url").value, email: $("email").value, webhooks: $("webhooks").checked });
+      // The server holds the token now. Clear it from the page and from memory.
+      $("token").value = ""; token = "";
+      $("token").placeholder = "Held by setup until it exits"; $("token").required = false;
+      $("steps").replaceChildren(...plan.steps.map((step) => row(step.kind, step.text)));
+      $("replace-row").hidden = !plan.emailDiffers;
+      $("replace-text").textContent = plan.emailDiffers ? "Replace " + plan.emailDiffers + " with " + plan.email + " as the only address Access lets in." : "";
+      $("replace").checked = false;
+      $("form").hidden = true; $("plan").hidden = false; $("create").focus();
+    } catch (error) { $("token").value = ""; token = ""; fail(error.message); }
+    finally { busy($("check"), false); }
+  });
+  $("edit").addEventListener("click", () => { $("plan").hidden = true; $("form").hidden = false; $("url").focus(); });
+  $("create").addEventListener("click", async () => {
+    if ($("create").getAttribute("aria-disabled") === "true") return;
+    $("error").hidden = true; busy($("create"), true);
+    try {
+      const done = await call("/api/create", { replaceEmail: $("replace").checked });
+      const facts = [["Worker", done.host], ["Team domain", done.teamDomain], ["Access app", done.app], ["AUD tag", done.aud], ...done.created.map((c) => ["Made", c])];
+      $("facts").replaceChildren(...facts.flatMap(([k, v]) => { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; return [dt, dd]; }));
+      $("plan").hidden = true; $("result").hidden = false;
+    } catch (error) { fail(error.message); }
+    finally { busy($("create"), false); }
+  });
+  $("token").focus();
+})();
+</script>
+</body>
+</html>

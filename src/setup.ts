@@ -107,7 +107,12 @@ Sets up a model provider and one agent. Anything you leave out is asked.
   --init / --no-init      Run taskfast init for the agent now, or skip it
   --taskfast-skill        Add the taskfast CLI's taskfast-agent skill to the agent's
                           .agents/skills folder, with the CLI version and file hashes
-  -h, --help              Show this help`;
+  -h, --help              Show this help
+
+pnpm setup-agent cloudflare-access [--help]
+  Puts an agent hosted on Cloudflare behind Cloudflare Access: opens a setup page
+  on this computer for your scoped API token, Worker URL and email.
+  See docs/cloudflare/do-host.md.`;
 
 // The example folder each role starts from, and its suggested goals. Setup copies the
 // example's agent.json and writes INSTRUCTIONS.md from the user's answers.
@@ -463,6 +468,11 @@ export function parseSetupArgs(argv: string[]): SetupOptions & { help?: boolean 
   return { ...rest, ...(walletPasswordEnv === undefined ? {} : { walletPasswordEnv }), ...(taskfastSkill === undefined ? {} : { taskfastSkill }) };
 }
 
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === "cloudflare-access") {
+  // A child process, because host code never imports the opt-in cloudflare/ package.
+  const r = spawnSync(process.execPath, [join(process.cwd(), "cloudflare", "provision.mjs"), ...process.argv.slice(3)], { stdio: "inherit" });
+  process.exit(r.status ?? 1);
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let opts: ReturnType<typeof parseSetupArgs>;
   try {

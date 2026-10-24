@@ -54,6 +54,60 @@ A provider setting that names a file, such as a Google Vertex credentials file, 
 
 The webhook route (PR5) must sit outside the Access check and verify its own HMAC.
 
+## Setting up Access
+
+The owner never configures Access in the Cloudflare dashboard. They create one scoped API token once, then run:
+
+```bash
+pnpm setup-agent cloudflare-access
+```
+
+It opens a page at `http://127.0.0.1:<port>/#token=<link token>` for 15 minutes. The page asks for the token, the Worker URL and the owner's email. **Check** shows what exists and what setup would make, and writes nothing. **Create** then does three things. It makes a self-hosted Access app for the Worker's hostname with one Allow policy for exactly that email. It writes the team domain and the app's AUD tag into `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `wrangler.jsonc`. It runs `wrangler deploy --containers-rollout=none` with the owner's own Wrangler login. With the webhook box ticked it also makes a Bypass app for `/webhooks/taskfast`.
+
+![The setup page](access-setup/form.png)
+
+Wrangler cannot do this itself. Its OAuth login has no Access scope, and `wrangler login --scopes` accepts only its fixed list. So the token is the one extra consent.
+
+The token is held in memory until setup exits and is sent only in the `Authorization` header to `api.cloudflare.com`. It is never logged, saved, echoed in a response or the page, or passed to Wrangler. Scripted runs read it from `CLOUDFLARE_ACCESS_TOKEN`, never `CLOUDFLARE_API_TOKEN`, which Wrangler would use in place of its login:
+
+```bash
+node cloudflare/provision.mjs --worker-url https://<worker>.<subdomain>.workers.dev --email <you> --dry-run
+node cloudflare/provision.mjs --teardown
+```
+
+`cloudflare/.access.json` (mode 0600, git-ignored) records the account, hostname, team domain, AUD tag and app IDs. A rerun finds the apps by those IDs, or by the hostname and setup's app name when the file is gone, and changes nothing that is already right. Teardown deletes only the recorded apps that still cover their hostname. The policies are inline, so deleting an app deletes its policy.
+
+### Creating the token
+
+Never paste the token into a chat, issue or message, including to an agent. Paste it only into the setup page.
+
+1. Sign in to the Cloudflare dashboard on the account that hosts the agent.
+2. Open **Manage Account → API Tokens**. If setup says Cloudflare does not accept the token, use **My Profile → API Tokens** instead. (Screenshot pending.)
+3. Click **Create Token**, then **Create Custom Token**.
+4. Name it `taskfast-access-setup`.
+5. Add two permissions in the **Account** group: **Access: Apps and Policies → Edit** (some dashboards say Write) and **Access: Organizations, Identity Providers, and Groups → Read**. Add nothing else. (Screenshot pending.)
+6. Set Account Resources to **Include → your one account**.
+7. Client IP Address Filtering is optional.
+8. Set a TTL. Seven days is enough for setup; delete the token afterwards.
+9. Click **Continue to summary**, check it lists only those two permissions on one account, then **Create Token**. (Screenshot pending.)
+
+The dashboard screenshots for steps 2, 5 and 9 come from the TaskFast team, captured on a test account with every identifier removed. Until then the page shows a "Screenshot pending" slot for each.
+
+| Setup meets | It does | Test |
+|---|---|---|
+| A foreign `Host` or `Origin` | 403 | `provision.test.ts` |
+| A missing or wrong link token, including another site's form post | 401 | `provision.test.ts` |
+| A second request while one runs, or Create before Check | 409 | `provision.test.ts` |
+| A Worker URL that is not `https://<name>.<subdomain>.workers.dev`, or not the `name` in `wrangler.jsonc` | Refused before any Cloudflare call | `provision.test.ts`; `provision.mjs` |
+| A token Cloudflare rejects, or one missing a permission | Names the missing permission; nothing is written | `provision.test.ts` |
+| No Zero Trust organization | Says to open Zero Trust once to create the team | `provision.test.ts` |
+| An Access app for the hostname that setup did not make | Refuses and leaves it alone | `provision.test.ts` |
+| A different owner email than the app lets in | Changes the policy only after the owner confirms | `provision.test.ts` |
+| The deploy fails after the app exists | The app is already recorded; a rerun only redeploys | `provision.test.ts` |
+| The link's 15 minutes pass | The page stops answering and setup exits | `provision.test.ts` |
+
+`findAccount` lists `/accounts` with the token and needs exactly one. Whether an account token with only these two permissions can list its account has not run against Cloudflare; `--account-id` or `CLOUDFLARE_ACCOUNT_ID` skips the lookup. No part of this has run against a live Cloudflare account yet.
+
 ## What the console shows
 
 The page is the local console's page, unchanged. It needs the console token as a `#token=` link, so the owner opens `https://<worker>/#token=<CONSOLE_TOKEN>` once after signing in through Access. Its live stream (`/stream`) is not served yet, so the page polls every 3 s. Host facts (the wallet balance, stream state and dead letters) are absent, so those cards stay empty. Every write control answers 405 until writes land.
