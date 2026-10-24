@@ -23,51 +23,56 @@
 ::selection { background: var(--yellow); color: var(--black); }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 html { accent-color: var(--blue); }
-body { margin: 0; background: var(--ground); color: var(--ink); font: 400 15px/1.45 var(--font); }
-.env { padding: 6px 24px; font-size: 13px; font-weight: 600; letter-spacing: .04em; display: flex; justify-content: space-between; gap: 16px; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 400 18px/1.5 var(--font); }
+.env { padding: 8px 24px; font-size: 15px; font-weight: 600; letter-spacing: .04em; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
 .env.prod { background: var(--red); color: #FFF; } .env.staging { background: #F2C14E; color: #2B2000; } .env.local { background: #2E5E8C; color: #FFF; }
-.env .addr { font: 400 12px var(--mono); opacity: .85; }
-header { background: var(--black); color: #FFF; display: flex; align-items: center; gap: 12px; padding: 10px 24px; }
-header b { font-weight: 700; }
-.sq { width: 28px; height: 28px; display: inline-grid; place-items: center; flex: none; background: var(--black); color: #FFF; }
-.sq svg { width: 16px; height: 16px; fill: currentColor; }
-.sq.brand { background: var(--yellow); color: var(--black); }
+.env .addr { font: 400 14px var(--mono); opacity: .85; }
+header { background: var(--black); color: #FFF; }
+header .in { max-width: 760px; margin: 0 auto; padding: 18px 24px; display: flex; align-items: center; gap: 14px; }
+header h1 { margin: 0; font-size: 28px; line-height: 1.2; font-weight: 800; letter-spacing: -.01em; }
+.sq { width: 36px; height: 36px; display: inline-grid; place-items: center; flex: none; background: var(--black); color: #FFF; }
+.sq svg { width: 20px; height: 20px; fill: currentColor; }
+.sq.brand { width: 44px; height: 44px; background: var(--yellow); color: var(--black); }
+.sq.brand svg { width: 26px; height: 26px; }
 .sq.ok { background: var(--green); } .sq.warn { background: var(--amber); } .sq.bad { background: var(--red); }
-main { max-width: 1120px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
-@media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; gap: 16px; } }
-section { display: grid; gap: 12px; }
-.band { position: sticky; top: 0; z-index: 2; background: var(--yellow); color: var(--black); border: 1px solid var(--black); border-radius: 2px; padding: 8px 18px; font-weight: 700; letter-spacing: .01em; }
-.band span { font-weight: 500; color: rgba(11,11,11,.72); }
-.card { background: var(--panel); border: 1px solid var(--hair); border-radius: 2px; padding: 16px 18px; display: grid; gap: 14px; }
-ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 14px; }
-ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
-ol.steps > li::before { content: counter(step); width: 28px; height: 28px; display: grid; place-items: center; background: var(--black); color: #FFF; font-weight: 700; font-variant-numeric: tabular-nums; }
+main { max-width: 760px; margin: 0 auto; padding: 32px 24px 64px; display: grid; gap: 40px; }
+@media (max-width: 640px) { main { padding: 20px 16px 48px; gap: 32px; } header .in { padding: 14px 16px; } header h1 { font-size: 24px; } }
+section { display: grid; gap: 14px; }
+.band { margin: 0; background: var(--yellow); color: var(--black); border: 1px solid var(--black); border-radius: 2px; padding: 12px 20px; font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: .01em; }
+.band span { display: block; font-size: 16px; font-weight: 500; color: rgba(11,11,11,.72); }
+.card { background: var(--panel); border: 1px solid var(--hair); border-radius: 2px; padding: 24px; display: grid; gap: 20px; }
+@media (max-width: 640px) { .card { padding: 18px 16px; } }
+ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 20px; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 16px; align-items: start; }
+ol.steps > li::before { content: counter(step); width: 36px; height: 36px; display: grid; place-items: center; background: var(--black); color: #FFF; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+ol.steps > li > div { padding-top: 4px; }
 @media (prefers-color-scheme: dark) { ol.steps > li::before { outline: 1px solid #F2F1EA; } }
-ol.steps ul { margin: 6px 0 0; padding-left: 18px; }
+ol.steps ul { margin: 8px 0; padding-left: 22px; display: grid; gap: 6px; }
 .perm { font-weight: 700; }
-.slot { margin-top: 8px; border: 1px dashed var(--hair); border-radius: 2px; padding: 10px 12px; color: var(--muted); font-size: 13px; }
+.slot { margin-top: 12px; border: 1px dashed var(--hair); border-radius: 2px; padding: 14px 16px; color: var(--muted); font-size: 15px; }
 .slot img { display: block; max-width: 100%; height: auto; }
-.never { margin: 0; background: var(--amber-tint); border: 1px solid var(--amber); border-radius: 2px; padding: 12px 16px; font-size: 14px; }
-label { display: grid; gap: 6px; font-size: 13px; color: var(--soft); }
-.help { font-size: 13px; color: var(--muted); }
-input[type=text], input[type=email], input[type=password], input[type=url] { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--muted); border-radius: 6px; background: var(--panel); color: var(--ink); font: 400 15px var(--font); }
-input.mono { font-family: var(--mono); font-size: 13px; }
-.check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--ink); min-height: 44px; }
-.check input { width: 18px; height: 18px; margin-top: 2px; }
-.actions { display: flex; gap: 10px; flex-wrap: wrap; }
-button { min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--ink); background: var(--panel); color: var(--ink); font: 400 15px var(--font); cursor: pointer; }
-button.primary { background: var(--black); color: #FFF; border-color: var(--black); font-weight: 600; }
+.never { margin: 0; background: var(--amber-tint); border: 1px solid var(--amber); border-radius: 2px; padding: 16px 18px; font-size: 17px; }
+label { display: grid; gap: 8px; font-size: 17px; font-weight: 600; color: var(--ink); }
+.help { font-size: 15px; font-weight: 400; color: var(--muted); }
+input[type=text], input[type=email], input[type=password], input[type=url] { width: 100%; min-height: 52px; padding: 12px 14px; border: 1px solid var(--muted); border-radius: 6px; background: var(--panel); color: var(--ink); font: 400 18px var(--font); }
+input.mono { font-family: var(--mono); font-size: 16px; }
+.check { display: flex; gap: 12px; align-items: flex-start; font-size: 18px; font-weight: 400; min-height: 44px; }
+.check input { width: 22px; height: 22px; margin-top: 3px; flex: none; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+button { min-height: 52px; padding: 0 24px; border-radius: 6px; border: 1px solid var(--ink); background: var(--panel); color: var(--ink); font: 400 18px var(--font); cursor: pointer; }
+button.primary { background: var(--black); color: #FFF; border-color: var(--black); font-weight: 700; }
 button[aria-disabled=true] { opacity: .55; cursor: progress; }
-.rows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.rows li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: center; }
-.rows .word { font-weight: 700; margin-right: 6px; }
+.rows { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.rows li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 14px; align-items: center; }
+.rows .word { font-weight: 700; margin-right: 8px; }
 .rows .ok .word { color: var(--green); } .rows .create .word, .rows .change .word { color: var(--amber); }
-.err { background: var(--red-tint); border: 1px solid var(--red); border-radius: 2px; padding: 12px 16px; font-size: 14px; }
+.err { background: var(--red-tint); border: 1px solid var(--red); border-radius: 2px; padding: 16px 18px; font-size: 17px; }
 .err b { color: var(--red); }
 #result p { margin: 0; }
-dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }
-dt { color: var(--soft); } dd { margin: 0; font: 400 13px var(--mono); overflow-wrap: anywhere; }
-code { font: 400 13px var(--mono); }
+dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 18px; font-size: 16px; }
+@media (max-width: 640px) { dl { grid-template-columns: 1fr; gap: 2px; } dd { margin-bottom: 10px !important; } }
+dt { color: var(--soft); } dd { margin: 0; font: 400 15px var(--mono); overflow-wrap: anywhere; }
+code { font: 400 .9em var(--mono); }
 a { color: var(--blue); text-underline-offset: 3px; }
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -76,12 +81,14 @@ a { color: var(--blue); text-underline-offset: 3px; }
 <body>
 <div class="env" id="env" role="note"><span id="env-name">Cloudflare setup</span><span class="addr" id="addr"></span></div>
 <header>
+  <div class="in">
   <span class="sq brand" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M7 1h2v2h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3zM5.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m5 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M0 7h1v3H0zm15 0h1v3h-1zM5 14h6v2H5z"/></svg></span>
-  <b>Protect your agent</b>
+  <h1>Protect your agent</h1>
+  </div>
 </header>
 <main>
   <section aria-labelledby="guide-band">
-    <div class="band" id="guide-band">Create the token <span>once, in Cloudflare</span></div>
+    <h2 class="band" id="guide-band">1. Create the token <span>Once, in Cloudflare. Takes about two minutes.</span></h2>
     <div class="card">
       <p class="never"><b>Never paste this token into a chat, issue or message, including to an agent.</b> Paste it only into this page. Cloudflare shows it once; if you lose it, roll it from API Tokens.</p>
       <ol class="steps">
@@ -101,7 +108,7 @@ a { color: var(--blue); text-underline-offset: 3px; }
   </section>
 
   <section aria-labelledby="form-band">
-    <div class="band" id="form-band">Fill in three details <span>your token stays on this computer</span></div>
+    <h2 class="band" id="form-band">2. Fill in three details <span>Your token stays on this computer.</span></h2>
     <form class="card" id="form" novalidate autocomplete="off">
       <label>Scoped API token
         <input id="token" type="password" class="mono" autocomplete="off" spellcheck="false" autocapitalize="off" required>
@@ -120,7 +127,7 @@ a { color: var(--blue); text-underline-offset: 3px; }
     </form>
 
     <div class="card" id="plan" hidden aria-live="polite">
-      <h2 class="sr">What setup will do</h2>
+      <h3 class="sr">What setup will do</h3>
       <ul class="rows" id="steps"></ul>
       <label class="check" id="replace-row" hidden><input id="replace" type="checkbox"> <span id="replace-text"></span></label>
       <div class="actions"><button class="primary" id="create" type="button">Create</button><button id="edit" type="button">Change details</button></div>
