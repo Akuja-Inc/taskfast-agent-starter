@@ -206,6 +206,7 @@ describe("the local form", () => {
       const page = await hit(f.port, { method: "GET", path: "/" });
       const created = await hit(f.port, { bearer: link, path: "/api/create", body: {} });
       expect([check.status, created.status]).toEqual([200, 200]);
+      expect(JSON.parse(created.text).appName).toBe(`TaskFast agent ${HOST}`);
       seen.push(check.text, page.text, created.text, JSON.stringify(r.saved), JSON.stringify(r.deployed));
       expect(await f.done).toBe("created");
     } finally { console.log = log; console.error = error; }
@@ -287,6 +288,7 @@ describe("the form and the flags", () => {
       expect([form.reply.alreadySetUp, flags.done.alreadySetUp]).toEqual([true, true]);
       expect([form.deployed, flags.deployed]).toEqual([1, 1]);
       expect(flags.lines).toContain("Already set up: nothing changed.");
+      expect(flags.lines).toContain(`Who is allowed in: Zero Trust → Access → Applications → TaskFast agent ${HOST} → Policies. Run again with --replace-email to change it.`);
     });
   }
 

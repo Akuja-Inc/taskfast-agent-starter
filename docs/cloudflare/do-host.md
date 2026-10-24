@@ -64,6 +64,8 @@ pnpm setup-agent cloudflare-access
 
 It opens a page at `http://127.0.0.1:<port>/#token=<link token>` for 15 minutes. The page asks for the token, the Worker URL and the owner's email. **Check** shows what exists and what setup would make, and writes nothing. **Create** then does three things. It makes a self-hosted Access app for the Worker's hostname with one Allow policy for exactly that email. It writes the team domain and the app's AUD tag into `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `wrangler.jsonc`. It runs `wrangler deploy --containers-rollout=none` with the owner's own Wrangler login. With the webhook box ticked it also makes a Bypass app for `/webhooks/taskfast`.
 
+The email must be an address the owner can receive mail at now. At each sign-in Cloudflare emails a one-time code to it. It becomes the only address the Access policy allows, and any other address is refused. The policy lives in Zero Trust → Access → Applications → `TaskFast agent <worker hostname>` → Policies. To change the address, run setup again with the new email and confirm the change on the page, or pass `--replace-email` to the scripted run.
+
 ![The setup page](access-setup/form.png)
 
 Wrangler cannot do this itself. Its OAuth login has no Access scope, and `wrangler login --scopes` accepts only its fixed list. So the token is the one extra consent.

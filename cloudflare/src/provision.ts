@@ -209,6 +209,7 @@ export async function scripted(o: Hooks & {
   if (done.alreadySetUp) o.log("Already set up: nothing changed.");
   for (const line of done.created) o.log(`made: ${line}`);
   o.log(`Access app ${done.state.apps.console}, AUD ${done.state.aud}`);
+  o.log(`Who is allowed in: Zero Trust → Access → Applications → ${consoleName(host)} → Policies. Run again with --replace-email to change it.`);
   return done;
 }
 
@@ -289,7 +290,7 @@ export async function startForm(o: FormOptions): Promise<{ url: string; port: nu
         }
         if (!checked) return send(res, 409, { error: "Check the details first." });
         const result = await apply(checked.api, checked.plan, { replaceEmail: body.replaceEmail === true, save: o.save, deploy: o.deploy });
-        send(res, 200, { alreadySetUp: result.alreadySetUp, created: result.created, app: result.state.apps.console, aud: result.state.aud, teamDomain: result.state.teamDomain, host: result.state.host });
+        send(res, 200, { appName: consoleName(result.state.host), alreadySetUp: result.alreadySetUp, created: result.created, app: result.state.apps.console, aud: result.state.aud, teamDomain: result.state.teamDomain, host: result.state.host });
         secret = undefined;
         checked = undefined;
         setImmediate(() => finish(result.alreadySetUp ? "already set up" : "created"));
