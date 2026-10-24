@@ -49,8 +49,9 @@ export function cloudflare(token: string, fetcher: typeof fetch = fetch): Api {
 export interface Target { account: string; host: string; email: string; webhooks: boolean }
 export interface App { id: string; name: string; domain: string; aud?: string; policies?: { decision?: string; include?: unknown[] }[] }
 // What this command made, kept in a 0600 file for reruns and teardown. Never the token.
-// Policies are inline, so deleting an app deletes its policy.
-export interface State { account: string; host: string; teamDomain: string; aud: string; apps: { console: string; webhook?: string } }
+// Policies are inline, so deleting an app deletes its policy. `deployed` is set only after
+// a deploy with these values succeeded.
+export interface State { account: string; host: string; teamDomain: string; aud: string; apps: { console: string; webhook?: string }; deployed?: { teamDomain: string; aud: string } }
 
 const EMAIL = /^[^\s@*,;<>"]+@[^\s@*,;<>"]+\.[^\s@*,;<>"]+$/;
 const HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.workers\.dev$/;
@@ -85,7 +86,8 @@ const ownerOf = (app: App): string | undefined => {
 const isBypass = (app: App) => app.policies?.length === 1 && app.policies[0]!.decision === "bypass";
 
 export type Step = { kind: "ok" | "create" | "change"; text: string };
-export interface Plan { target: Target; teamDomain: string; console?: App; webhook?: App; steps: Step[]; emailDiffers?: string }
+// `upToDate` holds the recorded state when Access and the deployed Worker already match.
+export interface Plan { target: Target; teamDomain: string; console?: App; webhook?: App; steps: Step[]; emailDiffers?: string; upToDate?: State }
 
 // Reads what exists and says what Create would do. Writes nothing. Refuses an app for
 // this hostname that this command did not make.
@@ -126,15 +128,21 @@ export async function plan(api: Api, target: Target, state?: State): Promise<Pla
     else if (isBypass(webhook)) steps.push({ kind: "ok", text: `TaskFast can post to ${WEBHOOK_PATH}` });
     else steps.push({ kind: "change", text: `Restore the bypass on ${WEBHOOK_PATH}` });
   }
-  steps.push({ kind: "create", text: "Deploy the Worker with this team domain and AUD tag" });
-  return { target, teamDomain, ...(site ? { console: site } : {}), ...(webhook ? { webhook } : {}), steps, ...(emailDiffers ? { emailDiffers } : {}) };
+  // Skip the deploy only when the state file says this exact team domain and AUD tag went out.
+  const deployed = recorded?.deployed;
+  const upToDate = steps.every((s) => s.kind === "ok") && !!site?.aud && recorded?.apps.console === site.id
+    && deployed?.aud === site.aud && deployed.teamDomain === teamDomain && (!target.webhooks || recorded?.apps.webhook === webhook?.id);
+  steps.push(upToDate ? { kind: "ok", text: "The Worker already has this team domain and AUD tag" } : { kind: "create", text: "Deploy the Worker with this team domain and AUD tag" });
+  return { target, teamDomain, ...(site ? { console: site } : {}), ...(webhook ? { webhook } : {}), steps, ...(emailDiffers ? { emailDiffers } : {}), ...(upToDate ? { upToDate: recorded } : {}) };
 }
 
-export interface Done { state: State; created: string[] }
+export interface Done { state: State; created: string[]; alreadySetUp: boolean }
 // Makes what the plan found missing, records each app as soon as it exists, then deploys.
-// A different owner email changes the policy only with `replaceEmail`.
+// A different owner email changes the policy only with `replaceEmail`. When everything
+// already matches it writes, saves and deploys nothing.
 export async function apply(api: Api, p: Plan, o: { replaceEmail?: boolean; save(state: State): void; deploy(vars: { teamDomain: string; aud: string }): Promise<void> }): Promise<Done> {
   const { target } = p;
+  if (p.upToDate) return { state: p.upToDate, created: [], alreadySetUp: true };
   if (p.emailDiffers && !o.replaceEmail) throw new ProvisionError(`${target.host} lets in ${p.emailDiffers}. Confirm the change to ${target.email} to replace it.`);
   const base = `/accounts/${target.account}/access/apps`;
   const created: string[] = [];
@@ -153,7 +161,9 @@ export async function apply(api: Api, p: Plan, o: { replaceEmail?: boolean; save
     else if (!isBypass(p.webhook)) { await api("PUT", `${base}/${p.webhook.id}`, body); created.push("Webhook bypass restored"); }
   }
   await o.deploy({ teamDomain: p.teamDomain, aud });
-  return { state, created };
+  state.deployed = { teamDomain: p.teamDomain, aud };
+  o.save(state);
+  return { state, created, alreadySetUp: false };
 }
 
 // Deletes only the apps the state file names, after checking each still covers its host.
@@ -173,6 +183,34 @@ export async function teardown(api: Api, state: State): Promise<{ deleted: strin
 
 // The plan as the page and the CLI show it: no token, no raw API objects.
 export const view = (p: Plan) => ({ host: p.target.host, email: p.target.email, teamDomain: p.teamDomain, steps: p.steps, emailDiffers: p.emailDiffers ?? null });
+
+// What both entry points need besides their inputs.
+interface Hooks {
+  state(): State | undefined;
+  save(state: State): void;
+  deploy(vars: { teamDomain: string; aud: string }): Promise<void>;
+  // Refuses a hostname that is not the Worker this folder deploys.
+  checkHost?(host: string): void;
+}
+
+// The flags path: the same checkInputs, plan and apply as the form, printed instead of served.
+export async function scripted(o: Hooks & {
+  workerUrl: unknown; email: unknown; webhooks: boolean; dryRun: boolean; replaceEmail: boolean;
+  connect(): Promise<{ api: Api; account: string }>; log(line: string): void;
+}): Promise<Done | undefined> {
+  const { host, email } = checkInputs(o.workerUrl, o.email);
+  o.checkHost?.(host);
+  const { api, account } = await o.connect();
+  const p = await plan(api, { account, host, email, webhooks: o.webhooks }, o.state());
+  o.log(`Account ${account}, Worker ${host}, team ${p.teamDomain}`);
+  for (const step of p.steps) o.log(`  ${step.kind.padEnd(6)} ${step.text}`);
+  if (o.dryRun) return undefined;
+  const done = await apply(api, p, { replaceEmail: o.replaceEmail, save: o.save, deploy: o.deploy });
+  if (done.alreadySetUp) o.log("Already set up: nothing changed.");
+  for (const line of done.created) o.log(`made: ${line}`);
+  o.log(`Access app ${done.state.apps.console}, AUD ${done.state.aud}`);
+  return done;
+}
 
 // ---- The local form. Same protections as the local console in src/console.ts (copied,
 // because the kit's host code and this package never import each other).
@@ -204,27 +242,23 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown> |
   } catch { return undefined; }
 }
 
-export interface FormOptions {
+export interface FormOptions extends Hooks {
   page: string;
   // Builds the API client for the token the owner pasted, and finds the account.
   connect(token: string): Promise<{ api: Api; account: string }>;
-  state(): State | undefined;
-  // Refuses a hostname that is not the Worker this folder deploys.
-  checkHost?(host: string): void;
-  save(state: State): void;
-  deploy(vars: { teamDomain: string; aud: string }): Promise<void>;
   linkMs?: number;
 }
+export type FormEnd = "created" | "already set up" | "expired";
 // Serves the setup page on 127.0.0.1 behind a one-time link token. `done` resolves when
 // setup succeeds or the link expires; the server is closed by then.
-export async function startForm(o: FormOptions): Promise<{ url: string; port: number; done: Promise<"created" | "expired">; close(): Promise<void> }> {
+export async function startForm(o: FormOptions): Promise<{ url: string; port: number; done: Promise<FormEnd>; close(): Promise<void> }> {
   const link = randomBytes(32).toString("hex");
   let port = 0;
   let secret: string | undefined;
   let checked: { api: Api; plan: Plan } | undefined;
   let busy = false;
-  let finish!: (how: "created" | "expired") => void;
-  const done = new Promise<"created" | "expired">((resolve) => { finish = resolve; });
+  let finish!: (how: FormEnd) => void;
+  const done = new Promise<FormEnd>((resolve) => { finish = resolve; });
   // Defense in depth: a message from anywhere never carries the pasted token.
   const clean = (message: string) => (secret ? message.split(secret).join("[token]") : message);
   const own = () => [`127.0.0.1:${port}`, `localhost:${port}`];
@@ -255,10 +289,10 @@ export async function startForm(o: FormOptions): Promise<{ url: string; port: nu
         }
         if (!checked) return send(res, 409, { error: "Check the details first." });
         const result = await apply(checked.api, checked.plan, { replaceEmail: body.replaceEmail === true, save: o.save, deploy: o.deploy });
-        send(res, 200, { created: result.created, app: result.state.apps.console, aud: result.state.aud, teamDomain: result.state.teamDomain, host: result.state.host });
+        send(res, 200, { alreadySetUp: result.alreadySetUp, created: result.created, app: result.state.apps.console, aud: result.state.aud, teamDomain: result.state.teamDomain, host: result.state.host });
         secret = undefined;
         checked = undefined;
-        setImmediate(() => finish("created"));
+        setImmediate(() => finish(result.alreadySetUp ? "already set up" : "created"));
       } finally { busy = false; }
     } catch (error) {
       if (!res.headersSent) send(res, error instanceof ProvisionError ? 422 : 500, { error: clean(error instanceof ProvisionError ? error.message : "Setup failed unexpectedly. Nothing after the last step shown ran; run setup again.") });

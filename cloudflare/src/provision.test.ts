@@ -1,6 +1,6 @@
 import { request } from "node:http";
 import { describe, expect, it } from "vitest";
-import { apply, checkInputs, cloudflare, findAccount, plan, ProvisionError, startForm, teardown, type App, type State, type Target } from "./provision.js";
+import { apply, checkInputs, cloudflare, findAccount, plan, scripted, ProvisionError, startForm, teardown, type App, type State, type Target } from "./provision.js";
 
 const ACCOUNT = "acc1";
 const HOST = "taskfast-agent.owner.workers.dev";
@@ -51,23 +51,45 @@ describe("provisioning", () => {
     const done = await apply(cf.api, p, r);
     const app = [...cf.apps.values()][0]!;
     expect(app).toMatchObject({ type: "self_hosted", domain: HOST, policies: [{ decision: "allow", include: [{ email: { email: "owner@example.com" } }] }] });
-    expect(done.state).toEqual({ account: ACCOUNT, host: HOST, teamDomain: "https://team.cloudflareaccess.com", aud: app.aud, apps: { console: app.id } });
+    expect(done.state).toEqual({ account: ACCOUNT, host: HOST, teamDomain: "https://team.cloudflareaccess.com", aud: app.aud, apps: { console: app.id }, deployed: { teamDomain: "https://team.cloudflareaccess.com", aud: app.aud } });
     expect(r.saved.at(-1)).toEqual(done.state);
     expect(r.deployed).toEqual([{ teamDomain: "https://team.cloudflareaccess.com", aud: app.aud }]);
   });
 
-  it("changes nothing on a rerun, with or without the state file", async () => {
+  it("reports already set up on a rerun and writes, saves and deploys nothing", async () => {
+    for (const webhooks of [false, true]) {
+      const cf = fakeCloudflare();
+      const r = recorder();
+      const first = await apply(cf.api, await plan(cf.api, { ...target, webhooks }), r);
+      expect(first.state.deployed).toEqual({ teamDomain: "https://team.cloudflareaccess.com", aud: first.state.aud });
+      const [writes, saves] = [cf.writes().length, r.saved.length];
+      const p = await plan(cf.api, { ...target, webhooks }, first.state);
+      expect(p.steps.every((s) => s.kind === "ok")).toBe(true);
+      const again = await apply(cf.api, p, r);
+      expect(again).toEqual({ state: first.state, created: [], alreadySetUp: true });
+      expect([cf.writes().length, r.saved.length, r.deployed.length]).toEqual([writes, saves, 1]);
+    }
+  });
+
+  it("finds its app by hostname without the state file, and redeploys because nothing records a deploy", async () => {
+    const cf = fakeCloudflare();
+    const r = recorder();
+    await apply(cf.api, await plan(cf.api, target), r);
+    const writes = cf.writes().length;
+    const p = await plan(cf.api, target);
+    expect(p.steps.filter((s) => s.kind !== "ok").map((s) => s.text)).toEqual(["Deploy the Worker with this team domain and AUD tag"]);
+    expect((await apply(cf.api, p, r)).alreadySetUp).toBe(false);
+    expect([cf.writes().length, cf.apps.size, r.deployed.length]).toEqual([writes, 1, 2]);
+  });
+
+  it("redeploys when the recorded deploy carries another AUD tag", async () => {
     const cf = fakeCloudflare();
     const r = recorder();
     const first = await apply(cf.api, await plan(cf.api, target), r);
-    const before = cf.writes().length;
-    for (const state of [first.state, undefined]) {
-      const p = await plan(cf.api, target, state);
-      expect(p.steps.filter((s) => s.kind !== "ok").map((s) => s.text)).toEqual(["Deploy the Worker with this team domain and AUD tag"]);
-      await apply(cf.api, p, r);
-    }
-    expect(cf.writes().length).toBe(before);
-    expect(cf.apps.size).toBe(1);
+    const p = await plan(cf.api, target, { ...first.state, deployed: { ...first.state.deployed!, aud: "old" } });
+    expect(p.upToDate).toBeUndefined();
+    await apply(cf.api, p, r);
+    expect(r.deployed).toHaveLength(2);
   });
 
   it("makes no write call on a dry run (plan only)", async () => {
@@ -107,7 +129,9 @@ describe("provisioning", () => {
     expect(r.saved).toHaveLength(1);
     const again = await plan(cf.api, target, r.saved[0]);
     expect(again.console?.id).toBe(r.saved[0]!.apps.console);
+    expect(again.upToDate).toBeUndefined();
     await apply(cf.api, again, r);
+    expect(r.deployed).toHaveLength(1);
     expect(cf.apps.size).toBe(1);
   });
 
@@ -219,5 +243,59 @@ describe("the local form", () => {
     const { f } = await form(undefined, 20);
     expect(await f.done).toBe("expired");
     await expect(hit(f.port, { method: "GET", path: "/" })).rejects.toThrow();
+  });
+});
+
+describe("the form and the flags", () => {
+  // Drives each entry point on its own stub and returns the Cloudflare calls it made.
+  async function viaForm(webhooks: boolean, rerun = false) {
+    const cf = fakeCloudflare();
+    const r = recorder();
+    if (rerun) await apply(cf.api, await plan(cf.api, { ...target, webhooks }), r);
+    cf.calls.length = 0;
+    const f = await startForm({ page: "", connect: async () => ({ api: cf.api, account: ACCOUNT }), state: () => r.saved.at(-1), save: r.save, deploy: r.deploy });
+    const link = new URL(f.url).hash.slice("#token=".length);
+    expect((await hit(f.port, { bearer: link, body: { token: SENTINEL, workerUrl: `https://${HOST}`, email: "owner@example.com", webhooks } })).status).toBe(200);
+    const created = await hit(f.port, { bearer: link, path: "/api/create", body: {} });
+    expect(created.status).toBe(200);
+    await f.done;
+    return { calls: cf.calls, deployed: r.deployed.length, saved: r.saved.at(-1), reply: JSON.parse(created.text) as { alreadySetUp: boolean } };
+  }
+  async function viaFlags(webhooks: boolean, rerun = false) {
+    const cf = fakeCloudflare();
+    const r = recorder();
+    if (rerun) await apply(cf.api, await plan(cf.api, { ...target, webhooks }), r);
+    cf.calls.length = 0;
+    const lines: string[] = [];
+    const done = await scripted({ workerUrl: `https://${HOST}`, email: "owner@example.com", webhooks, dryRun: false, replaceEmail: false, connect: async () => ({ api: cf.api, account: ACCOUNT }), state: () => r.saved.at(-1), save: r.save, deploy: r.deploy, log: (line) => lines.push(line) });
+    return { calls: cf.calls, deployed: r.deployed.length, saved: r.saved.at(-1), done: done!, lines };
+  }
+
+  for (const webhooks of [false, true]) {
+    it(`make the same Cloudflare calls on a fresh account${webhooks ? " with webhooks" : ""}`, async () => {
+      const [form, flags] = await Promise.all([viaForm(webhooks), viaFlags(webhooks)]);
+      expect(flags.calls.length).toBeGreaterThan(0);
+      expect(form.calls).toEqual(flags.calls);
+      expect(form.saved).toEqual(flags.saved);
+      expect([form.deployed, flags.deployed]).toEqual([1, 1]);
+    });
+
+    it(`make the same reads and no write on a rerun${webhooks ? " with webhooks" : ""}`, async () => {
+      const [form, flags] = await Promise.all([viaForm(webhooks, true), viaFlags(webhooks, true)]);
+      expect(form.calls).toEqual(flags.calls);
+      expect(flags.calls.every((c) => c.method === "GET")).toBe(true);
+      expect([form.reply.alreadySetUp, flags.done.alreadySetUp]).toEqual([true, true]);
+      expect([form.deployed, flags.deployed]).toEqual([1, 1]);
+      expect(flags.lines).toContain("Already set up: nothing changed.");
+    });
+  }
+
+  it("stops the flags path on a dry run after the same reads as the form's Check", async () => {
+    const cf = fakeCloudflare();
+    const r = recorder();
+    const done = await scripted({ workerUrl: `https://${HOST}`, email: "owner@example.com", webhooks: false, dryRun: true, replaceEmail: false, connect: async () => ({ api: cf.api, account: ACCOUNT }), state: () => undefined, save: r.save, deploy: r.deploy, log: () => {} });
+    expect(done).toBeUndefined();
+    expect(cf.writes()).toEqual([]);
+    expect([r.saved.length, r.deployed.length]).toEqual([0, 0]);
   });
 });

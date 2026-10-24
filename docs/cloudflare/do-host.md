@@ -75,7 +75,7 @@ node cloudflare/provision.mjs --worker-url https://<worker>.<subdomain>.workers.
 node cloudflare/provision.mjs --teardown
 ```
 
-`cloudflare/.access.json` (mode 0600, git-ignored) records the account, hostname, team domain, AUD tag and app IDs. A rerun finds the apps by those IDs, or by the hostname and setup's app name when the file is gone, and changes nothing that is already right. Teardown deletes only the recorded apps that still cover their hostname. The policies are inline, so deleting an app deletes its policy.
+`cloudflare/.access.json` (mode 0600, git-ignored) records the account, hostname, team domain, AUD tag and app IDs, and, after a deploy succeeds, the team domain and AUD tag that deploy carried. A rerun finds the apps by those IDs, or by the hostname and setup's app name when the file is gone, and changes nothing that is already right. When Access matches and the file records a deploy with the same team domain and AUD tag, the rerun reports "Already set up" and writes, saves and deploys nothing. Without that record it redeploys. Teardown deletes only the recorded apps that still cover their hostname. The policies are inline, so deleting an app deletes its policy.
 
 ### Creating the token
 
@@ -104,6 +104,8 @@ The dashboard screenshots for steps 2, 5 and 9 come from the TaskFast team, capt
 | An Access app for the hostname that setup did not make | Refuses and leaves it alone | `provision.test.ts` |
 | A different owner email than the app lets in | Changes the policy only after the owner confirms | `provision.test.ts` |
 | The deploy fails after the app exists | The app is already recorded; a rerun only redeploys | `provision.test.ts` |
+| A rerun with the same inputs after a recorded deploy | Reports "Already set up"; no write, save or deploy | `provision.test.ts` |
+| The form and the flags, given the same inputs | The same Cloudflare calls, state and deploys | `provision.test.ts` |
 | The link's 15 minutes pass | The page stops answering and setup exits | `provision.test.ts` |
 
 `findAccount` lists `/accounts` with the token and needs exactly one. Whether an account token with only these two permissions can list its account has not run against Cloudflare; `--account-id` or `CLOUDFLARE_ACCOUNT_ID` skips the lookup. No part of this has run against a live Cloudflare account yet.

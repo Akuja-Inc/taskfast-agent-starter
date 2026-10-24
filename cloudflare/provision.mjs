@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { apply, checkInputs, cloudflare, findAccount, plan, ProvisionError, startForm, teardown, view } from "./src/provision.ts";
+import { cloudflare, findAccount, ProvisionError, scripted, startForm, teardown } from "./src/provision.ts";
 
 const HERE = import.meta.dirname;
 const STATE = join(HERE, ".access.json");
@@ -71,19 +71,15 @@ try {
     process.exit(kept.length ? 1 : 0);
   }
   if (flags["worker-url"] !== undefined || flags.email !== undefined) {
-    const { host, email } = checkInputs(flags["worker-url"], flags.email);
-    sameWorker(host);
-    const token = process.env.CLOUDFLARE_ACCESS_TOKEN;
-    if (!token) throw new ProvisionError("Set CLOUDFLARE_ACCESS_TOKEN to the scoped token in this shell, without echoing it, or run without flags to use the setup page.");
-    const { api, account } = await connect(token);
-    const p = await plan(api, { account, host, email, webhooks: flags.webhooks === true }, readState());
-    const shown = view(p);
-    console.log(`Account ${account}, Worker ${shown.host}, team ${shown.teamDomain}`);
-    for (const step of shown.steps) console.log(`  ${step.kind.padEnd(6)} ${step.text}`);
-    if (flags["dry-run"]) process.exit(0);
-    const done = await apply(api, p, { replaceEmail: flags["replace-email"] === true, save, deploy });
-    for (const line of done.created) console.log(`made: ${line}`);
-    console.log(`Access app ${done.state.apps.console}, AUD ${done.state.aud}`);
+    await scripted({
+      workerUrl: flags["worker-url"], email: flags.email, webhooks: flags.webhooks === true, dryRun: flags["dry-run"] === true, replaceEmail: flags["replace-email"] === true,
+      checkHost: sameWorker, state: readState, save, deploy, log: (line) => console.log(line),
+      connect: async () => {
+        const token = process.env.CLOUDFLARE_ACCESS_TOKEN;
+        if (!token) throw new ProvisionError("Set CLOUDFLARE_ACCESS_TOKEN to the scoped token in this shell, without echoing it, or run without flags to use the setup page.");
+        return connect(token);
+      },
+    });
     process.exit(0);
   }
   const env = config().vars?.CLI_ENV ?? "";
@@ -95,7 +91,7 @@ try {
   });
   console.log(`Open this link to protect your agent (this computer only, for 15 minutes):\n  ${form.url}`);
   const how = await form.done;
-  console.log(how === "created" ? "Access is set up. Setup has stopped." : "The setup link expired. Run setup again for a new one.");
+  console.log(how === "created" ? "Access is set up. Setup has stopped." : how === "already set up" ? "Already set up: nothing changed. Setup has stopped." : "The setup link expired. Run setup again for a new one.");
 } catch (error) {
   const said = error instanceof ProvisionError ? error.message : `Setup failed unexpectedly: ${error?.name}: ${error?.message}`;
   console.error(_token ? said.split(_token).join("[token]") : said);
