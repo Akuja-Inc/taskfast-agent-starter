@@ -5,5 +5,20 @@
       "maxFindings": 5,
       "maxChars": 8000
     }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "icon-tile-stack",
+        "value": "*",
+        "files": [
+          "cloudflare/provision-page.html"
+        ],
+        "createdAt": "2026-10-24T04:12:56.106Z",
+        "reason": "agent triage: the brand square sits beside the h1 in a flex row (see one-column-v2 screenshots), not above it; it is DESIGN.md's pictogram square"
+      }
+    ]
   }
 }

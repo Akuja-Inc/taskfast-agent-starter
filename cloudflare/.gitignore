@@ -3,3 +3,6 @@ node_modules/
 # The owner's agent.json and INSTRUCTIONS.md for this deployment
 agent/
 .dev.vars
+# Access app IDs and AUD tag that provision.mjs made (never the token)
+.access.json
+.access.json.tmp

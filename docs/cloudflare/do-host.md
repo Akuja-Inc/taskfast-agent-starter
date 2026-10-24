@@ -9,7 +9,7 @@ This is how one owner's agent runs on their own Cloudflare account (#144). It co
 - **The CLI Container** (`cloudflare/cli/`) runs the pinned `taskfast` release behind `GET /health` and `POST /run`. Each call gets a fresh folder holding the agent's TaskFast config and, for a signing command only, the keystore and password, laid out as `.taskfast/wallet.json` and `.taskfast/wallet-password`. The Container deletes the folder afterwards. Only the Agent DO's binding reaches it.
 - **The marketplace path** is `containerCommand()` in `cloudflare/src/container.ts`. It sends only the commands the kit sends (`COMMANDS`: every tool's, plus policy's upload cleanup and the bond token read) and refuses anything else before it leaves the DO. It sends the wallet only with `post`, `settle`, `escrow sign` and `bond post`, the commands `signs()` in `src/core/cli.ts` names. It maps the CLI's stdout with the same `cliOutcome` as the local host, so `REFUSED` keeps its meaning.
 
-Secrets, set with `wrangler secret put`: `CONSOLE_TOKEN` (64 hex characters, the console page's bearer token), `TASKFAST_CONFIG` (the text of the agent's `.taskfast/config.json`) `WEBHOOK_SECRET` (the signing secret `taskfast webhook register` returns once), `MODEL_SETTINGS` (a JSON object of provider settings, like the folder's `.env`), and `WALLET_KEYSTORE` and `WALLET_PASSWORD` (the text of `.taskfast/wallet.json` and the one-line password) for an agent that signs. Signing needs `keystore_path` set to `.taskfast/wallet.json` in the config. Vars in `wrangler.jsonc`: `AGENT_ID`, `CLI_ENV` (`prod`, `staging` or `local`), `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The owner's `agent.json` and `INSTRUCTIONS.md` go in the git-ignored `cloudflare/agent/` folder and are bundled at deploy.
+Secrets, set with `wrangler secret put`: `CONSOLE_TOKEN` (64 hex characters, the console page's bearer token), `TASKFAST_CONFIG` (the text of the agent's `.taskfast/config.json`), `WEBHOOK_SECRET` (the signing secret `taskfast webhook register` returns once), `MODEL_SETTINGS` (a JSON object of provider settings, like the folder's `.env`), and `WALLET_KEYSTORE` and `WALLET_PASSWORD` (the text of `.taskfast/wallet.json` and the one-line password) for an agent that signs. Signing needs `keystore_path` set to `.taskfast/wallet.json` in the config. Vars in `wrangler.jsonc`: `AGENT_ID`, `CLI_ENV` (`prod`, `staging` or `local`), `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. The owner's `agent.json` and `INSTRUCTIONS.md` go in the git-ignored `cloudflare/agent/` folder and are bundled at deploy.
 
 A provider setting that names a file, such as a Google Vertex credentials file, does not work from a secret. Use a provider whose key is a plain setting. Artifacts need no R2. Policy writes a submit's text files to `/tmp/agent/.pi-state/artifacts/` in the DO just before dispatch. `containerCommand` reads each `--artifact` file there and sends it in the call body, and the Container writes it into the per-call folder. Five text files of 256 KiB fit in the Container's 2 MiB body limit. A DO's `/tmp` is memory and is lost on eviction, but the files only live between policy's write and the dispatch in one tool call; an eviction there is the `uncertain` path. Binary `media:` files cannot occur: they come from approved MCP tools, and this host connects no MCP server. Durable storage such as R2 becomes necessary only when remote MCP is wired in, because a media handle must outlive a turn.
 
@@ -81,6 +81,64 @@ TaskFast posts each marketplace event to `POST /webhooks/taskfast`. That one pat
 The platform makes at most 3 attempts, then drops the event. The local host's `dead-letter.jsonl` has no counterpart here; the 15-minute alarm check is what catches work a dropped event announced.
 
 Setup, once, with the local host for that folder stopped: run `taskfast webhook register --url https://<worker>/webhooks/taskfast --secret-file <file>` from the agent's folder, then `wrangler secret put WEBHOOK_SECRET` with that file's contents, then `taskfast webhook subscribe`. In Cloudflare Access, add a self-hosted application for the path `/webhooks/taskfast` with a Bypass policy. Otherwise Access answers TaskFast's posts with its login page and no event arrives.
+
+## Setting up Access
+
+The owner never configures Access in the Cloudflare dashboard. They create one scoped API token once, then run:
+
+```bash
+pnpm setup-agent cloudflare-access
+```
+
+It opens a page at `http://127.0.0.1:<port>/#token=<link token>` for 15 minutes. The page asks for the token, the Worker URL and the owner's email. **Check** shows what exists and what setup would make, and writes nothing. **Create** then does three things. It makes a self-hosted Access app for the Worker's hostname with one Allow policy for exactly that email. It writes the team domain and the app's AUD tag into `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `wrangler.jsonc`. It runs `wrangler deploy --containers-rollout=none` with the owner's own Wrangler login. With the webhook box ticked it also makes a Bypass app for `/webhooks/taskfast`.
+
+The email must be an address the owner can receive mail at now. At each sign-in Cloudflare emails a one-time code to it. It becomes the only address the Access policy allows, and any other address is refused. The policy lives in Zero Trust → Access → Applications → `TaskFast agent <worker hostname>` → Policies. To change the address, run setup again with the new email and confirm the change on the page, or pass `--replace-email` to the scripted run.
+
+![The setup page](access-setup/form.png)
+
+Wrangler cannot do this itself. Its OAuth login has no Access scope, and `wrangler login --scopes` accepts only its fixed list. So the token is the one extra consent.
+
+The token is held in memory until setup exits and is sent only in the `Authorization` header to `api.cloudflare.com`. It is never logged, saved, echoed in a response or the page, or passed to Wrangler. Scripted runs read it from `CLOUDFLARE_ACCESS_TOKEN`, never `CLOUDFLARE_API_TOKEN`, which Wrangler would use in place of its login:
+
+```bash
+node cloudflare/provision.mjs --worker-url https://<worker>.<subdomain>.workers.dev --email <you> --dry-run
+node cloudflare/provision.mjs --teardown
+```
+
+`cloudflare/.access.json` (mode 0600, git-ignored) records the account, hostname, team domain, AUD tag and app IDs, and, after a deploy succeeds, the team domain and AUD tag that deploy carried. A rerun finds the apps by those IDs, or by the hostname and setup's app name when the file is gone, and changes nothing that is already right. When Access matches and the file records a deploy with the same team domain and AUD tag, the rerun reports "Already set up" and writes, saves and deploys nothing. Without that record it redeploys. Teardown deletes only the recorded apps that still cover their hostname. The policies are inline, so deleting an app deletes its policy.
+
+### Creating the token
+
+Never paste the token into a chat, issue or message, including to an agent. Paste it only into the setup page.
+
+1. Sign in to the Cloudflare dashboard on the account that hosts the agent.
+2. Open **Manage Account → API Tokens**. If setup says Cloudflare does not accept the token, use **My Profile → API Tokens** instead. (Screenshot pending.)
+3. Click **Create Token**, then **Create Custom Token**.
+4. Name it `taskfast-access-setup`.
+5. Add two permissions in the **Account** group: **Access: Apps and Policies → Edit** (some dashboards say Write) and **Access: Organizations, Identity Providers, and Groups → Read**. Add nothing else. (Screenshot pending.)
+6. Set Account Resources to **Include → your one account**.
+7. Client IP Address Filtering is optional.
+8. Set a TTL. Seven days is enough for setup; delete the token afterwards.
+9. Click **Continue to summary**, check it lists only those two permissions on one account, then **Create Token**. (Screenshot pending.)
+
+The dashboard screenshots for steps 2, 5 and 9 come from the TaskFast team, captured on a test account with every identifier removed. Until then the page shows a "Screenshot pending" slot for each.
+
+| Setup meets | It does | Test |
+|---|---|---|
+| A foreign `Host` or `Origin` | 403 | `provision.test.ts` |
+| A missing or wrong link token, including another site's form post | 401 | `provision.test.ts` |
+| A second request while one runs, or Create before Check | 409 | `provision.test.ts` |
+| A Worker URL that is not `https://<name>.<subdomain>.workers.dev`, or not the `name` in `wrangler.jsonc` | Refused before any Cloudflare call | `provision.test.ts`; `provision.mjs` |
+| A token Cloudflare rejects, or one missing a permission | Names the missing permission; nothing is written | `provision.test.ts` |
+| No Zero Trust organization | Says to open Zero Trust once to create the team | `provision.test.ts` |
+| An Access app for the hostname that setup did not make | Refuses and leaves it alone | `provision.test.ts` |
+| A different owner email than the app lets in | Changes the policy only after the owner confirms | `provision.test.ts` |
+| The deploy fails after the app exists | The app is already recorded; a rerun only redeploys | `provision.test.ts` |
+| A rerun with the same inputs after a recorded deploy | Reports "Already set up"; no write, save or deploy | `provision.test.ts` |
+| The form and the flags, given the same inputs | The same Cloudflare calls, state and deploys | `provision.test.ts` |
+| The link's 15 minutes pass | The page stops answering and setup exits | `provision.test.ts` |
+
+`findAccount` lists `/accounts` with the token and needs exactly one. Whether an account token with only these two permissions can list its account has not run against Cloudflare; `--account-id` or `CLOUDFLARE_ACCOUNT_ID` skips the lookup. No part of this has run against a live Cloudflare account yet.
 
 ## What the console shows
 
