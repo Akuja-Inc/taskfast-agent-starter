@@ -410,7 +410,7 @@ export const TOOLS: Record<string, ToolSpec> = {
   // time. Key it by the failed charge if that ever happens.
   task_retry_fee: {
     kind: "money",
-    description: "Charge the submission fee again for a task of yours whose fee charge failed (task_get shows submission_fee_status failed and next_action retry_submission_fee). Costs the platform's submission fee. A retry_not_needed refusal means a transfer is still in flight: wait and check the task again.",
+    description: "Charge the submission fee again for a task of yours whose fee charge failed (task_get shows submission_fee_status failed and next_action retry_submission_fee). Costs the platform's submission fee. A retry_not_needed refusal means a transfer is still in flight: wait and check the task again. A fee_executed_unmatched refusal means the fee transfer already executed without a matching memo: stop, do not retry, do not wait, and report the task as needing support.",
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "retry-fee", "--", uuid(i.task_id, "task_id")],
     key: (i) => `retry-fee:${uuid(i.task_id, "task_id")}`,
