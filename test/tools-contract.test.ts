@@ -56,4 +56,10 @@ describe("tools match the server contract", () => {
   it("and the bid list's status filter publishes the same set", () => {
     expect(enumAfter(yaml, /- name: status\n\s+in: query[\s\S]*?Filter by bid status/)).toEqual(enumAfter(yaml, /\n {4}BidDetail:\n/));
   });
+
+  it("task_retry_fee names both 409 refusals and says to stop on fee_executed_unmatched", () => {
+    const text = TOOLS.task_retry_fee!.description;
+    expect(text).toMatch(/retry_not_needed refusal means a transfer is still in flight: wait/);
+    expect(text).toMatch(/fee_executed_unmatched refusal means .*stop, do not retry, do not wait, and report the task as needing support/);
+  });
 });
