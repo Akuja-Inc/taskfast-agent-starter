@@ -3,22 +3,14 @@ import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader
 import { runCli, type CliResult, type Outcome } from "./cli.js";
 import { agentDirectory } from "./folder.js";
 import { clearOwnUploads, materializeArtifacts, type ResolvedFile } from "./artifacts.js";
-import { overLimit, priceOf, today } from "./money.js";
+import { priceOf, reserve, recheck, settle, today, type Action, type Ledger } from "./money.js";
 import { addNote, removeNote } from "./notes.js";
 import { FROZEN, Operator } from "./operator.js";
 import { prepare, UUID } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
 
-export type Action = {
-  status: "reserved" | "done" | "failed" | "uncertain";
-  at: string;
-  amount: number;
-  day: string;
-};
-type PolicyState = {
+type PolicyState = Ledger & {
   identity: { env: Runtime["env"]; agentId: string } | null;
-  actions: Record<string, Action>;
-  spend: Record<string, number>;
   memory: string[];
 };
 
@@ -145,39 +137,23 @@ export function marketplacePolicy(o: PolicyOptions) {
       // positional delimiter, so the command commits exactly what was reserved.
       const at = args.includes("--") ? args.indexOf("--") : args.length;
       const dispatch = [...args.slice(0, at), ...price.flags, ...args.slice(at)];
+      // Only money tools carry the owner's limits into the ledger transitions.
+      const limits = spec.kind === "money" ? o.spec.limits : undefined;
+      // reserve: reservation and funds are atomic and durably committed BEFORE dispatch.
       const refusal = await commit(async (tx): Promise<Json> => {
         const state = await tx.doc(Policy);
         const prior = state.actions[key];
         if (prior && prior.status !== "failed") return skipped(prior);
         if (spec.kind === "money" && (await tx.doc(Operator)).frozen) return { refused: FROZEN };
-        const day = today(now());
-        const over = overLimit(o.spec.limits, state.spend[day] ?? 0, amount);
-        if (over && spec.kind === "money") return { refused: over };
-        // Reservation and funds are atomic and durably committed BEFORE dispatch.
-        state.actions[key] = { status: "reserved", at: now().toISOString(), amount, day };
-        state.spend[day] = (state.spend[day] ?? 0) + amount;
-        return null;
+        const over = reserve(state, key, { amount, limits, day: today(now()), at: now().toISOString() });
+        return over ? { refused: over } : null;
       });
       if (refusal !== null) return refusal;
-      // Check again at dispatch, including midnight rollover. The reservation is
-      // already counted, so exclude this action while testing its own limit.
+      // recheck: check again at dispatch, including midnight rollover. The reservation
+      // is already counted, so recheck excludes this action while testing its own limit.
       const over = await commit(async (tx) => {
         const state = await tx.doc(Policy);
-        const action = state.actions[key];
-        const day = today(now());
-        const other = (state.spend[day] ?? 0) - (action.day === day ? amount : 0);
-        const refused = spec.kind === "money" ? overLimit(o.spec.limits, other, amount) : null;
-        if (refused) {
-          state.spend[action.day] -= amount;
-          action.status = "failed";
-          return refused;
-        }
-        if (action.day !== day) {
-          state.spend[action.day] -= amount;
-          state.spend[day] = (state.spend[day] ?? 0) + amount;
-          action.day = day;
-        }
-        return null;
+        return recheck(state, key, { limits, day: today(now()) });
       });
       if (over) return { refused: over };
       // Pi owns this invocation. An abort/close after the server reads may revoke
@@ -190,12 +166,10 @@ export function marketplacePolicy(o: PolicyOptions) {
       // call known: the CLI may have signed before it refused, so a failure that would
       // otherwise release the money stays uncertain and never repeats.
       const outcome: Outcome = result.outcome === "failed" && spec.kind === "money" && spec.spendAfterPreflight === true ? "uncertain" : result.outcome;
+      // settle: the ledger records the outcome; only a refusal releases the money.
       await commit(async (tx) => {
         const state = await tx.doc(Policy);
-        const action = state.actions[key];
-        action.status = outcome === "ok" ? "done" : outcome;
-        action.at = now().toISOString();
-        if (outcome === "failed") state.spend[action.day] -= action.amount;
+        settle(state, key, outcome, now().toISOString());
       });
       return outcome === "ok" ? result.data ?? null : { [outcome]: result.error ?? "" };
     });
