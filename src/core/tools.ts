@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { MEDIA_FILES, MEDIA_PATH, MEDIA_TYPES, VIDEO_LIMIT, type MediaType } from "./media.js";
+import { artifacts, MAX_ARTIFACTS, MAX_ARTIFACT_BYTES, MEDIA_FILES, NAMES, VIDEO_LIMIT, type ArtifactFile } from "./artifacts.js";
 
 // The tools an agent's model can call. Each one maps to a taskfast command (or, for
 // memory, to the agent's own notes). The model only fills in values: every value is
@@ -20,11 +20,11 @@ interface ToolBase {
   description: string;
   schema: Schema;
   args(input: Record<string, unknown>): string[];
+  delivery?: "submit" | "remedy";
   // Files policy writes inside the agent folder before dispatch: folder-relative paths
   // code builds, with the model's text or the bytes of a media file code saved.
   files?(input: Record<string, unknown>): ArtifactFile[];
 }
-export type ArtifactFile = { path: string; content: string } | { path: string; media: string; digest: string };
 export type ToolSpec =
   | (ToolBase & { kind: "read" | "memory"; amount?: never; key?: never })
   | (ToolBase & { kind: "write"; amount?: never; key(input: Record<string, unknown>): string })
@@ -116,49 +116,10 @@ const criterionList = {
 const PAGE = { cursor: s("next_cursor from the previous page, to read the next one"), limit: { type: "number", description: "page size, 1-100" } };
 const page = (i: Record<string, unknown>) => [...opt("cursor", i.cursor, cursor), ...opt("limit", i.limit, limit)];
 
-// Artifacts are files the kit writes: text the model writes, or media an approved MCP
-// tool returned, which code saved under .pi-state/media and named by a media: handle.
-// Code stores each one under a folder it builds from the task and the bytes' digest, and
-// passes that path. The model names the file, because a task's criteria can require one
-// such as results.json; the name is one basename with an extension the server accepts,
-// so it cannot leave its folder. The CLI picks the upload's type from that extension, so
-// a media name must end in its handle's own type.
-export const ARTIFACTS_PATH = ".pi-state/artifacts";
-const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.([a-z0-9]+)$/;
-const TEXT_NAMES = ["txt", "md", "csv", "json", "xml", "html", "css", "js", "svg"];
-// Each binary extension a name may end in, by the media type of its file; .jpeg names a .jpg.
-const MEDIA_NAMES: Record<string, MediaType> = { ...Object.fromEntries(Object.values(MEDIA_TYPES).map((type) => [type.ext, type])), jpeg: MEDIA_TYPES["image/jpeg"]! };
-const MEDIA_HANDLE = new RegExp(`^media:([0-9a-f]{16})\\.(${Object.values(MEDIA_TYPES).map((type) => type.ext).join("|")})$`);
-const NAMES = [...TEXT_NAMES, ...Object.keys(MEDIA_NAMES)].map((ext) => `.${ext}`).join(", ");
-const MAX_ARTIFACTS = 5;
-const MAX_ARTIFACT_BYTES = 256 * 1024;
-function artifacts(v: unknown, task: string): ArtifactFile[] {
-  if (v === undefined) return [];
-  if (!Array.isArray(v) || v.length < 1 || v.length > MAX_ARTIFACTS) bad(`artifacts must be a list of 1 to ${MAX_ARTIFACTS} files`);
-  const names = new Set<string>();
-  return (v as unknown[]).map((a): ArtifactFile => {
-    if (a === null || typeof a !== "object" || Object.keys(a).some((k) => k !== "name" && k !== "content" && k !== "media") || ("content" in a) === ("media" in a)) bad("each artifact is { name, content } or { name, media }");
-    const { name, content, media } = a as Record<string, unknown>;
-    const ext = typeof name === "string" ? ARTIFACT_NAME.exec(name)?.[1] : undefined;
-    if (!ext || !(TEXT_NAMES.includes(ext) || Object.hasOwn(MEDIA_NAMES, ext)) || names.has(name as string)) bad(`artifact name must be a unique file name like results.json or chart.png, ending in ${NAMES}`);
-    names.add(name as string);
-    if (media !== undefined) {
-      const handle = typeof media === "string" ? MEDIA_HANDLE.exec(media) : null;
-      if (!handle) bad(`artifact ${name as string} media must be a handle a tool result gave you, like media:0123456789abcdef.png`);
-      const [, hash, type] = handle!;
-      if (MEDIA_NAMES[ext!]?.ext !== type) bad(`artifact ${name as string} must end in ${Object.keys(MEDIA_NAMES).filter((n) => MEDIA_NAMES[n]!.ext === type).map((n) => `.${n}`).join(" or ")} to match its media`);
-      return { path: `${ARTIFACTS_PATH}/${task}/${hash}/${name as string}`, media: `${MEDIA_PATH}/${hash}.${type}`, digest: hash! };
-    }
-    if (!TEXT_NAMES.includes(ext!)) bad(`artifact ${name as string} is a binary file: deliver it as { name, media } with a handle a tool result gave you`);
-    const bytes = typeof content === "string" ? Buffer.byteLength(content) : 0;
-    if (bytes < 1 || bytes > MAX_ARTIFACT_BYTES) bad(`artifact ${name as string} content must be 1 to ${MAX_ARTIFACT_BYTES} bytes of text`);
-    return { path: `${ARTIFACTS_PATH}/${task}/${digest(content as string)}/${name as string}`, content: content as string };
-  });
-}
 const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
 const artifactList = {
   type: "array",
-  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to 256 KiB, SVG included) as { name, content }, or a binary file a tool result saved as media:<file>, ${MEDIA_FILES}, as { name, media }. ${VIDEO_LIMIT} You cannot make binary bytes yourself; deliver them only by handle`,
+  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to ${MAX_ARTIFACT_BYTES / 1024} KiB, SVG included) as { name, content }, or a binary file a tool result saved as media:<file>, ${MEDIA_FILES}, as { name, media }. ${VIDEO_LIMIT} You cannot make binary bytes yourself; deliver them only by handle`,
   items: obj({
     name: s(`file name a criterion may require, e.g. results.json or chart.png; ends in ${NAMES}`),
     content: s("the file's full text, for a text file"),
@@ -168,15 +129,6 @@ const artifactList = {
 // The CLI uploads each file, then submits exactly those uploads.
 const deliver = (command: string) => (i: Record<string, unknown>) =>
   ["task", command, `--summary=${text(i.summary, "summary")}`, ...artifactFiles(i).map((f) => `--artifact=${f.path}`), "--", uuid(i.task_id, "task_id")];
-
-// This agent's uploads in `artifact list` output (data.artifacts[]), or null when the
-// output is not that shape or an id is not a UUID.
-export function ownUploads(data: unknown, agentId: string): string[] | null {
-  const rows = typeof data === "object" && data !== null && "artifacts" in data ? data.artifacts : null;
-  if (!Array.isArray(rows)) return null;
-  const ids = rows.filter((row) => typeof row?.uploaded_by_id === "string" && row.uploaded_by_id.toLowerCase() === agentId).map((row) => row.id);
-  return ids.every((id) => typeof id === "string" && UUID.test(id)) ? ids : null;
-}
 
 export const TOOLS: Record<string, ToolSpec> = {
   me: { kind: "read", description: "Your own agent profile and whether you are ready to work.", schema: obj({}), args: () => ["me"] },
@@ -344,6 +296,7 @@ export const TOOLS: Record<string, ToolSpec> = {
     description: "Submit your finished work on a task, with a summary and any files it needs.",
     schema: obj({ task_id: s("task UUID"), summary: s("what you delivered"), artifacts: artifactList }, ["task_id", "summary"]),
     args: deliver("submit"),
+    delivery: "submit",
     files: artifactFiles,
     key: (i) => `submit:${uuid(i.task_id, "task_id")}`,
   },
@@ -353,6 +306,7 @@ export const TOOLS: Record<string, ToolSpec> = {
     description: "Resubmit revised work on a task disputed against you, with a summary and any files it needs.",
     schema: obj({ task_id: s("task UUID"), summary: s("what you changed and delivered"), artifacts: artifactList }, ["task_id", "summary"]),
     args: deliver("remedy"),
+    delivery: "remedy",
     files: artifactFiles,
     key: (i) => `remedy:${uuid(i.task_id, "task_id")}:${digest(JSON.stringify([text(i.summary, "summary"), artifactFiles(i).map((f) => f.path)]))}`,
   },

@@ -12,7 +12,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { failingStorage } from "../../test/failing-storage.js";
 import { openMarketplaceAgent, type MarketplaceAgent } from "./agent.js";
 import type { CliResult } from "./cli.js";
-import { MEDIA_TYPES, mediaDigest } from "./media.js";
+import { MEDIA_TYPES, mediaDigest } from "./artifacts.js";
 import type { OperatorState } from "./operator.js";
 import type { AgentSpec } from "./types.js";
 import { parseAgentSpec } from "./spec.js";

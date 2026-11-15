@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CliResult } from "../src/core/cli.js";
 import { amountOf } from "../src/core/money.js";
-import { ownUploads } from "../src/core/tools.js";
+import { ownUploads } from "../src/core/artifacts.js";
 
 // The money parsers against what the real taskfast binary prints (see
 // test/fixtures/cli/README.md), not against output this package invented: 0.19.0 for the

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { ownUploads, prepare, TOOLS } from "./tools.js";
+import { prepare, TOOLS } from "./tools.js";
 
 const T = "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b";
 
@@ -242,36 +242,6 @@ describe("artifacts", () => {
     expect(prepare("task_remedy", { task_id: T, summary: "Revised again", artifacts: [results] }).key).not.toBe(key);
   });
 
-  it.each([
-    ["a path", { name: "../results.json", content: "x" }, /artifact name/],
-    ["a folder", { name: "out/results.json", content: "x" }, /artifact name/],
-    ["a hidden file", { name: ".env.txt", content: "x" }, /artifact name/],
-    ["a flag", { name: "--env=prod.txt", content: "x" }, /artifact name/],
-    ["a type the CLI cannot upload", { name: "letter.docx", media: `media:${D}.pdf` }, /artifact name/],
-    ["audio", { name: "voice.mp3", media: `media:${D}.mp3` }, /artifact name/],
-    ["PDF text from the model", { name: "report.pdf", content: "x" }, /report.pdf is a binary file: deliver it as \{ name, media \}/],
-    ["a document type mismatch", { name: "report.doc", media: `media:${D}.pdf` }, /report.doc must end in .pdf/],
-    ["an archive named for a tarball", { name: "bundle.tar", media: `media:${D}.gz` }, /bundle.tar must end in .gz/],
-    ["empty content", { name: "a.txt", content: "" }, /a.txt content must be 1 to 262144 bytes/],
-    ["content over 256 KiB", { name: "a.txt", content: "é".repeat(131073) }, /content must be 1 to 262144 bytes/],
-    ["an extra field", { name: "a.txt", content: "x", path: "/etc/passwd" }, /each artifact is \{ name, content \}/],
-    ["both content and media", { name: "logo.png", content: "x", media: `media:${D}.png` }, /each artifact is \{ name, content \} or \{ name, media \}/],
-    ["neither content nor media", { name: "a.txt" }, /each artifact is \{ name, content \} or \{ name, media \}/],
-    ["image text from the model", { name: "logo.png", content: "x" }, /logo.png is a binary file: deliver it as \{ name, media \}/],
-    ["video text from the model", { name: "clip.mp4", content: "x" }, /deliver it as \{ name, media \}/],
-    ["a video type mismatch", { name: "clip.mov", media: `media:${D}.mp4` }, /clip.mov must end in .mp4/],
-    ["an image name for a video", { name: "clip.png", media: `media:${D}.webm` }, /clip.png must end in .webm/],
-    ["a path-shaped video handle", { name: "clip.mp4", media: "media:../clip.mp4" }, /media must be a handle/],
-    ["a media path", { name: "logo.png", media: ".pi-state/media/0123456789abcdef.png" }, /media must be a handle/],
-    ["a traversing handle", { name: "logo.png", media: "media:../x.png" }, /media must be a handle/],
-    ["a short digest", { name: "logo.png", media: "media:abc.png" }, /media must be a handle/],
-    ["an absolute path", { name: "logo.png", media: "/etc/passwd" }, /media must be a handle/],
-    ["a handle for another type", { name: "logo.jpg", media: `media:${D}.png` }, /logo.jpg must end in .png to match its media/],
-    ["a text name for media", { name: "notes.txt", media: `media:${D}.png` }, /notes.txt must end in .png/],
-  ])("refuses an artifact with %s", (_n, artifact, why) => {
-    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [artifact] })).toThrow(why);
-  });
-
   it("delivers an SVG the model writes as text", () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
     expect(prepare("task_submit", { task_id: T, summary: "Done", artifacts: [{ name: "diagram.svg", content: svg }] }).files).toEqual([{ path: at("diagram.svg", svg), content: svg }]);
@@ -311,19 +281,5 @@ describe("artifacts", () => {
     expect(Object.keys(TOOLS.task_remedy!.schema.properties.artifacts!.items!.properties)).toEqual(["name", "content", "media"]);
   });
 
-  it("refuses an empty list, more than five files and repeated names", () => {
-    const file = (n: number) => ({ name: `part${n}.txt`, content: "x" });
-    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [] })).toThrow(/1 to 5 files/);
-    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [1, 2, 3, 4, 5, 6].map(file) })).toThrow(/1 to 5 files/);
-    expect(() => prepare("task_submit", { task_id: T, summary: "Done", artifacts: [file(1), file(1)] })).toThrow(/unique/);
-  });
 
-  it("reads this agent's own uploads from real `taskfast artifact list` output", () => {
-    const me = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
-    const row = (id: string, by: string) => ({ id, uploaded_by_id: by });
-    const other = "550e8400-e29b-41d4-a716-446655440009";
-    expect(ownUploads({ artifacts: [row(other, T), row("550e8400-e29b-41d4-a716-446655440001", me.toUpperCase())] }, me)).toEqual(["550e8400-e29b-41d4-a716-446655440001"]);
-    expect(ownUploads({ artifacts: [row("--env=prod", me)] }, me)).toBeNull();
-    expect(ownUploads({ data: [] }, me)).toBeNull();
-  });
 });

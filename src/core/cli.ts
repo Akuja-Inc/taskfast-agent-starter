@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { isAbsolute } from "node:path";
 import type { Json, Runtime } from "./types.js";
 import { agentDirectory } from "./folder.js";
+import { writeArtifactFiles, type ResolvedFile } from "./artifacts.js";
 
 // How a command ended, from the agent's side:
 // - ok: the CLI reported success.
@@ -37,7 +38,7 @@ export const signs = (args: string[]): boolean =>
 // Runs one command with the agent's env before the subcommand, its own TaskFast
 // config, and a clean environment. Only signing commands receive the host's file
 // path, as one option before the positional delimiter; no password is inherited.
-export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promise<CliResult> {
+export function runCli(rt: Runtime, args: string[], files: ResolvedFile[] = [], timeoutMs = 120_000): Promise<CliResult> {
   let commandArgs = args;
   if (rt.walletPasswordFile !== undefined) {
     let file: string;
@@ -49,6 +50,8 @@ export function runCli(rt: Runtime, args: string[], timeoutMs = 120_000): Promis
       commandArgs = [...args.slice(0, at), `--wallet-password-file=${file}`, ...args.slice(at)];
     }
   }
+  try { writeArtifactFiles(agentDirectory(rt), files); }
+  catch (error) { return Promise.resolve({ outcome: "failed", error: `could not write the artifact files: ${error instanceof Error ? error.message : String(error)}` }); }
   return new Promise((resolve) => {
     execFile(taskfastBin(), ["--env", rt.env, ...commandArgs], { env: cliEnv(rt), cwd: agentDirectory(rt), timeout: timeoutMs, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
       resolve(cliOutcome(stdout, err ? err.message : undefined, stderr));

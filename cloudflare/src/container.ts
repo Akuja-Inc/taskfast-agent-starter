@@ -1,10 +1,7 @@
 // The Durable Object's marketplace path (#144 option A): one `taskfast` process per
 // command in a stateless Container that only this DO can reach. The Container
 // returns the CLI's stdout unchanged, so `cliOutcome` and REFUSED keep their meaning.
-import { readFileSync } from "node:fs";
 import { cliOutcome, signs, type CliResult } from "../../src/core/cli.js";
-import { folderFile } from "../../src/core/folder.js";
-import { ARTIFACTS_PATH } from "../../src/core/tools.js";
 import type { Command } from "../../src/core/policy.js";
 
 // The command paths the kit sends: every tool's (src/core/tools.ts), plus the reads
@@ -35,28 +32,12 @@ export interface ContainerCall { args: string[]; config: string; keystore?: stri
 export interface ContainerReply { stdout: string; stderr: string; failure?: string }
 export interface Wallet { keystore: string; password: string }
 
-// The files a submit or remedy names (--artifact=<folder-relative path>), read from the
-// folder policy just wrote them to, so the Container can recreate them per call.
-function artifacts(args: string[], folder: string): ContainerCall["files"] {
-  const files: NonNullable<ContainerCall["files"]> = [];
-  for (const arg of args) {
-    if (arg === "--") break;
-    if (!arg.startsWith("--artifact=")) continue;
-    const path = arg.slice("--artifact=".length);
-    if (!path.startsWith(`${ARTIFACTS_PATH}/`)) throw new Error(`artifact outside ${ARTIFACTS_PATH}: ${path}`);
-    files.push({ path, base64: readFileSync(folderFile({ agentDir: folder, path, resource: "artifact" })).toString("base64") });
-  }
-  return files.length ? files : undefined;
-}
-
-export function containerCommand(o: { ready(): Promise<boolean>; call(body: ContainerCall): Promise<Response>; config: string; wallet?: Wallet; folder: string }): Command {
-  return async (runtime, args): Promise<CliResult> => {
+export function containerCommand(o: { ready(): Promise<boolean>; call(body: ContainerCall): Promise<Response>; config: string; wallet?: Wallet }): Command {
+  return async (runtime, args, suppliedFiles): Promise<CliResult> => {
     if (!COMMANDS.has(commandPath(args))) return { outcome: "failed", error: `unsupported: the kit does not send "${commandPath(args)}"` };
     const signing = signs(args);
     if (signing && !o.wallet) return { outcome: "failed", error: "keystore: the WALLET_KEYSTORE and WALLET_PASSWORD secrets are not set" };
-    let files: ContainerCall["files"];
-    try { files = artifacts(args, o.folder); }
-    catch (error) { return { outcome: "failed", error: `usage: ${error instanceof Error ? error.message : String(error)}` }; }
+    const files = suppliedFiles?.map(({ path, bytes }) => ({ path, base64: bytes.toString("base64") }));
     // A cold or failing Container is found before the command leaves the DO, so it
     // stays a known refusal. The library retries only this readiness, never a request.
     let ready = false;

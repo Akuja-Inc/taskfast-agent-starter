@@ -36,7 +36,7 @@ interface Env {
 }
 
 // Stands in for the agent's folder. Policy writes a submit's files here just before
-// dispatch; the DO's memory-backed /tmp loses them on eviction, which is the uncertain path.
+// dispatch, then passes their resolved bytes to the Command adapter.
 const FOLDER = "/tmp/agent";
 
 export class Cli extends Container {
@@ -66,7 +66,6 @@ export class Agent extends DurableObject<Env> {
       command: containerCommand({
         config: secrets?.config ?? "",
         ...(secrets?.wallet ? { wallet: secrets.wallet } : {}),
-        folder: FOLDER,
         // One Container instance per agent, addressed only through this binding.
         ready: async () => (await cli().fetch("http://cli/health")).ok,
         call: (body) => cli().fetch("http://cli/run", { method: "POST", body: JSON.stringify(body) }),
