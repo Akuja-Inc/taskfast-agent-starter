@@ -6,6 +6,7 @@ import { createTimeout } from "retry";
 import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, InboxDoc, type Conversation, type InboxItem, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration, type Tx } from "@earendil-works/pi-durable";
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
+import { addNote, removeNote, replaceNote } from "./notes.js";
 import { agentDirectory, providerSettings } from "./folder.js";
 import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult, type WithdrawResult } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
@@ -504,11 +505,10 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       changeNote: (at, text) => conversation.commit(async (tx) => {
         const state = await tx.doc(Policy);
         if (at && state.memory[at.index] !== at.expect) return "changed" as const;
-        // One prompt line per note, as orders keep it.
-        const note = text?.replace(/[\r\n]+/g, " ") ?? null;
-        if (!at) state.memory.push(note as string);
-        else if (note === null) state.memory.splice(at.index, 1);
-        else state.memory[at.index] = note;
+        // The console counts notes from 0; the prompt numbers them from 1.
+        if (!at) addNote(state.memory, text as string);
+        else if (text === null) removeNote(state.memory, at.index + 1);
+        else replaceNote(state.memory, at.index + 1, text);
         return "done" as const;
       }, context),
       events: async () => (await owner.snapshot(Events, context))?.events ?? {},

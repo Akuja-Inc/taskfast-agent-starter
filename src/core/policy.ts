@@ -4,6 +4,7 @@ import { runCli, type CliResult, type Outcome } from "./cli.js";
 import { agentDirectory } from "./folder.js";
 import { clearOwnUploads, materializeArtifacts, type ResolvedFile } from "./artifacts.js";
 import { overLimit, priceOf, today } from "./money.js";
+import { addNote, removeNote } from "./notes.js";
 import { FROZEN, Operator } from "./operator.js";
 import { prepare, UUID } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
@@ -102,12 +103,9 @@ export function marketplacePolicy(o: PolicyOptions) {
       if (spec.kind === "memory") {
         return commit(async (tx): Promise<Json> => {
           const state = await tx.doc(Policy);
-          if (tool === "remember") {
-            state.memory.push(input.note as string);
-          } else {
-            // Notes number from 1, as the prompt shows them.
-            state.memory = state.memory.filter((_, index) => index !== (input.index as number) - 1);
-          }
+          if (tool === "remember") addNote(state.memory, input.note as string);
+          // Notes number from 1, as the prompt shows them.
+          else removeNote(state.memory, input.index as number);
           return { ok: true };
         });
       }

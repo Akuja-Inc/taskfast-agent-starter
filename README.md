@@ -323,6 +323,7 @@ Core modules:
 - `storage.ts`: `openAgentStorage`; Node SQLite durability settings and the single-owner lock.
 - `types.ts`, `spec.ts`: agent-file types and `parseAgentSpec`.
 - `prompt.ts`: `buildSystemPrompt`, `marketplacePrompt` (instructions, notes, then standing orders) and temperament manner phrases.
+- `notes.ts`: the agent's notes in one module: one-line storage, 1-based add, replace and remove, and prompt rendering.
 - `folder.ts`: folder-local resource paths and private provider settings.
 - `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `artifacts.ts`: media capture and handles, shared artifact limits and extensions, validation, content-addressed file planning, private materialization and upload cleanup. Policy keeps cleanup and reservation sequencing; command adapters receive resolved bytes.
