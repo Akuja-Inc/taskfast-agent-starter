@@ -1,7 +1,7 @@
 import { McpAbortError, McpClient, McpTimeoutError, StreamableHttpTransport, type McpTransport, type Tool } from "@earendil-works/pi-mcp";
 import { OwnedStdioTransport } from "./mcp-transport.js";
 import { mcpOutput } from "./mcp-output.js";
-import { saveMedia, VIDEO_LIMIT } from "./media.js";
+import { saveMedia, VIDEO_LIMIT } from "./artifacts.js";
 import { CleanupError } from "./cleanup-error.js";
 import type { TSchema } from "@earendil-works/pi-ai";
 import { defineTool, ROOT_CONVERSATION_ID, type ToolRegistration } from "@earendil-works/pi-durable";

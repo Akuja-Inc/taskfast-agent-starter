@@ -1,6 +1,6 @@
 import { toLlmContent, type CallToolResult } from "@earendil-works/pi-mcp";
 import { redact } from "./mcp-config.js";
-import { isMediaType, omittedLine } from "./media.js";
+import { isMediaType, omittedLine } from "./artifacts.js";
 
 const MAX_BYTES = 32 * 1024;
 const TRUNCATED = "\n[truncated]";

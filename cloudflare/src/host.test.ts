@@ -85,7 +85,7 @@ describe("agentHost", () => {
     // The real Container command with a stand-in Container: it answers the identity
     // read and refuses the bid the way the CLI does (exit 7, code validation).
     const sent: ContainerCall[] = [];
-    const command = containerCommand({ config: "{}", folder: "/nonexistent", ready: async () => true, call: async (body) => {
+    const command = containerCommand({ config: "{}", ready: async () => true, call: async (body) => {
       sent.push(body);
       return body.args[2] === "me"
         ? Response.json({ stdout: JSON.stringify({ ok: true, data: { profile: { id: AGENT_ID } } }), stderr: "" })

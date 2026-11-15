@@ -29,7 +29,7 @@ What it showed (wrangler 4.152.0, workerd 1.20261019.1):
 What it did not show:
 
 - No deployed DO and no eviction under Cloudflare's own scheduler. `wrangler dev` runs the same workerd and SQLite storage locally.
-- `src/core/agent.ts` does not load in a DO as it is. These core modules import Node APIs that workerd lacks or stubs: `cli.ts` (child processes), `storage.ts` (`node:sqlite` and the owner lock), `folder.ts`, `jsonl.ts`, `mcp-config.ts`, `media.ts`, `model.ts`, `policy.ts`, `pump.ts` and `skills.ts` (files). PR3 must put storage, the CLI runner and the folder reads behind seams.
+- `src/core/agent.ts` does not load in a DO as it is. These core modules import Node APIs that workerd lacks or stubs: `cli.ts` (child processes), `storage.ts` (`node:sqlite` and the owner lock), `folder.ts`, `jsonl.ts`, `mcp-config.ts`, `artifacts.ts`, `model.ts`, `policy.ts`, `pump.ts` and `skills.ts` (files). PR3 must put storage, the CLI runner and the folder reads behind seams.
 
 ## CLI spike
 

@@ -1,13 +1,11 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader, type Tx } from "@earendil-works/pi-durable";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import { runCli, type CliResult, type Outcome } from "./cli.js";
-import { agentDirectory, folderFile } from "./folder.js";
-import { mediaDigest } from "./media.js";
+import { agentDirectory } from "./folder.js";
+import { clearOwnUploads, materializeArtifacts, type ResolvedFile } from "./artifacts.js";
 import { overLimit, priceOf, today } from "./money.js";
 import { FROZEN, Operator } from "./operator.js";
-import { ownUploads, prepare, UUID, type ArtifactFile } from "./tools.js";
+import { prepare, UUID } from "./tools.js";
 import type { AgentSpec, Json, Runtime } from "./types.js";
 
 export type Action = {
@@ -31,7 +29,7 @@ export const Policy = defineDoc<PolicyState>({
   initial: () => ({ identity: null, actions: {}, spend: {}, memory: [] }),
 });
 const context = BACKGROUND_CONTEXT;
-export type Command = (runtime: Runtime, args: string[]) => Promise<CliResult>;
+export type Command = (runtime: Runtime, args: string[], files?: ResolvedFile[]) => Promise<CliResult>;
 export interface PolicyOptions {
   conversation: Conversation;
   read: DocumentReader;
@@ -90,40 +88,6 @@ export function marketplacePolicy(o: PolicyOptions) {
       }
     });
   }
-  // Paths are content-addressed, so writing one again is harmless. A media file must
-  // still hold the bytes its handle names, since the action key is built from them.
-  function writeFiles(files: ArtifactFile[]): string | null {
-    try {
-      const agentDir = agentDirectory(o.runtime);
-      for (const file of files) {
-        let content: string | Buffer;
-        if ("media" in file) {
-          const source = folderFile({ agentDir, path: file.media, resource: "media" });
-          if (!existsSync(source)) throw new Error(`media file not found: ${file.media}`);
-          content = readFileSync(source);
-          if (mediaDigest(content) !== file.digest) throw new Error(`media file changed since it was saved: ${file.media}`);
-        } else content = file.content;
-        const path = folderFile({ agentDir, path: file.path, resource: "artifact" });
-        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-        writeFileSync(path, content, { mode: 0o600 });
-      }
-      return null;
-    } catch (error) {
-      return `could not write the artifact files: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  }
-  // Each delete is safe to repeat; anything short of ok refuses, and the next try lists again.
-  // ponytail: one page of 100 uploads; page with --cursor if a task ever holds more.
-  async function clearUploads(task: string, agentId: string, dispatchDelete: (args: string[]) => Promise<CliResult>): Promise<string | null> {
-    const list = await command(o.runtime, ["artifact", "list", "--limit=100", "--", task]);
-    const ids = list.outcome === "ok" ? ownUploads(list.data, agentId) : null;
-    if (!ids) return `could not list earlier uploads: ${list.error ?? "unreadable artifact list"}`;
-    for (const id of ids) {
-      const done = await dispatchDelete(["artifact", "delete", "--", task, id]);
-      if (done.outcome !== "ok") return `could not delete earlier upload ${id}: ${done.error ?? done.outcome}`;
-    }
-    return null;
-  }
   async function execute(call: {
     tool: string;
     input: unknown;
@@ -155,19 +119,22 @@ export function marketplacePolicy(o: PolicyOptions) {
       const state = await snapshot();
       const prior = state.actions[key];
       if (prior && prior.status !== "failed") return skipped(prior);
+      let resolved: ResolvedFile[] = [];
       if (files.length) {
-        const written = writeFiles(files);
-        if (written) return { refused: written };
+        try { resolved = materializeArtifacts(agentDirectory(o.runtime), files); }
+        catch (error) { return { refused: `could not write the artifact files: ${error instanceof Error ? error.message : String(error)}` }; }
       }
       // A submit can upload and then be refused (criteria unmet), and the CLI reports a
       // refusal, so a resubmit would pile copies on the task. On a task still being
       // submitted every upload of ours is such a leftover: delete them first.
-      if (tool === "task_submit" && files.length) {
-        const cleared = await clearUploads(input.task_id as string, state.identity!.agentId, async (args) => {
+      if (spec.delivery === "submit" && files.length) {
+        const cleared = await clearOwnUploads(input.task_id as string, state.identity!.agentId, async (args) => {
           // Cleanup is repeat-safe, but each delete is still a write. The invocation's
           // bound commit rejects durable abort marks and closure before dispatch.
-          await commit(async () => {});
-          signal?.throwIfAborted();
+          if (args[1] === "delete") {
+            await commit(async () => {});
+            signal?.throwIfAborted();
+          }
           return command(o.runtime, args);
         });
         if (cleared) return { refused: cleared };
@@ -219,7 +186,7 @@ export function marketplacePolicy(o: PolicyOptions) {
       // it before dispatch; bound commits also reject durable abort marks.
       signal?.throwIfAborted();
       let result: CliResult;
-      try { result = await command(o.runtime, dispatch); }
+      try { result = await command(o.runtime, dispatch, resolved.length ? resolved : undefined); }
       catch (error) { result = { outcome: "uncertain", error: error instanceof Error ? error.message : String(error) }; }
       // A money tool that can spend after its own preflight has no failure the kit can
       // call known: the CLI may have signed before it refused, so a failure that would

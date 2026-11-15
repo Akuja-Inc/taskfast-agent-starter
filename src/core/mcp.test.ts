@@ -8,7 +8,7 @@ import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/
 import { FILES, PNG } from "../../test/fixtures/mcp/server.mjs";
 import { connectMcp, discoverMcp, type McpTools } from "./mcp.js";
 import { loadMcpConfig } from "./mcp-config.js";
-import { mediaDigest, MEDIA_TYPES } from "./media.js";
+import { mediaDigest, MEDIA_TYPES } from "./artifacts.js";
 
 const dirs: string[] = [];
 const open: McpTools[] = [];

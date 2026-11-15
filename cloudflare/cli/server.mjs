@@ -13,7 +13,7 @@ const MAX_BODY = 2 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 const text = (value, max) => typeof value === "string" && value.length <= max;
 
-function valid(body) {
+export function valid(body) {
   return body && Array.isArray(body.args) && body.args.length <= 64 && body.args.every((arg) => text(arg, 8192) && !arg.includes("\0"))
     && text(body.config, 64 * 1024)
     && (body.keystore === undefined) === (body.password === undefined)
@@ -56,7 +56,7 @@ function run({ args, config, keystore, password, files = [] }) {
   });
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const send = (status, body) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
   if (req.method === "GET" && req.url === "/health") return send(200, { ok: true });
   if (req.method !== "POST" || req.url !== "/run") return send(404, { error: "not found" });
@@ -67,5 +67,7 @@ createServer(async (req, res) => {
   try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return send(400, { error: "not JSON" }); }
   if (!valid(body)) return send(400, { error: "args must be strings, config a string, and keystore and password both or neither" });
   send(200, await run(body));
-  // 8080 is the Container class's defaultPort; PORT is only for running the image on a host network.
-}).listen(Number(process.env.PORT ?? 8080));
+});
+// 8080 is the Container class's defaultPort; PORT is only for running the image on a host network.
+// Only the real server listens, so a test import of valid() does not bind a port.
+if (process.argv[1]?.endsWith("server.mjs")) server.listen(Number(process.env.PORT ?? 8080));

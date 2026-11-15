@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TOOLS } from "../src/core/tools.js";
-import { MEDIA_TYPES } from "../src/core/media.js";
+import { MEDIA_TYPES } from "../src/core/artifacts.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):

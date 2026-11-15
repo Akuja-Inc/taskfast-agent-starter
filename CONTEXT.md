@@ -110,6 +110,12 @@ An entry in `tools.ts`:
 - **money:** a write that commits funds, with an amount from the server.
 - **memory:** changes only notes; also registered unsafe to replay.
 
+**Artifact:**
+A file the kit writes: captured media with its issued `media:` handle, or a text file the model wrote in a tool call. `artifacts.ts` owns capture, handles, validation, content-addressed file plans, materialization and upload cleanup. Policy materializes files and verifies media digests before reservation, then passes the resolved `{ path, bytes }` files explicitly through `Command`.
+
+**Upload:**
+A copy of an artifact already on the TaskFast server. A refused delivery can leave uploads behind. Before a submit with files, policy asks the artifact module to clear only this agent's earlier uploads on the task. Remedies never clear the original delivery.
+
 **Action key:**
 The identity of a write, such as `bid:<task>` or `escrow:<bid>`. Two attempts with the same key are the same action.
 

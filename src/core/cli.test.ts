@@ -1,5 +1,5 @@
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, it, vi } from "vitest";
 import { runCli } from "./cli.js";
@@ -64,4 +64,39 @@ it.each(["relative.pw", "/tmp/invalid\0.pw"])("refuses invalid host file paths b
   const runtime = { ...commandFixture(), walletPasswordFile: file };
   vi.stubEnv("TASKFAST_BIN", "/missing/taskfast");
   expect(await runCli(runtime, ["post", "--title=Guide"])).toEqual({ outcome: "failed", error: "config: wallet password file must be an absolute path without NUL" });
+});
+
+it("delivers exact bytes through a real child, including repeated writes", async () => {
+  const runtime = commandFixture();
+  const dir = dirname(runtime.configPath);
+  const path = ".pi-state/artifacts/task/hash/bytes.png";
+  const bytes = Buffer.from([0, 255, 128, 10, 42]);
+  writeFileSync(join(dir, "taskfast"), `#!${process.execPath}
+import {readFileSync} from "node:fs";
+const path = process.argv.find((arg) => arg.startsWith("--artifact=")).slice("--artifact=".length);
+process.stdout.write(JSON.stringify({ok:true,data:{base64:readFileSync(path).toString("base64"),environmentNames:Object.keys(process.env).sort()}}));
+`, { mode: 0o700 });
+  for (let i = 0; i < 2; i++) {
+    expect(await runCli(runtime, ["task", "submit", `--artifact=${path}`], [{ path, bytes }], 1000)).toEqual({
+      outcome: "ok", data: { base64: bytes.toString("base64"), environmentNames: ["HOME", "PATH", "TASKFAST_CONFIG"] },
+    });
+  }
+});
+
+it("refuses unsafe artifact paths before spawning a child", async () => {
+  const runtime = commandFixture();
+  const dir = dirname(runtime.configPath);
+  const marker = join(dir, "spawned");
+  writeFileSync(join(dir, "taskfast"), `#!${process.execPath}\nimport {writeFileSync} from "node:fs";writeFileSync(${JSON.stringify(marker)}, "spawned");\n`, { mode: 0o700 });
+  const outside = mkdtempSync(join(tmpdir(), "cli-outside-"));
+  directories.push(outside);
+  mkdirSync(join(dir, ".pi-state"));
+  symlinkSync(outside, join(dir, ".pi-state/artifacts"));
+  for (const path of ["../escape.txt", join(outside, "absolute.txt"), ".pi-state/artifacts/linked.txt"]) {
+    const result = await runCli(runtime, ["task", "submit", `--artifact=${path}`], [{ path, bytes: Buffer.from("no") }]);
+    expect(result.outcome).toBe("failed");
+    expect(result.error).toContain("could not write the artifact files: artifact must");
+    expect(existsSync(marker)).toBe(false);
+  }
+  expect(readdirSync(outside)).toEqual([]);
 });
