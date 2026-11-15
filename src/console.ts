@@ -3,7 +3,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { consoleNavigation } from "./console-navigation.js";
 import { PAGE } from "./console-page.js";
-import type { EventWork, MarketplaceAgent } from "./core/agent.js";
+import type { MarketplaceAgent } from "./core/agent.js";
+import type { EventWork } from "./core/events.js";
 import type { Action } from "./core/money.js";
 import { marketplacePrompt } from "./core/prompt.js";
 import { parseAgentSpec } from "./core/spec.js";

@@ -316,8 +316,10 @@ Compaction summarizes older model context; it does not erase stored history or t
 
 Core modules:
 
-- `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; admits events and exposes `deliver`, `ping`, `recover`, `status`, `operator`, `transcript`, `changes` (every commit), `waitForIdle` and `close`.
-- `operator.ts`: session-scoped `taskfast.operator` document (pause, freeze, queued messages, standing orders, checked alerts) and `openOperatorQueue`, the operator message queue: serialized admission, request-ID dedupe, the queue view, steer promotion, withdrawal and the drain. `agent.ts` wires it and answers "may I schedule?". Contract and transition table: [docs/plans/gh158-operator-queue.md](docs/plans/gh158-operator-queue.md).
+- `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; wires the operator queue, event work and scheduling gate; keeps polling, quiescence and owner controls; exposes `deliver`, `ping`, `recover`, `status`, `operator`, `transcript`, `changes` (every commit), `waitForIdle` and `close`.
+- `operator.ts`: session-scoped `taskfast.operator` document (pause, freeze, queued messages, standing orders, checked alerts) and `openOperatorQueue`, the operator message queue: serialized admission, request-ID dedupe, the queue view, steer promotion, withdrawal and the drain. The scheduling gate answers "may I schedule?". Contract and transition table: [docs/plans/gh158-operator-queue.md](docs/plans/gh158-operator-queue.md).
+- `events.ts`: `openEventWork`, the unchanged version 1 `taskfast.events` document, event-ID admission dedupe, submission settlement, persisted jittered retry delays and abandonment. Exports `EventWork` and `EVENT_RETRY`.
+- `gate.ts`: `openSchedulingGate`, the shared pause, hold and close check, single-flight recovery and fresh passes after owner changes. Event and gate contracts and transition tables: [docs/plans/gh160-event-work-gate.md](docs/plans/gh160-event-work-gate.md).
 - `timeline.ts`: `buildTimeline`, which groups a transcript into turns for the console.
 - `policy.ts`: session-scoped `Policy` and `marketplacePolicy`; owns permanent action reservations, spending by UTC day, notes and marketplace identity. Only the root conversation may act.
 - `storage.ts`: `openAgentStorage`; Node SQLite durability settings and the single-owner lock.
