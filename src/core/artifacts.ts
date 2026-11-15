@@ -10,7 +10,7 @@ const bad = (why: string): never => { throw new Error(why); };
 // Media an approved MCP tool returns, kept as files so the model can deliver them by
 // handle without ever holding their bytes or naming a path. The server stores whatever
 // type the CLI reports from the file name and never checks the bytes, so these do.
-export const MEDIA_PATH = ".pi-state/media";
+const MEDIA_PATH = ".pi-state/media";
 // One base64 video fits the existing 80 MiB MCP message budget. The server's
 // 200 MiB video cap is not reachable through this pinned transport and timeout.
 export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
@@ -86,11 +86,11 @@ export type ArtifactFile = { path: string; content: string } | { path: string; m
 // such as results.json; the name is one basename with an extension the server accepts,
 // so it cannot leave its folder. The CLI picks the upload's type from that extension, so
 // a media name must end in its handle's own type.
-export const ARTIFACTS_PATH = ".pi-state/artifacts";
+const ARTIFACTS_PATH = ".pi-state/artifacts";
 const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}\.([a-z0-9]+)$/;
 export const TEXT_NAMES = ["txt", "md", "csv", "json", "xml", "html", "css", "js", "svg"];
 // Each binary extension a name may end in, by the media type of its file; .jpeg names a .jpg.
-export const MEDIA_NAMES: Record<string, MediaType> = { ...Object.fromEntries(Object.values(MEDIA_TYPES).map((type) => [type.ext, type])), jpeg: MEDIA_TYPES["image/jpeg"]! };
+const MEDIA_NAMES: Record<string, MediaType> = { ...Object.fromEntries(Object.values(MEDIA_TYPES).map((type) => [type.ext, type])), jpeg: MEDIA_TYPES["image/jpeg"]! };
 const MEDIA_HANDLE = new RegExp(`^media:([0-9a-f]{16})\\.(${Object.values(MEDIA_TYPES).map((type) => type.ext).join("|")})$`);
 export const NAMES = [...TEXT_NAMES, ...Object.keys(MEDIA_NAMES)].map((ext) => `.${ext}`).join(", ");
 export const MAX_ARTIFACTS = 5;

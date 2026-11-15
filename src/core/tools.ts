@@ -20,7 +20,7 @@ interface ToolBase {
   description: string;
   schema: Schema;
   args(input: Record<string, unknown>): string[];
-  delivery?: "submit" | "remedy";
+  delivery?: "submit";
   // Files policy writes inside the agent folder before dispatch: folder-relative paths
   // code builds, with the model's text or the bytes of a media file code saved.
   files?(input: Record<string, unknown>): ArtifactFile[];
@@ -306,7 +306,6 @@ export const TOOLS: Record<string, ToolSpec> = {
     description: "Resubmit revised work on a task disputed against you, with a summary and any files it needs.",
     schema: obj({ task_id: s("task UUID"), summary: s("what you changed and delivered"), artifacts: artifactList }, ["task_id", "summary"]),
     args: deliver("remedy"),
-    delivery: "remedy",
     files: artifactFiles,
     key: (i) => `remedy:${uuid(i.task_id, "task_id")}:${digest(JSON.stringify([text(i.summary, "summary"), artifactFiles(i).map((f) => f.path)]))}`,
   },

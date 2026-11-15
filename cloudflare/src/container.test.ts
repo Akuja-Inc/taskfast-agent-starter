@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { artifacts } from "../../src/core/artifacts.js";
 import { TOOLS } from "../../src/core/tools.js";
 import { SAMPLES } from "../../test/cli-parity.js";
+import { valid } from "../cli/server.mjs";
 import { commandPath, COMMANDS, containerCommand, type ContainerCall } from "./container.js";
 
 const runtime = { env: "staging" as const, configPath: "/bundle/agent/.taskfast/config.json" };
@@ -63,17 +65,28 @@ describe("containerCommand", () => {
   it.each(["submit", "remedy"])("ships only explicit bytes for %s, without reading a folder or parsing argv", async (kind) => {
     const { sent, run } = command(ok);
     const bytes = Buffer.from([0, 255, 1, 128, 10]);
-    const path = ".pi-state/artifacts/no-such-folder/bytes.png";
+    const path = artifacts([{ name: "out.txt", content: "the delivery" }], TASK)[0]!.path;
     await run(runtime, ["task", kind, "--summary=Done", `--artifact=${ARTIFACT}`, "--", TASK], [{ path, bytes }]);
     expect(sent[0].args).toContain(`--artifact=${ARTIFACT}`);
     expect(sent[0].files).toEqual([{ path, base64: bytes.toString("base64") }]);
     expect(Buffer.from(sent[0].files![0].base64, "base64")).toEqual(bytes);
   });
+  it("ships a call body the Container's own validator accepts", async () => {
+    const { sent, run } = command(ok);
+    const path = artifacts([{ name: "out.txt", content: "the delivery" }], TASK)[0]!.path;
+    const bytes = Buffer.from([0, 255, 1, 128, 10]);
+    await run(runtime, ["task", "submit", "--summary=Done", `--artifact=${ARTIFACT}`, "--", TASK], [{ path, bytes }]);
+    expect(valid(sent[0])).toBe(true);
+    // The Container only takes the kit's own layout; a drifted path answers 400, which
+    // the DO records as uncertain and never retries.
+    expect(valid({ ...sent[0], files: [{ path: ".pi-state/artifacts/other/bytes.png", base64: bytes.toString("base64") }] })).toBe(false);
+  });
   it("does not recover files from argv when no bytes were supplied", async () => {
     const { sent, run } = command(ok);
     await run(runtime, ["task", "submit", "--artifact=/no/such/file", "--", TASK]);
     expect(sent[0].files).toBeUndefined();
-  });  it("refuses a command the kit never sends", async () => {
+  });
+  it("refuses a command the kit never sends", async () => {
     const { sent, run } = command(ok);
     expect((await run(runtime, ["webhook", "register"])).outcome).toBe("failed");
     expect((await run(runtime, ["config", "set", "environment", "prod"])).outcome).toBe("failed");
