@@ -1,13 +1,13 @@
-import type { CliResult } from "./cli.js";
+import type { CliResult, Outcome } from "./cli.js";
 import type { AmountSource } from "./tools.js";
-import type { ActionRecord, Limits, Spend } from "./types.js";
+import type { Limits } from "./types.js";
 
-// Money policy for the two money tools, as pure functions: where an amount comes from,
-// whether it fits the agent's own limits, and today's spend (UTC).
+// Money policy as pure functions: where an amount comes from, whether it fits the
+// agent's own limits, and the ledger transitions policy.ts drives around each
+// dispatch. The transitions have no I/O and no clock reads: callers pass the day
+// and the time, so tests drive them directly.
 
 export const today = (now = new Date()): string => now.toISOString().slice(0, 10);
-export const spentToday = (spend: Spend, now = new Date()): number => (spend.day === today(now) ? spend.usd : 0);
-export const addSpend = (spend: Spend, usd: number, now = new Date()): Spend => ({ day: today(now), usd: spentToday(spend, now) + usd });
 
 // Why a money action of this amount would break the agent's own limits, or null.
 // No limits set: nothing is checked.
@@ -15,6 +15,60 @@ export function overLimit(limits: Limits | undefined, spent: number, amount: num
   if (limits?.perJobUsd !== undefined && amount > limits.perJobUsd) return `over your limit: $${amount} is more than your $${limits.perJobUsd} per job`;
   if (limits?.dailyUsd !== undefined && spent + amount > limits.dailyUsd) return `over your limit: $${spent} spent today plus $${amount} is more than your $${limits.dailyUsd} a day`;
   return null;
+}
+
+// One reserved or settled marketplace action, and the ledger of actions and spend
+// by UTC day. Spend is committed at reservation; entries and daily records are
+// never evicted (known refusals release the amount, uncertain keeps it counted).
+export type Action = {
+  status: "reserved" | "done" | "failed" | "uncertain";
+  at: string;
+  amount: number;
+  day: string;
+};
+export type Ledger = {
+  actions: Record<string, Action>;
+  spend: Record<string, number>;
+};
+
+// Commits one action's funds in the same step as its reservation: writes the
+// `reserved` action and adds to the day's spend, or returns why it is refused.
+export function reserve(ledger: Ledger, key: string, move: { amount: number; limits: Limits | undefined; day: string; at: string }): string | null {
+  const over = overLimit(move.limits, ledger.spend[move.day] ?? 0, move.amount);
+  if (over) return over;
+  ledger.actions[key] = { status: "reserved", at: move.at, amount: move.amount, day: move.day };
+  ledger.spend[move.day] = (ledger.spend[move.day] ?? 0) + move.amount;
+  return null;
+}
+
+// Checks the amount fixed at reservation again right before dispatch, against the
+// spend of the day now, excluding this action's own reservation. The UTC day may
+// have rolled over since: the amount moves to the new day. A refusal releases the
+// reserved spend and marks the action failed, so only a refusal can be retried.
+export function recheck(ledger: Ledger, key: string, check: { limits: Limits | undefined; day: string }): string | null {
+  const action = ledger.actions[key];
+  const other = (ledger.spend[check.day] ?? 0) - (action.day === check.day ? action.amount : 0);
+  const refused = overLimit(check.limits, other, action.amount);
+  if (refused) {
+    ledger.spend[action.day] -= action.amount;
+    action.status = "failed";
+    return refused;
+  }
+  if (action.day !== check.day) {
+    ledger.spend[action.day] -= action.amount;
+    ledger.spend[check.day] = (ledger.spend[check.day] ?? 0) + action.amount;
+    action.day = check.day;
+  }
+  return null;
+}
+
+// Records the dispatch outcome. `ok` settles as `done`; spend is released only for
+// a known refusal (`failed`), because money that may have moved stays counted.
+export function settle(ledger: Ledger, key: string, outcome: Outcome, at: string): void {
+  const action = ledger.actions[key];
+  action.status = outcome === "ok" ? "done" : outcome;
+  action.at = at;
+  if (outcome === "failed") ledger.spend[action.day] -= action.amount;
 }
 
 type Bid = { id?: unknown; agent_id?: unknown; price?: unknown };
@@ -112,29 +166,4 @@ async function tokenDecimals(token: string, read: (args: string[]) => Promise<Cl
   const decoded = (r.data as { decoded?: unknown } | null)?.decoded;
   const decimals = Array.isArray(decoded) ? Number(decoded[0]) : NaN;
   return Number.isInteger(decimals) && decimals >= 0 && decimals <= 36 ? decimals : `the bond token decimals are not usable (${JSON.stringify(decoded)})`;
-}
-
-// Pure money helpers retained for package consumers. The Pi adapter uses amountOf
-// and overLimit inside its session-level reservation/accounting protocol.
-
-// Fixes the amount from the server and checks it against the agent's own limits.
-export async function authorize(source: AmountSource, input: Record<string, unknown>, limits: Limits | undefined, spend: Spend, read: (args: string[]) => Promise<CliResult>): Promise<{ amount: number } | { refused: string }> {
-  const amount = await amountOf(source, input, read);
-  if (typeof amount === "string") return { refused: amount };
-  const over = overLimit(limits, spentToday(spend), amount);
-  return over ? { refused: over } : { amount };
-}
-
-// Checks the amount fixed at arm time again, against today's spend now. A money action
-// with no fixed amount is refused rather than checked as a guess.
-export function recheck(amount: number | undefined, limits: Limits | undefined, spend: Spend): string | null {
-  if (amount === undefined) return "no amount was fixed for this money action";
-  return overLimit(limits, spentToday(spend), amount);
-}
-
-// The spend after a money action ended with this status. Money that may have moved
-// counts, the conservative side, as the treasury does: done and uncertain are counted,
-// only a refusal (failed) is not.
-export function account(spend: Spend, amount: number, status: ActionRecord["status"], now = new Date()): Spend {
-  return status === "failed" ? spend : addSpend(spend, amount, now);
 }

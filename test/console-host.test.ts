@@ -12,7 +12,7 @@ import type { CliResult } from "../src/core/cli.js";
 import { CleanupError } from "../src/core/cleanup-error.js";
 import { openAgentStorage } from "../src/core/storage.js";
 import { initialOperator } from "../src/core/operator.js";
-import type { Action } from "../src/core/policy.js";
+import type { Action } from "../src/core/money.js";
 import type { MarketEvent } from "../src/core/types.js";
 import { runAgents, type AgentHandle, type RunOptions } from "../src/run.js";
 import { copyExample, example } from "./example.js";

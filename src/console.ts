@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { consoleNavigation } from "./console-navigation.js";
 import { PAGE } from "./console-page.js";
 import type { EventWork, MarketplaceAgent } from "./core/agent.js";
-import type { Action } from "./core/policy.js";
+import type { Action } from "./core/money.js";
 import { marketplacePrompt } from "./core/prompt.js";
 import { parseAgentSpec } from "./core/spec.js";
 import { buildTimeline } from "./core/timeline.js";

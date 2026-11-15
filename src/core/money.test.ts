@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { CliResult } from "./cli.js";
-import { account, addSpend, amountOf, authorize, overLimit, recheck, spentToday, today } from "./money.js";
+import type { CliResult, Outcome } from "./cli.js";
+import { amountOf, overLimit, recheck, reserve, settle, today, type Ledger } from "./money.js";
+import type { Limits } from "./types.js";
 
 const T = "4b7e9c1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b";
 const B = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 const NOON = new Date("2026-10-10T12:00:00Z");
+// The UTC rollover boundary: reserved just before midnight, dispatched just after.
+const EVE = new Date("2026-10-10T23:59:59Z");
+const NEXT = new Date("2026-10-11T00:00:00Z");
 
 describe("overLimit", () => {
   it("checks nothing without limits", () => {
@@ -20,13 +24,94 @@ describe("overLimit", () => {
   });
 });
 
-describe("spend by UTC day", () => {
-  it("adds to today's spend and starts a new day at zero", () => {
-    expect(today(NOON)).toBe("2026-10-10");
-    expect(addSpend({ day: "2026-10-10", usd: 10 }, 5, NOON)).toEqual({ day: "2026-10-10", usd: 15 });
-    expect(addSpend({ day: "2026-10-09", usd: 999 }, 5, NOON)).toEqual({ day: "2026-10-10", usd: 5 });
-    expect(spentToday({ day: "2026-10-09", usd: 999 }, NOON)).toBe(0);
+describe("reserve", () => {
+  const AT = "2026-10-10T12:00:00.000Z";
+  const reserveBid = (l: Ledger, key: string, amount: number, limits?: Limits) => reserve(l, key, { amount, limits, day: "2026-10-10", at: AT });
+
+  it("commits the spend at reservation, with and without limits", () => {
+    const noLimits: Ledger = { actions: {}, spend: {} };
+    expect(reserveBid(noLimits, "bid:b1", 5)).toBeNull();
+    expect(noLimits.actions["bid:b1"]).toEqual({ status: "reserved", at: AT, amount: 5, day: "2026-10-10" });
+    expect(noLimits.spend).toEqual({ "2026-10-10": 5 });
+    const limited: Ledger = { actions: {}, spend: {} };
+    expect(reserveBid(limited, "bid:b1", 5, { dailyUsd: 50 })).toBeNull();
+    expect(limited.spend).toEqual({ "2026-10-10": 5 });
   });
+
+  it("a daily limit counts prior reservations", () => {
+    const l: Ledger = { actions: {}, spend: {} };
+    expect(reserveBid(l, "bid:b1", 30, { dailyUsd: 50 })).toBeNull();
+    expect(reserveBid(l, "bid:b2", 25, { dailyUsd: 50 })).toMatch(/\$30 spent today plus \$25 is more than your \$50 a day/);
+    expect(l.spend["2026-10-10"]).toBe(30);
+    expect(l.actions["bid:b2"]).toBeUndefined();
+  });
+});
+
+describe("recheck", () => {
+  // One stake reserved just before midnight, dispatched just after.
+  const reservedBeforeMidnight = (): Ledger => {
+    const l: Ledger = { actions: {}, spend: {} };
+    expect(today(EVE)).toBe("2026-10-10");
+    expect(today(NEXT)).toBe("2026-10-11");
+    reserve(l, "stake:t1", { amount: 40, limits: undefined, day: today(EVE), at: EVE.toISOString() });
+    return l;
+  };
+
+  it("moves the spend to the new day at the UTC rollover boundary", () => {
+    const l = reservedBeforeMidnight();
+    expect(recheck(l, "stake:t1", { limits: undefined, day: today(NEXT) })).toBeNull();
+    expect(l.actions["stake:t1"]!.day).toBe("2026-10-11");
+    expect(l.spend).toEqual({ "2026-10-10": 0, "2026-10-11": 40 });
+  });
+
+  it("the new day's limit can refuse, releasing the spend and failing the action", () => {
+    const l = reservedBeforeMidnight();
+    reserve(l, "stake:t2", { amount: 30, limits: { dailyUsd: 50 }, day: today(NEXT), at: NEXT.toISOString() });
+    expect(recheck(l, "stake:t1", { limits: { dailyUsd: 50 }, day: today(NEXT) })).toMatch(/\$30 spent today plus \$40 is more than your \$50 a day/);
+    expect(l.actions["stake:t1"]!.status).toBe("failed");
+    expect(l.spend).toEqual({ "2026-10-10": 0, "2026-10-11": 30 });
+  });
+
+  it("excludes its own reservation while testing the daily limit", () => {
+    const l: Ledger = {
+      actions: { "bid:b1": { status: "reserved", at: NOON.toISOString(), amount: 40, day: "2026-10-10" } },
+      spend: { "2026-10-10": 40 },
+    };
+    expect(recheck(l, "bid:b1", { limits: { dailyUsd: 50 }, day: "2026-10-10" })).toBeNull();
+    expect(l.spend["2026-10-10"]).toBe(40);
+  });
+});
+
+describe("settle", () => {
+  const settled = (outcome: Outcome): Ledger => {
+    const l: Ledger = { actions: {}, spend: {} };
+    reserve(l, "bid:b1", { amount: 5, limits: undefined, day: "2026-10-10", at: NOON.toISOString() });
+    settle(l, "bid:b1", outcome, "2026-10-10T12:00:01.000Z");
+    return l;
+  };
+
+  it("releases spend only on failed; done and uncertain stay counted", () => {
+    const done = settled("ok");
+    expect(done.actions["bid:b1"]!.status).toBe("done");
+    expect(done.spend["2026-10-10"]).toBe(5);
+    const uncertain = settled("uncertain");
+    expect(uncertain.actions["bid:b1"]!.status).toBe("uncertain");
+    expect(uncertain.spend["2026-10-10"]).toBe(5);
+    const failed = settled("failed");
+    expect(failed.actions["bid:b1"]!.status).toBe("failed");
+    expect(failed.spend["2026-10-10"]).toBe(0);
+  });
+});
+
+it("daily records are never evicted", () => {
+  const l: Ledger = { actions: {}, spend: {} };
+  reserve(l, "bid:b1", { amount: 5, limits: undefined, day: "2026-10-09", at: "2026-10-09T12:00:00.000Z" });
+  reserve(l, "bid:b2", { amount: 6, limits: undefined, day: "2026-10-10", at: NOON.toISOString() });
+  settle(l, "bid:b2", "failed", NOON.toISOString());
+  recheck(l, "bid:b1", { limits: undefined, day: "2026-10-10" });
+  // The released and moved days keep their records; a released day stays at 0.
+  expect(Object.keys(l.spend).sort()).toEqual(["2026-10-09", "2026-10-10"]);
+  expect(l.spend).toEqual({ "2026-10-09": 0, "2026-10-10": 5 });
 });
 
 describe("amountOf", () => {
@@ -112,24 +197,4 @@ describe("amountOf", () => {
   });
 });
 
-describe("the money rule", () => {
-  const S = { day: "2026-10-10", usd: 20 };
-  const read = async (): Promise<CliResult> => ({ outcome: "ok", data: { config: { submission_fee: "0.25" } } });
-
-  it("authorize fixes the amount from the server and applies the limits", async () => {
-    expect(await authorize("submissionFee", {}, undefined, S, read)).toEqual({ amount: 0.25 });
-    expect(await authorize("submissionFee", {}, { perJobUsd: 0.1 }, S, read)).toEqual({ refused: expect.stringMatching(/per job/) });
-  });
-
-  it("recheck refuses a money action with no fixed amount", () => {
-    expect(recheck(undefined, undefined, S)).toMatch(/no amount was fixed/);
-    expect(recheck(5, { dailyUsd: 50 }, S)).toBeNull();
-  });
-
-  it("account counts done and uncertain, never failed", () => {
-    expect(account(S, 5, "done", NOON).usd).toBe(25);
-    expect(account(S, 5, "uncertain", NOON).usd).toBe(25);
-    expect(account(S, 5, "failed", NOON)).toBe(S);
-  });
-});
 

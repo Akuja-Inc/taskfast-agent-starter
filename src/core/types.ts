@@ -42,12 +42,6 @@ export interface Limits {
   dailyUsd?: number;
 }
 
-// Money committed today (UTC), kept with or without limits.
-export interface Spend {
-  day: string;
-  usd: number;
-}
-
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 // One marketplace event as `taskfast events stream` prints it. Only event_id and
@@ -70,11 +64,4 @@ export interface Runtime {
   configPath: string;
   // Optional host-only unlock path. Never a model input or child environment value.
   walletPasswordFile?: string;
-}
-
-// A settled marketplace action. In-flight reservations live in policy.ts; these
-// outcomes remain the input to the pure money accounting helpers.
-export interface ActionRecord {
-  status: "done" | "failed" | "uncertain";
-  at: string;
 }
