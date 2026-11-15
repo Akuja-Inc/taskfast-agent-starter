@@ -3,12 +3,12 @@ import { Type, StringEnum, type Message, type Models, type TSchema } from "@eare
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
 import { createTimeout } from "retry";
-import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, InboxDoc, type Conversation, type InboxItem, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration, type Tx } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { eventProblem } from "./event.js";
 import { createAgentModels } from "./model.js";
 import { addNote, removeNote, replaceNote } from "./notes.js";
 import { agentDirectory, providerSettings } from "./folder.js";
-import { initialOperator, MESSAGE_PREFIX, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult, type WithdrawResult } from "./operator.js";
+import { initialOperator, openOperatorQueue, Operator, type OperatorState, type QueuedOperatorMessage, type SteerResult, type WithdrawResult } from "./operator.js";
 import { marketplacePolicy, Policy, type Command, type MarketplacePolicy } from "./policy.js";
 import { marketplacePrompt } from "./prompt.js";
 import { connectMcp } from "./mcp.js";
@@ -117,16 +117,6 @@ function parseRuntime(runtime: Runtime): Runtime {
   if (typeof runtime.configPath !== "string" || !runtime.configPath.startsWith("/")) throw new Error("runtime.configPath must be an absolute path");
   return { env: runtime.env, configPath: runtime.configPath, ...(runtime.walletPasswordFile === undefined ? {} : { walletPasswordFile: parseWalletPasswordFile(runtime.walletPasswordFile) }) };
 }
-// The user's words in a Pi inbox item; undefined for host inputs and entry writes.
-function operatorInput(item: InboxItem): Omit<QueuedOperatorMessage, "requestId"> | undefined {
-  if (item.mode === "write" || typeof item.content !== "string" || !item.content.startsWith(MESSAGE_PREFIX)) return undefined;
-  return { text: item.content.slice(MESSAGE_PREFIX.length), mode: item.mode };
-}
-// Re-aborting returns `settled`. Only this persisted, unplaced abort plus a durable
-// steer intent grants permission to admit the replacement after a restart.
-const unplacedAbort = (record: { status: string; reason?: string; entry?: unknown }): boolean =>
-  record.status === "unanswered" && record.reason === "aborted" && record.entry === undefined;
-
 // One store, root conversation and authoritative policy per marketplace agent.
 // No coding tools, child work or forks are installed or enabled.
 export async function openMarketplaceAgent(o: AgentOptions): Promise<MarketplaceAgent> {
@@ -203,95 +193,18 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     let recovering: Promise<void> | undefined;
     let initialHold = o.startHeld === true;
     let schedulingHolds = initialHold ? 1 : 0;
-    // Serializes operator admission, promotion, withdrawal and drains, not model/tool work.
-    let operatorLine: Promise<void> = Promise.resolve();
-    function onOperatorLine<T>(change: () => Promise<T>): Promise<T> {
-      const next = operatorLine.then(change);
-      operatorLine = next.then(() => {}, () => {});
-      return next;
-    }
-    async function queuedMessages(tx: Tx, requests: ReadonlyMap<SubmissionId, string>): Promise<QueuedOperatorMessage[]> {
-      const state = await tx.doc(Operator);
-      const inbox = await tx.doc(InboxDoc, conversation.id);
-      const messages = new Map<string, QueuedOperatorMessage>();
-      for (const item of inbox.items) {
-        const input = operatorInput(item);
-        if (!input) continue;
-        const request = requests.get(item.id);
-        const record = request === undefined ? undefined : await tx.submissionByRequest(conversation.id, request);
-        const prefix = request?.startsWith("operator-steer:") ? "operator-steer:" : "operator:";
-        if (record?.id !== item.id || record.status !== "queued" || !request?.startsWith(prefix)) continue;
-        const requestId = request.slice(prefix.length);
-        messages.set(requestId, { requestId, ...input });
-      }
-      for (const message of state.messages) {
-        if (!messages.has(message.requestId)) messages.set(message.requestId, { requestId: message.requestId, text: message.text, mode: message.mode ?? "followUp" });
-      }
-      for (const [requestId, intent] of Object.entries(state.pendingSteers ?? {})) {
-        const original = await tx.submissionByRequest(conversation.id, `operator:${requestId}`);
-        if (original?.id !== intent.submission) throw new Error("operator steer submission identity changed");
-        if (original.status === "queued" || unplacedAbort(original)) {
-          messages.set(requestId, { requestId, text: intent.text, mode: "steer" });
-        }
-      }
-      const order = new Map((state.queuedOrder ?? []).map((id, index) => [id, index]));
-      return [...messages.values()].sort((a, b) => (order.get(a.requestId) ?? -1) - (order.get(b.requestId) ?? -1));
-    }
-    async function readQueuedMessages(): Promise<QueuedOperatorMessage[]> {
-      const records = (await owner.inspect(context)).submissions;
-      const requests = new Map(records.flatMap((record): [SubmissionId, string][] => record.requestId === undefined ? [] : [[record.id, record.requestId]]));
-      return conversation.commit((tx) => queuedMessages(tx, requests), context);
-    }
-    async function finishSteer(requestId: string): Promise<SteerResult> {
-      const pending = (await owner.snapshot(Operator, context))?.pendingSteers;
-      const intent = pending && Object.hasOwn(pending, requestId) ? pending[requestId] : undefined;
-      if (!intent) return "steered";
-      const original = await owner.submission(intent.submission, context);
-      if (!original) throw new Error("operator steer submission is missing from storage");
-      let record = await original.status(context);
-      if (record.type !== "input" || record.conversationId !== conversation.id || record.requestId !== `operator:${requestId}`) throw new Error("operator steer submission identity changed");
-      if (record.status === "queued") {
-        await original.abort(context);
-        record = await original.status(context);
-      }
-      const aborted = unplacedAbort(record);
-      if (aborted) {
-        if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return "steered";
-        await conversation.submit({ type: "input", requestId: `operator-steer:${requestId}`, content: MESSAGE_PREFIX + intent.text, whenBusy: "steer" }, context);
-      }
-      await conversation.commit(async (tx) => { delete (await tx.doc(Operator)).pendingSteers?.[requestId]; }, context);
-      return aborted ? "steered" : "already_placed";
-    }
-    async function finishPendingSteers(): Promise<void> {
-      for (const requestId of Object.keys((await owner.snapshot(Operator, context))?.pendingSteers ?? {})) await finishSteer(requestId);
-    }
-    async function drainMessages(): Promise<void> {
-      await onOperatorLine(async () => {
-        await finishPendingSteers();
-        const messages = (await owner.snapshot(Operator, context))?.messages ?? [];
-        // The first idle submission starts a run, so Pi cannot reorder this buffer.
-        messages.sort((a, b) => Number(b.mode === "steer") - Number(a.mode === "steer"));
-        for (const { requestId, text, mode } of messages) {
-          if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
-          await conversation.submit({ type: "input", requestId: `operator:${requestId}`, content: MESSAGE_PREFIX + text, whenBusy: mode ?? "followUp" }, context);
-          await conversation.commit(async (tx) => {
-            const state = await tx.doc(Operator);
-            state.messages = state.messages.filter((item) => item.requestId !== requestId);
-          }, context);
-        }
-        const queued = new Set((await readQueuedMessages()).map((message) => message.requestId));
-        await conversation.commit(async (tx) => {
-          const state = await tx.doc(Operator);
-          if (state.queuedOrder) state.queuedOrder = state.queuedOrder.filter((id) => queued.has(id));
-        }, context);
-      });
-    }
+    // The operator message machine, bound to this conversation and this hold count.
+    const operatorQueue = openOperatorQueue({
+      conversation, read: owner, context, log,
+      // Both the owner's durable pause and a host scheduling hold stop queue submissions.
+      maySchedule: async () => !((await owner.snapshot(Operator, context))?.paused || schedulingHolds),
+    });
     async function recover(): Promise<void> {
       if (closed) return;
       if (recovering) return recovering;
       recovering = (async () => {
         // Finish withdrawal before any submit() can wake Pi's pre-crash inbox.
-        await onOperatorLine(finishPendingSteers);
+        await operatorQueue.recoverSteers();
         const pending = await owner.snapshot(Events, context);
         for (const [id, work] of Object.entries(pending?.events ?? {})) {
           if (work.kind === "done" || work.kind === "abandoned") continue;
@@ -320,7 +233,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
         }
         // Withdrawal may finish while paused; its replacement must wait for resume.
-        await drainMessages();
+        await operatorQueue.drain();
         if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
         owner.resume();
         const stalled = await owner.inspect(context);
@@ -387,7 +300,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         // cancellation path signals Pi or an in-flight marketplace operation.
         await Promise.race([(async () => {
           await recovering;
-          await operatorLine;
+          await operatorQueue.idle();
           await conversation.waitForIdle(context);
         })(), cancelled]);
         signal.throwIfAborted();
@@ -407,83 +320,20 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         await recoverLogged();
       },
       message: async ({ requestId, text, steer }) => {
-        await onOperatorLine(() => conversation.commit(async (tx) => {
-          const state = await tx.doc(Operator);
-          if (state.withdrawn && Object.hasOwn(state.withdrawn, requestId)) return;
-          if (await tx.submissionByRequest(conversation.id, `operator:${requestId}`)) return;
-          if (await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`)) return;
-          if (!state.messages.some((item) => item.requestId === requestId)) {
-            state.messages.push({ requestId, text, mode: steer ? "steer" : "followUp" });
-            state.queuedOrder = [...(state.queuedOrder ?? []), requestId];
-          }
-        }, context));
+        await operatorQueue.admit({ requestId, text, steer });
         // Joining a pass whose drain predates admission is not a fresh drain; with
         // no pass in flight, the first call already is one.
         const joined = recovering !== undefined;
         await recoverLogged();
         if (joined) await recoverLogged();
       },
-      queued: readQueuedMessages,
+      queued: operatorQueue.read,
       steer: async (requestId) => {
-        const result = await onOperatorLine(async (): Promise<SteerResult> => {
-          // Capture legacy inbox order before withdrawal replaces its oldest ID.
-          const order = (await readQueuedMessages()).map((message) => message.requestId);
-          const admission = await conversation.commit(async (tx): Promise<SteerResult | "pending"> => {
-            const state = await tx.doc(Operator);
-            if (state.pendingSteers && Object.hasOwn(state.pendingSteers, requestId)) return "pending";
-            const replacement = await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`);
-            if (replacement) return replacement.status === "queued" ? "steered" : "not_found";
-            const original = await tx.submissionByRequest(conversation.id, `operator:${requestId}`);
-            if (!original) {
-              const buffered = state.messages.find((item) => item.requestId === requestId);
-              if (!buffered) return "not_found";
-              buffered.mode = "steer";
-              state.queuedOrder = [...new Set([...order, ...(state.queuedOrder ?? [])])];
-              return "steered";
-            }
-            if (original.status !== "queued") return "not_found";
-            const item = (await tx.doc(InboxDoc, conversation.id)).items.find((queued) => queued.id === original.id);
-            const input = item && operatorInput(item);
-            if (!input) return "not_found";
-            if (input.mode === "steer") return "steered";
-            state.queuedOrder = [...new Set([...order, ...(state.queuedOrder ?? [])])];
-            state.pendingSteers = { ...(state.pendingSteers ?? {}), [requestId]: { submission: original.id, text: input.text } };
-            // Death after submit but before removing a buffer item may leave both.
-            state.messages = state.messages.filter((message) => message.requestId !== requestId);
-            return "pending";
-          }, context);
-          if (admission !== "pending") return admission;
-          // The intent is durable. A transient recovery error cannot retract ACK.
-          try { return await finishSteer(requestId); }
-          catch (error) { log(`operator steer recovery: ${String(error)}`); return "steered"; }
-        });
+        const result = await operatorQueue.promote(requestId);
         if (result !== "not_found") await recoverLogged();
         return result;
       },
-      withdraw: (requestId) => onOperatorLine(() => conversation.commit(async (tx): Promise<WithdrawResult> => {
-        const state = await tx.doc(Operator);
-        if (state.withdrawn && Object.hasOwn(state.withdrawn, requestId)) return "withdrawn";
-        const original = await tx.submissionByRequest(conversation.id, `operator:${requestId}`);
-        const replacement = await tx.submissionByRequest(conversation.id, `operator-steer:${requestId}`);
-        const intent = state.pendingSteers && Object.hasOwn(state.pendingSteers, requestId) ? state.pendingSteers[requestId] : undefined;
-        if (intent && original?.id !== intent.submission) throw new Error("operator steer submission identity changed");
-        // An aborted original is withdrawable only with its durable promotion
-        // intent or replacement. Any placed/settled input wins the race.
-        const records = [original, replacement].filter((record) => record !== undefined);
-        if (records.some((record) => record.status !== "queued" && !(record === original && (intent || replacement) && unplacedAbort(record)))) return "already_placed";
-        if (!records.length && !state.messages.some((message) => message.requestId === requestId)) return "not_found";
-        // This is Pi's queued-abort transition, inside the SAME session transaction
-        // as buffer/intent cleanup and the tombstone. Placement uses this line too.
-        const inbox = await tx.doc(InboxDoc, conversation.id);
-        const ids = new Set(records.map((record) => record.id));
-        for (const record of records) if (record.status === "queued") tx.settleSubmission(record.id, { status: "unanswered", reason: "aborted" });
-        inbox.items = inbox.items.filter((item) => !ids.has(item.id));
-        state.messages = state.messages.filter((message) => message.requestId !== requestId);
-        delete state.pendingSteers?.[requestId];
-        if (state.queuedOrder) state.queuedOrder = state.queuedOrder.filter((id) => id !== requestId);
-        state.withdrawn = { ...(state.withdrawn ?? {}), [requestId]: true };
-        return "withdrawn";
-      }, context)),
+      withdraw: operatorQueue.withdraw,
       addOrder: async (order) => {
         // Each order renders as one bullet line in the system prompt; collapsing line
         // breaks keeps a multi-line order from forging extra prompt lines.
@@ -552,7 +402,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         // error); deliver() and ping() already report it, so closing ignores it
         // and still drains operator admission before releasing ownership.
         await recovering?.catch(() => {});
-        await operatorLine;
+        await operatorQueue.idle();
         // Servers stop even when closing the store fails.
         try { await owner.close(context); }
         finally { await mcp.close(); }

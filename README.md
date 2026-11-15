@@ -317,7 +317,7 @@ Compaction summarizes older model context; it does not erase stored history or t
 Core modules:
 
 - `agent.ts`: `openMarketplaceAgent(AgentOptions)` opens persistent storage and one Pi root conversation; registers tools and the prompt; admits events and exposes `deliver`, `ping`, `recover`, `status`, `operator`, `transcript`, `changes` (every commit), `waitForIdle` and `close`.
-- `operator.ts`: session-scoped `taskfast.operator` document: pause, freeze, queued messages, standing orders and checked alerts.
+- `operator.ts`: session-scoped `taskfast.operator` document (pause, freeze, queued messages, standing orders, checked alerts) and `openOperatorQueue`, the operator message queue: serialized admission, request-ID dedupe, the queue view, steer promotion, withdrawal and the drain. `agent.ts` wires it and answers "may I schedule?". Contract and transition table: [docs/plans/gh158-operator-queue.md](docs/plans/gh158-operator-queue.md).
 - `timeline.ts`: `buildTimeline`, which groups a transcript into turns for the console.
 - `policy.ts`: session-scoped `Policy` and `marketplacePolicy`; owns permanent action reservations, spending by UTC day, notes and marketplace identity. Only the root conversation may act.
 - `storage.ts`: `openAgentStorage`; Node SQLite durability settings and the single-owner lock.
