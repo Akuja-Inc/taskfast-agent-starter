@@ -203,7 +203,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       // Commit durable admission only. The event pump can ACK immediately; a slow
       // model never holds its socket delivery hostage.
       await eventWork.admit(event);
-      void recover().catch((error: unknown) => log(`event recovery: ${String(error)}`));
+      void gate.runLogged("event recovery");
     }
     async function ping(): Promise<void> {
       await recover();
@@ -215,7 +215,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     // Restore admitted events even if the process died before submitting to Pi;
     // retry failed model runs and keep queued inputs progressing without repair.
     await recover();
-    const timer = setInterval(() => { void recover().catch((error: unknown) => log(`recovery: ${String(error)}`)); }, o.recoverEveryMs ?? 5000);
+    const timer = setInterval(() => { void gate.runLogged(); }, o.recoverEveryMs ?? 5000);
     timer.unref();
     const quiesce = async (signal: AbortSignal): Promise<() => Promise<void>> => {
       signal.throwIfAborted();
@@ -308,17 +308,21 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       releaseInitialHold: gate.releaseInitial,
       waitForIdle: () => conversation.waitForIdle(context),
       quiesce,
-      close: () => closing ??= (async () => {
-        clearInterval(timer);
-        // A recovery still in flight may reject (SessionFailed after a storage
-        // error); deliver() and ping() already report it, so closing ignores it
-        // and still drains operator admission before releasing ownership.
-        await gate.close();
-        await operatorQueue.idle();
-        // Servers stop even when closing the store fails.
-        try { await owner.close(context); }
-        finally { await mcp.close(); }
-      })(),
+      close: async () => {
+        if (closing) return;
+        closing = (async () => {
+          clearInterval(timer);
+          // A recovery still in flight may reject (SessionFailed after a storage
+          // error); deliver() and ping() already report it, so closing ignores it
+          // and still drains operator admission before releasing ownership.
+          await gate.close();
+          await operatorQueue.idle();
+          // Servers stop even when closing the store fails.
+          try { await owner.close(context); }
+          finally { await mcp.close(); }
+        })();
+        await closing;
+      },
     };
   } catch (error) {
     try {

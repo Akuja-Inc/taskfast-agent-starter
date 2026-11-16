@@ -31,6 +31,7 @@ flowchart LR
 | `hold` | Refuse a closed gate. Return an idempotent async release that requests a fresh pass. |
 | `releaseInitial` | Release the optional `startHeld` hold once, without releasing other holds. |
 | `run` | Join the inflight pass or start one host pass. No-op after close. Preserve rejection for the caller. |
+| `runLogged` | Observe a background pass without throwing. Share failure-log dedupe with `fresh`; accept `event recovery` as the delivery prefix. |
 | `fresh` | Run once when idle. When joining an older pass, run again after it settles, even if it failed. Log each failed pass once as `recovery: ...`, never reject. Concurrent observers of the same pass share its log. |
 | `settled` | Await the current pass, including its rejection, without starting one. |
 | `close` | Stop new passes and await the current pass, ignoring its rejection. |
@@ -39,7 +40,7 @@ The event host passes the conversation's `commit` and `submit`, the committed-re
 
 Every recovery pass finishes pending operator steers, advances events, drains operator messages, and only then resumes Pi when the gate permits it. A stalled queue receives at most one outstanding resume input. Polling rechecks the gate after its async inspection before submitting a check-in.
 
-`deliver` logs a background recovery rejection as `event recovery: ...` after durable admission. Explicit `recover` and `ping` may reject. Owner changes use the non-throwing `fresh` path. The periodic timer retains its `recovery: ...` boundary. Quiescence takes a hold, waits for the current pass, queue admissions and conversation idle, then releases through `fresh`. Close stops the gate before waiting for queue admissions and closing Pi and MCP.
+`deliver` observes background recovery through `runLogged("event recovery")` after durable admission. Explicit `recover` and `ping` may reject. Owner changes use the non-throwing `fresh` path. The periodic timer uses `runLogged()` with its `recovery: ...` prefix. The first logging observer of a failed pass supplies its prefix; other background and fresh observers do not log it again. Quiescence takes a hold, waits for the current pass, queue admissions and conversation idle, then releases through `fresh`. Close stops the gate before waiting for queue admissions and closing Pi and MCP. As before this extraction, a repeated close returns without retrying cleanup or repeating an earlier rejection.
 
 ## Canon constraints
 
@@ -86,16 +87,31 @@ All short test references below name `src/core/gate.test.ts`.
 | Multiple observers of an older pass | Concurrent `fresh` | Share the joined pass and fresh rerun | concurrent fresh callers share both the joined and fresh passes |
 | Failed pass observed by owner changes | `fresh` | Resolve, log once per failed pass | fresh logs a failed pass once and never rejects |
 | Failed pass observed directly | `run` | Reject without internal logging | run rejects without logging so its caller keeps the error boundary |
+| Timer and owner change observe the same failure | `runLogged`, `fresh` | Resolve, share one failure log | background recovery and fresh observers log the same failed pass only once |
+| Delivery and other observers share a failure | `runLogged("event recovery")` | Keep the first observer's prefix, log once | keeps the event recovery prefix without logging another observer's failure twice |
 | Failed pass in flight, fresh waiting | `close` | Wait, ignore failure, no fresh rerun | close waits for a rejected pass, ignores it and stops fresh reruns |
 | Closed | `hold` | Throw `the agent is closed` | stops new work while paused, held or closed |
 | Held then closed | Release or `releaseInitial` | Clear hold without running work | does not run a hold release after close |
 
 Full-agent coverage stays in `test/event-lifecycle.test.ts`, `src/core/agent-quiesce.test.ts`, `src/core/operator.test.ts`, `src/core/steering.test.ts`, `src/core/operator-queue.test.ts` and `test/console-host.test.ts`. Existing tests change imports only.
 
+## Agent wiring regressions
+
+The tests in [agent-recovery.test.ts](../../src/core/agent-recovery.test.ts) run real agent controls, Pi submissions and SQLite while holding the tail of a recovery pass.
+
+| State when the call runs | Call | Result | Test |
+| --- | --- | --- | --- |
+| Buffered follow-up, old drain already finished | `steer` | Fresh drain submits the promoted message | steer starts a fresh drain when it joins a pass whose drain already finished |
+| Old pass already observed abandonment | `retryEvent` | Fresh pass submits the newly admitted attempt | event retry starts a fresh pass after joining one that already saw abandonment |
+| Timer pass fails while owner admission joins | `message` | One failure log, fresh pass drains the admission | logs one recovery failure when the timer and an owner action join the same pass |
+| Cleanup failed on the first close | `close` again | No retry and no repeated rejection | reports a close failure once without retrying cleanup on subsequent closes |
+
+Mutation checks replaced each control's `gate.fresh()` with `gate.run()` separately. Each corresponding integration test failed on the missing model run. Both changes were restored before final validation.
+
 ## Reproduce
 
 ```sh
-pnpm exec vitest run src/core/events.test.ts src/core/gate.test.ts test/event-lifecycle.test.ts src/core/agent-quiesce.test.ts src/core/operator.test.ts src/core/steering.test.ts src/core/operator-queue.test.ts test/console-host.test.ts
+pnpm exec vitest run src/core/events.test.ts src/core/gate.test.ts src/core/agent-recovery.test.ts test/event-lifecycle.test.ts src/core/agent-quiesce.test.ts src/core/operator.test.ts src/core/steering.test.ts src/core/operator-queue.test.ts test/console-host.test.ts
 pnpm typecheck
 pnpm check
 pnpm build

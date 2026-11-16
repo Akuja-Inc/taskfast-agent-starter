@@ -134,6 +134,24 @@ it("run rejects without logging so its caller keeps the error boundary", async (
   expect(logs).toEqual([]);
 });
 
+it("background recovery and fresh observers log the same failed pass only once", async () => {
+  const { gate, pass, logs } = open();
+  const waiting = marker();
+  pass.mockImplementationOnce(async () => { await waiting.promise; throw new Error("shared"); });
+  const background = gate.runLogged();
+  const fresh = gate.fresh();
+  waiting.resolve();
+  await Promise.all([background, fresh]);
+  expect(logs).toEqual(["recovery: Error: shared"]);
+});
+
+it("keeps the event recovery prefix without logging another observer's failure twice", async () => {
+  const { gate, pass, logs } = open();
+  pass.mockRejectedValueOnce(new Error("event"));
+  await Promise.all([gate.runLogged("event recovery"), gate.runLogged(), gate.fresh()]);
+  expect(logs).toEqual(["event recovery: Error: event"]);
+});
+
 it("close waits for a rejected pass, ignores it and stops fresh reruns", async () => {
   const { gate, pass } = open();
   const waiting = marker();

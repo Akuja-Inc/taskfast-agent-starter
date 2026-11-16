@@ -24,12 +24,12 @@ export function openSchedulingGate(host: SchedulingGateHost) {
     inflight = Promise.resolve().then(() => host.pass()).finally(() => { inflight = undefined; });
     return inflight;
   };
-  const observe = async (pass: Promise<void>): Promise<void> => {
+  const observe = async (pass: Promise<void>, prefix = "recovery"): Promise<void> => {
     try { await pass; }
     catch (error) {
       if (!logged.has(pass)) {
         logged.add(pass);
-        host.log(`recovery: ${String(error)}`);
+        host.log(`${prefix}: ${String(error)}`);
       }
     }
   };
@@ -66,6 +66,7 @@ export function openSchedulingGate(host: SchedulingGateHost) {
       await releaseInitial();
     },
     run, fresh,
+    runLogged: (prefix?: string): Promise<void> => observe(run(), prefix),
     settled: (): Promise<void> => inflight ?? Promise.resolve(),
     close: async (): Promise<void> => {
       closed = true;
