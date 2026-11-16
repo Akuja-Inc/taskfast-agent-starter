@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { afterEach, expect, it, vi } from "vitest";
 import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
-import { FILES, PNG } from "../../test/fixtures/mcp/server.mjs";
+import { AUDIO, FILES, PNG } from "../../test/fixtures/mcp/server.mjs";
 import { connectMcp, discoverMcp } from "./mcp.js";
 import type { Capability } from "./capability.js";
 import { loadMcpConfig } from "./mcp-config.js";
@@ -140,7 +140,7 @@ it.each(["stdio", "http"])("captures a video larger than Pi's default message li
   expect(mcp.tools[0]).toMatchObject({ replay: "unsafe", executionMode: "sequential" });
 }, 20_000);
 
-it.each(Object.entries(FILES))("saves a %s blob from an approved tool and issues its handle", async (mimeType, bytes) => {
+it.each(Object.entries({ ...AUDIO, ...FILES }))("saves a %s blob from an approved tool and issues its handle", async (mimeType, bytes) => {
   const dir = agentDir();
   writeMcp(dir, { docs: local({ blob: approve("blob") }) });
   const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
@@ -150,6 +150,37 @@ it.each(Object.entries(FILES))("saves a %s blob from an approved tool and issues
   expect(readFileSync(join(dir, ".pi-state/media", handle))).toEqual(bytes);
   expect(mcp.prompt).toContain("When a result says a file was saved as media:<file>");
 });
+
+it.each(Object.entries(AUDIO))("saves a %s audio block, which Pi turns into a placeholder, and issues its handle", async (mimeType, bytes) => {
+  const dir = agentDir();
+  writeMcp(dir, { docs: local({ audio: approve("audio") }) });
+  const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
+  open.push(mcp);
+  const handle = `${mediaDigest(bytes)}.${MEDIA_TYPES[mimeType]!.ext}`;
+  expect(text(await call(mcp, "mcp_docs_audio", { mimeType }))).toBe(`[${mimeType} saved as media:${handle}, ${bytes.length} bytes]`);
+  expect(readFileSync(join(dir, ".pi-state/media", handle))).toEqual(bytes);
+  // Without an agent folder the audio stays omitted and its data never reaches the model.
+  const bare = await connect(dir);
+  expect(text(await call(bare, "mcp_docs_audio", { mimeType }))).toBe(`[${mimeType} audio omitted]`);
+});
+
+it.each(["stdio", "http"])("captures audio larger than Pi's default message limit over %s", async (transport) => {
+  const dir = agentDir();
+  if (transport === "stdio") writeMcp(dir, { docs: local({ audio: approve("audio") }) });
+  else {
+    const http = await httpFixture();
+    servers.push(http);
+    writeMcp(dir, { docs: { url: http.url, tools: { audio: approve("audio") } } });
+  }
+  const mcp = await connectMcp(loadMcpConfig(dir), { log: () => {}, reserved: [], agentDir: dir });
+  open.push(mcp);
+  const bytes = 13 * 1024 * 1024;
+  const output = text(await call(mcp, "mcp_docs_audio", { bytes, mimeType: "audio/flac" }));
+  const handle = /saved as media:([0-9a-f]{16}\.flac),/.exec(output)?.[1];
+  expect(handle).toBeDefined();
+  expect(readFileSync(join(dir, ".pi-state/media", handle!)).length).toBe(bytes);
+  expect(output).toBe(`[audio/flac saved as media:${handle}, ${bytes} bytes]`);
+}, 20_000);
 
 it("follows paged tool lists", async () => {
   const dir = agentDir();

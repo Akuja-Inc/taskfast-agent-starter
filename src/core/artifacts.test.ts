@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { artifacts, clearOwnUploads, materializeArtifacts, ownUploads, MAX_VIDEO_BYTES, MEDIA_TYPES, mediaDigest as digest, saveMedia, VIDEO_CAP } from "./artifacts.js";
+import { artifacts, clearOwnUploads, materializeArtifacts, ownUploads, MAX_AV_BYTES, MEDIA_TYPES, mediaDigest as digest, saveMedia, AV_CAP, MEDIA_FILES } from "./artifacts.js";
 import type { CliResult } from "./cli.js";
-import { FILES, VIDEO } from "../../test/fixtures/mcp/server.mjs";
+import { AUDIO, FILES, VIDEO } from "../../test/fixtures/mcp/server.mjs";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })));
@@ -34,6 +34,8 @@ it.each([
   ["invalid base64", "image/png", "not*base64", "[image/png image omitted]"],
   ["invalid video base64", "video/mp4", "not*base64", "[video/mp4 video omitted]"],
   ["empty data", "image/png", "", "[image/png image omitted]"],
+  ["empty audio data", "audio/mpeg", "", "[audio/mpeg audio omitted]"],
+  ["invalid audio base64", "audio/flac", "not*base64", "[audio/flac audio omitted]"],
   ["unpadded base64", "image/png", PNG.toString("base64").replace(/=+$/, ""), "[image/png image omitted]"],
 ])("writes nothing for %s", (_n, type, data, line) => {
   const dir = agentDir();
@@ -49,13 +51,19 @@ it("saves an image larger than the old 8,000,000-byte upload limit", () => {
   expect(statSync(join(dir, ".pi-state/media", `${digest(big)}.png`)).size).toBe(big.length);
 });
 
-it.each(Object.entries({ ...VIDEO, ...FILES }))("saves a %s file by its bytes with private permissions", (mimeType, bytes) => {
+it.each(Object.entries({ ...VIDEO, ...AUDIO, ...FILES }))("saves a %s file by its bytes with private permissions", (mimeType, bytes) => {
   const dir = agentDir();
   const ext = MEDIA_TYPES[mimeType]!.ext;
   expect(saveMedia(dir, mimeType, bytes.toString("base64"))).toBe(`[${mimeType} saved as media:${digest(bytes)}.${ext}, ${bytes.length} bytes]`);
   const path = join(dir, ".pi-state/media", `${digest(bytes)}.${ext}`);
   expect(readFileSync(path)).toEqual(bytes);
   expect(statSync(path).mode & 0o777).toBe(0o600);
+});
+
+it.each(["fffb9000", "fff39000", "ffe39000", "fffd9000"])("saves an MP3 that starts with the frame sync %s and no ID3 tag", (hex) => {
+  const dir = agentDir();
+  const bytes = Buffer.from(hex, "hex");
+  expect(saveMedia(dir, "audio/mpeg", bytes.toString("base64"))).toBe(`[audio/mpeg saved as media:${digest(bytes)}.mp3, ${bytes.length} bytes]`);
 });
 
 it.each([
@@ -70,25 +78,42 @@ it.each([
   ["application/x-tar", Buffer.alloc(512)],
   ["application/x-tar", FILES["application/x-tar"].subarray(0, 300)],
   ["application/gzip", FILES["application/pdf"]],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", FILES["application/msword"]],
+  ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", FILES["application/msword"]],
+  ["application/vnd.ms-excel", FILES["application/zip"]],
+  ["audio/mpeg", PNG],
+  ["audio/mpeg", Buffer.from("feff00", "hex")],
+  ["audio/mpeg", Buffer.from("fff900", "hex")],
+  ["audio/mpeg", Buffer.from("ffe800", "hex")],
+  ["audio/wav", AUDIO["audio/ogg"]],
+  ["audio/wav", Buffer.from("RIFF\u0024\u0000\u0000\u0000AVI fmt ", "latin1")],
+  ["audio/ogg", AUDIO["audio/flac"]],
+  ["audio/mp4", VIDEO["video/mp4"]],
+  ["audio/flac", AUDIO["audio/ogg"]],
+  ["audio/flac", Buffer.alloc(0)],
 ])("omits bytes that do not match %s", (mimeType, bytes) => {
   const dir = agentDir();
   expect(saveMedia(dir, mimeType, bytes.toString("base64"))).toBe(`[${mimeType} ${MEDIA_TYPES[mimeType]!.kind} omitted]`);
   expect(existsSync(join(dir, ".pi-state/media"))).toBe(false);
 });
 
-it("captures a video at 50 MiB but omits a larger one without writing it", () => {
+it.each([
+  ["video/mp4", "video", "mp4", VIDEO["video/mp4"]],
+  ["audio/mpeg", "audio", "mp3", AUDIO["audio/mpeg"]],
+  ["audio/flac", "audio", "flac", AUDIO["audio/flac"]],
+])("captures %s at 50 MiB but omits a larger one without writing it", (mimeType, kind, ext, header) => {
   const dir = agentDir();
-  const header = VIDEO["video/mp4"];
-  const bytes = Buffer.concat([header, Buffer.alloc(MAX_VIDEO_BYTES - header.length)]);
-  expect(saveMedia(dir, "video/mp4", bytes.toString("base64"))).toContain(`saved as media:${digest(bytes)}.mp4`);
+  const bytes = Buffer.concat([header, Buffer.alloc(MAX_AV_BYTES - header.length)]);
+  expect(saveMedia(dir, mimeType, bytes.toString("base64"))).toContain(`saved as media:${digest(bytes)}.${ext}`);
   const other = agentDir();
-  expect(saveMedia(other, "video/mp4", Buffer.concat([bytes, Buffer.from([0])]).toString("base64"))).toBe(`[video/mp4 video omitted: larger than ${VIDEO_CAP}]`);
+  expect(saveMedia(other, mimeType, Buffer.concat([bytes, Buffer.from([0])]).toString("base64"))).toBe(`[${mimeType} ${kind} omitted: larger than ${AV_CAP}]`);
   expect(existsSync(join(other, ".pi-state/media"))).toBe(false);
 });
 
 it.each([
   ["image/png", PNG, "image"],
   ["video/mp4", VIDEO["video/mp4"], "video"],
+  ["audio/wav", AUDIO["audio/wav"], "audio"],
 ])("refuses a symlinked media folder for %s without saying why", (mimeType, bytes, kind) => {
   const dir = agentDir(); const elsewhere = agentDir();
   mkdirSync(join(dir, ".pi-state"));
@@ -113,8 +138,13 @@ describe("artifact validation", () => {
     ["a folder", { name: "out/results.json", content: "x" }, /artifact name/],
     ["a hidden file", { name: ".env.txt", content: "x" }, /artifact name/],
     ["a flag", { name: "--env=prod.txt", content: "x" }, /artifact name/],
-    ["a type the CLI cannot upload", { name: "letter.docx", media: `media:${D}.pdf` }, /artifact name/],
-    ["audio", { name: "voice.mp3", media: `media:${D}.mp3` }, /artifact name/],
+    ["a type the CLI cannot upload", { name: "voice.aac", media: `media:${D}.mp3` }, /artifact name/],
+    ["a Word name for a PDF", { name: "letter.docx", media: `media:${D}.pdf` }, /letter.docx must end in .pdf/],
+    ["an Excel name for a Word file", { name: "sheet.xlsx", media: `media:${D}.docx` }, /sheet.xlsx must end in .docx/],
+    ["a legacy Excel name for a spreadsheet", { name: "sheet.xls", media: `media:${D}.xlsx` }, /sheet.xls must end in .xlsx/],
+    ["audio text from the model", { name: "voice.mp3", content: "x" }, /voice.mp3 is a binary file: deliver it as \{ name, media \}/],
+    ["an audio type mismatch", { name: "voice.wav", media: `media:${D}.mp3` }, /voice.wav must end in .mp3/],
+    ["a video name for audio", { name: "clip.mp4", media: `media:${D}.m4a` }, /clip.mp4 must end in .m4a/],
     ["PDF text from the model", { name: "report.pdf", content: "x" }, /report.pdf is a binary file: deliver it as \{ name, media \}/],
     ["a document type mismatch", { name: "report.doc", media: `media:${D}.pdf` }, /report.doc must end in .pdf/],
     ["an archive named for a tarball", { name: "bundle.tar", media: `media:${D}.gz` }, /bundle.tar must end in .gz/],
@@ -136,6 +166,17 @@ describe("artifact validation", () => {
     ["a text name for media", { name: "notes.txt", media: `media:${D}.png` }, /notes.txt must end in .png/],
   ])("refuses an artifact with %s", (_n, artifact, why) => {
     expect(() => artifacts([artifact], T)).toThrow(why);
+  });
+
+  it.each(["report.docx", "sheet.xlsx", "old.xls", "voice.mp3", "voice.wav", "voice.ogg", "voice.m4a", "voice.flac"])("names a handle's own type for %s", (name) => {
+    const ext = name.split(".")[1]!;
+    const [file] = artifacts([{ name, media: `media:${D}.${ext}` }], T);
+    expect(file).toEqual({ path: `.pi-state/artifacts/${T}/${D}/${name}`, media: `.pi-state/media/${D}.${ext}`, digest: D });
+  });
+
+  it("lists the new types for the model", () => {
+    expect(MEDIA_FILES).toContain("a document (.pdf, .doc, .docx, .xls or .xlsx)");
+    expect(MEDIA_FILES).toContain("an audio (.mp3, .wav, .ogg, .m4a or .flac)");
   });
 
   it("refuses an empty list, more than five files and repeated names", () => {

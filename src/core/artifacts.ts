@@ -11,19 +11,22 @@ const bad = (why: string): never => { throw new Error(why); };
 // handle without ever holding their bytes or naming a path. The server stores whatever
 // type the CLI reports from the file name and never checks the bytes, so these do.
 const MEDIA_PATH = ".pi-state/media";
-// One base64 video fits the existing 80 MiB MCP message budget. The server's
-// 200 MiB video cap is not reachable through this pinned transport and timeout.
-export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
-export const VIDEO_CAP = `${MAX_VIDEO_BYTES / 1024 / 1024} MiB`;
-// The one place prompts and tool descriptions state which videos the kit takes.
-export const VIDEO_LIMIT = `Video capture supports MP4, WebM and MOV up to ${VIDEO_CAP} per file.`;
+// One base64 video or audio file fits the existing 80 MiB MCP message budget. The
+// server's 200 MB video and audio caps are not reachable through this pinned transport
+// and timeout.
+export const MAX_AV_BYTES = 50 * 1024 * 1024;
+export const AV_CAP = `${MAX_AV_BYTES / 1024 / 1024} MiB`;
+// The one place prompts and tool descriptions state which video and audio the kit takes.
+export const AV_LIMIT = `Video and audio capture supports MP4, WebM, MOV, MP3, WAV, OGG, M4A and FLAC up to ${AV_CAP} per file.`;
 function ftypBrand(bytes: Buffer): string {
   if (bytes.length < 16 || bytes.toString("latin1", 4, 8) !== "ftyp") return "";
   const size = bytes.readUInt32BE(0);
   return size >= 16 && size <= bytes.length ? bytes.toString("latin1", 8, 12) : "";
 }
 const starts = (b: Buffer, hex: string) => b.subarray(0, hex.length / 2).equals(Buffer.from(hex, "hex"));
-export type MediaType = { ext: string; kind: "image" | "video" | "document" | "archive"; magic: (b: Buffer) => boolean };
+// An ID3 tag, or an MPEG audio frame sync with a real version and layer; ADTS AAC has layer 00.
+const mp3 = (b: Buffer) => b.subarray(0, 3).toString("latin1") === "ID3" || (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0 && ((b[1] ?? 0) & 0x18) !== 0x08 && ((b[1] ?? 0) & 0x06) !== 0);
+export type MediaType = { ext: string; kind: "image" | "video" | "audio" | "document" | "archive"; magic: (b: Buffer) => boolean };
 export const MEDIA_TYPES: Record<string, MediaType> = {
   "image/png": { ext: "png", kind: "image", magic: (b) => starts(b, "89504e470d0a1a0a") },
   "image/jpeg": { ext: "jpg", kind: "image", magic: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
@@ -34,8 +37,17 @@ export const MEDIA_TYPES: Record<string, MediaType> = {
   "video/webm": { ext: "webm", kind: "video", magic: (b) => starts(b, "1a45dfa3") && b.subarray(4, 64).includes(Buffer.from("4282847765626d", "hex")) },
   "video/quicktime": { ext: "mov", kind: "video", magic: (b) => ftypBrand(b) === "qt  " },
   "application/pdf": { ext: "pdf", kind: "document", magic: (b) => starts(b, "255044462d") },
-  // A compound file header is shared by .xls and .msi; the kit never opens the file.
+  "audio/mpeg": { ext: "mp3", kind: "audio", magic: mp3 },
+  "audio/wav": { ext: "wav", kind: "audio", magic: (b) => b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WAVE" },
+  "audio/ogg": { ext: "ogg", kind: "audio", magic: (b) => b.subarray(0, 4).toString("latin1") === "OggS" },
+  "audio/mp4": { ext: "m4a", kind: "audio", magic: (b) => /^M4[AB] $/.test(ftypBrand(b)) },
+  "audio/flac": { ext: "flac", kind: "audio", magic: (b) => b.subarray(0, 4).toString("latin1") === "fLaC" },
+  // A compound file header is shared by .doc, .xls and .msi; the kit never opens the file.
   "application/msword": { ext: "doc", kind: "document", magic: (b) => starts(b, "d0cf11e0a1b11ae1") },
+  // .docx and .xlsx are ZIP containers; only the local file header is checked, never the parts inside.
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { ext: "docx", kind: "document", magic: (b) => starts(b, "504b0304") },
+  "application/vnd.ms-excel": { ext: "xls", kind: "document", magic: (b) => starts(b, "d0cf11e0a1b11ae1") },
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { ext: "xlsx", kind: "document", magic: (b) => starts(b, "504b0304") },
   // An empty ZIP has only an end record, so it delivers nothing and is refused.
   "application/zip": { ext: "zip", kind: "archive", magic: (b) => starts(b, "504b0304") },
   // POSIX and GNU tar mark offset 257; an old v7 tar has no mark and is refused.
@@ -44,7 +56,7 @@ export const MEDIA_TYPES: Record<string, MediaType> = {
 };
 const or = (items: string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} or ${items.at(-1)}` : items[0]!;
 // The one place prompts and tool descriptions list the binary files the kit captures.
-export const MEDIA_FILES = or((["image", "video", "document", "archive"] as const).map((kind) =>
+export const MEDIA_FILES = or((["image", "video", "audio", "document", "archive"] as const).map((kind) =>
   `${/^[aeiou]/.test(kind) ? "an" : "a"} ${kind} (${or(Object.values(MEDIA_TYPES).filter((type) => type.kind === kind).map((type) => `.${type.ext}`))})`));
 export const mediaDigest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex").slice(0, 16);
 // Own keys only, so a type such as "constructor" finds nothing.
@@ -54,16 +66,17 @@ export const isMediaType = (mimeType: string | undefined): mimeType is string =>
 export const omittedLine = (mimeType: string, why = "") => `[${mimeType} ${mediaType(mimeType)?.kind ?? "image"} omitted${why}]`;
 
 // Saves one media block before returning its handle. Other kinds keep the server's size
-// limit; video has a lower capture cap to fit the pinned MCP transport.
+// limit; video and audio have a lower capture cap to fit the pinned MCP transport.
 export function saveMedia(agentDir: string, mimeType: string, data: string): string {
   const type = mediaType(mimeType);
   if (!type) return omittedLine(mimeType);
-  const tooLarge = omittedLine(mimeType, `: larger than ${VIDEO_CAP}`);
-  if (type.kind === "video" && data.length > Math.ceil(MAX_VIDEO_BYTES / 3) * 4) return tooLarge;
+  const tooLarge = omittedLine(mimeType, `: larger than ${AV_CAP}`);
+  const capped = type.kind === "video" || type.kind === "audio";
+  if (capped && data.length > Math.ceil(MAX_AV_BYTES / 3) * 4) return tooLarge;
   // Node decodes base64 leniently, skipping bad characters; only exact padded base64
   // re-encodes to the same text. A regex here could overflow on a large image.
   const bytes = Buffer.from(data, "base64");
-  if (type.kind === "video" && bytes.length > MAX_VIDEO_BYTES) return tooLarge;
+  if (capped && bytes.length > MAX_AV_BYTES) return tooLarge;
   if (!bytes.length || !type.magic(bytes) || bytes.toString("base64") !== data) return omittedLine(mimeType);
   const handle = `${mediaDigest(bytes)}.${type.ext}`;
   try {

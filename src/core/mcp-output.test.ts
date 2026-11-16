@@ -1,7 +1,7 @@
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { expect, it } from "vitest";
 import { mcpOutput } from "./mcp-output.js";
-import { FILES } from "../../test/fixtures/mcp/server.mjs";
+import { AUDIO, FILES } from "../../test/fixtures/mcp/server.mjs";
 
 const textResult = (text: string): CallToolResult => ({ content: [{ type: "text", text }] });
 const MAX_BYTES = 32 * 1024;
@@ -52,14 +52,14 @@ it("keeps normal text and omits direct and embedded image data", () => {
 it("hands direct and embedded media to the callback and keeps its line", () => {
   const seen: string[] = [];
   const files = Object.keys(FILES);
-  const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const pptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
   expect(mcpOutput({ content: [
     { type: "image", mimeType: "image/png", data: "aW1n" },
     { type: "resource", resource: { uri: "file:///preview", mimeType: "image/jpeg", blob: "YmxvYg==" } },
     ...files.map((mimeType) => ({ type: "resource" as const, resource: { uri: "file:///report", mimeType, blob: "cGRm" } })),
-    // The CLI cannot upload .docx yet, so it stays a placeholder.
-    { type: "resource", resource: { uri: "file:///letter", mimeType: docx, blob: "ZG9jeA==" } },
-  ] }, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`))).toBe(["image/png", "image/jpeg", ...files].map((type) => `[${type} saved]\n`).join("") + `[binary resource file:///letter (${docx}) omitted]`);
+    // The CLI cannot upload slides, so they stay a placeholder.
+    { type: "resource", resource: { uri: "file:///letter", mimeType: pptx, blob: "ZG9jeA==" } },
+  ] }, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`))).toBe(["image/png", "image/jpeg", ...files].map((type) => `[${type} saved]\n`).join("") + `[binary resource file:///letter (${pptx}) omitted]`);
   expect(seen).toEqual(["image/png aW1n", "image/jpeg YmxvYg==", ...files.map((type) => `${type} cGRm`)]);
 });
 
@@ -69,13 +69,29 @@ it("captures video blob resources before Pi replaces them with placeholders, wit
     { type: "text", text: "Clips:" },
     ...["video/mp4", "video/webm", "video/quicktime"].map((mimeType) => ({ type: "resource" as const, resource: { uri: "file:///clip", mimeType, blob: "Y2xpcA==" } })),
     { type: "resource_link", uri: "https://example.com/clip.mp4", name: "clip.mp4", mimeType: "video/mp4" },
-    { type: "resource", resource: { uri: "file:///audio", mimeType: "audio/mpeg", blob: "YXVkaW8=" } },
+    { type: "resource", resource: { uri: "file:///audio", mimeType: "audio/aac", blob: "YXVkaW8=" } },
   ] };
   const output = mcpOutput(result, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`));
   expect(seen).toEqual(["video/mp4 Y2xpcA==", "video/webm Y2xpcA==", "video/quicktime Y2xpcA=="]);
   expect(output).toContain("Clips:\n[video/mp4 saved]\n[video/webm saved]\n[video/quicktime saved]");
-  expect(output).toContain("audio/mpeg) omitted]");
+  expect(output).toContain("audio/aac) omitted]");
   expect(mcpOutput(result, [])).not.toContain("Y2xpcA==");
+});
+
+it("captures audio blocks and audio blob resources of every supported type, and keeps an unsupported audio block a placeholder", () => {
+  const seen: string[] = [];
+  const types = Object.keys(AUDIO);
+  const output = mcpOutput({ content: [
+    ...types.map((mimeType) => ({ type: "audio" as const, mimeType, data: "YXVkaW8=" })),
+    ...types.map((mimeType) => ({ type: "resource" as const, resource: { uri: "file:///voice", mimeType, blob: "YXVkaW8=" } })),
+    { type: "audio", mimeType: "audio/aac", data: "YXVkaW8=" },
+  ] }, [], (type, data) => (seen.push(`${type} ${data}`), `[${type} saved]`));
+  expect(seen).toEqual([...types, ...types].map((type) => `${type} YXVkaW8=`));
+  expect(output.split("\n").slice(0, types.length * 2)).toEqual([...types, ...types].map((type) => `[${type} saved]`));
+  expect(output).toContain("audio/aac");
+  expect(output).not.toContain("YXVkaW8=");
+  // Without a callback every audio block stays a placeholder and its data never reaches the model.
+  expect(mcpOutput({ content: [{ type: "audio", mimeType: "audio/mpeg", data: "YXVkaW8=" }] }, [])).toBe("[audio/mpeg audio omitted]");
 });
 
 it("leaves an exact 32 KiB result intact and includes the marker within the cap", () => {

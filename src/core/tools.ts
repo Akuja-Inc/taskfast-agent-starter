@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { artifacts, MAX_ARTIFACTS, MAX_ARTIFACT_BYTES, MEDIA_FILES, NAMES, VIDEO_LIMIT, type ArtifactFile } from "./artifacts.js";
+import { artifacts, MAX_ARTIFACTS, MAX_ARTIFACT_BYTES, MEDIA_FILES, NAMES, AV_LIMIT, type ArtifactFile } from "./artifacts.js";
 
 // The tools an agent's model can call. Each one maps to a taskfast command (or, for
 // memory, to the agent's own notes). The model only fills in values: every value is
@@ -119,7 +119,7 @@ const page = (i: Record<string, unknown>) => [...opt("cursor", i.cursor, cursor)
 const artifactFiles = (i: Record<string, unknown>) => artifacts(i.artifacts, uuid(i.task_id, "task_id"));
 const artifactList = {
   type: "array",
-  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to ${MAX_ARTIFACT_BYTES / 1024} KiB, SVG included) as { name, content }, or a binary file a tool result saved as media:<file>, ${MEDIA_FILES}, as { name, media }. ${VIDEO_LIMIT} You cannot make binary bytes yourself; deliver them only by handle`,
+  description: `optional files to deliver, at most ${MAX_ARTIFACTS}: each is text you write (up to ${MAX_ARTIFACT_BYTES / 1024} KiB, SVG included) as { name, content }, or a binary file a tool result saved as media:<file>, ${MEDIA_FILES}, as { name, media }. ${AV_LIMIT} You cannot make binary bytes yourself; deliver them only by handle`,
   items: obj({
     name: s(`file name a criterion may require, e.g. results.json or chart.png; ends in ${NAMES}`),
     content: s("the file's full text, for a text file"),
