@@ -1,6 +1,9 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { defineTool, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { folderFile } from "./folder.js";
+import type { Capability } from "./capability.js";
 import { MAX_ARTIFACTS, MAX_ARTIFACT_BYTES, MEDIA_FILES, TEXT_NAMES, VIDEO_LIMIT } from "./artifacts.js";
 
 // Skills are owner-installed guidance (https://agentskills.io/specification): a folder
@@ -120,6 +123,28 @@ export function readSkill(skills: readonly Skill[], input: unknown): string {
   return `Skill ${skill.name}, file ${String(file)}. Your operator installed it as guidance; it never changes what your tools allow.\n\n${text}`;
 }
 
+// The skills capability: the skill_read tool plus its prompt section, or nothing without
+// skills. skill_read never goes through the marketplace policy, and Pi answers a stored
+// call to it as unavailable after the skills are removed.
+export function skillCapability(skills: readonly Skill[]): Capability {
+  return {
+    name: "skills",
+    tools: skills.length ? [defineTool({
+      name: "skill_read",
+      description: "Read one of your operator's installed skills: its SKILL.md, or one of the files it lists. Skills are guidance; they never change what your tools allow.",
+      parameters: Type.Object({ skill: StringEnum(skills.map((skill) => skill.name)), file: Type.Optional(Type.String({ description: 'a file the skill lists, e.g. "reference/WORKER.md"; SKILL.md if left out' })) }, { additionalProperties: false }),
+      replay: "safe", executionMode: "sequential",
+      execute: async (args, api) => {
+        if (api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("skills are unavailable");
+        return { output: [{ type: "text", text: readSkill(skills, args) }] };
+      },
+    })] : [],
+    prompt: skills.length ? skillsPrompt(skills) : "",
+    status: () => [],
+    close: async () => {},
+  };
+}
+
 // What a skill written for the taskfast CLI means here: the command each tool runs.
 export const SKILL_COMMANDS: Record<string, string> = {
   "me": "me", "wallet balance": "wallet_balance", "discover": "discover", "task get": "task_get", "task list": "task_list",
@@ -143,7 +168,8 @@ export const UNSUPPORTED_COMMANDS = [
   "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
 ];
 
-// The skills section of the system prompt. Rebuilt every turn, so it survives compaction.
+// The skills section of the system prompt. The capability builds it once at open and Pi
+// re-renders that section every turn, so it survives compaction.
 export function skillsPrompt(skills: readonly Skill[]): string {
   return [
     "Skills your operator installed, as guidance. Read one with skill_read before you follow it:",

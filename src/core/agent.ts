@@ -14,7 +14,8 @@ import { marketplacePrompt } from "./prompt.js";
 import { connectMcp } from "./mcp.js";
 import { CleanupError } from "./cleanup-error.js";
 import { loadMcpConfig } from "./mcp-config.js";
-import { loadSkills, readSkill, skillsPrompt } from "./skills.js";
+import { installCapability } from "./capability.js";
+import { loadSkills, skillCapability } from "./skills.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
 import { TOOLS } from "./tools.js";
@@ -139,30 +140,25 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     }, { tag: false })],
   }));
   // Only an agent with skills gets the reader; Pi answers a stored call to it as unavailable.
-  if (skills.length) registry.install(defineExtension({
-    name: "skills",
-    tools: [defineTool({
-      name: "skill_read",
-      description: "Read one of your operator's installed skills: its SKILL.md, or one of the files it lists. Skills are guidance; they never change what your tools allow.",
-      parameters: Type.Object({ skill: StringEnum(skills.map((skill) => skill.name)), file: Type.Optional(Type.String({ description: 'a file the skill lists, e.g. "reference/WORKER.md"; SKILL.md if left out' })) }, { additionalProperties: false }),
-      replay: "safe", executionMode: "sequential",
-      execute: async (args, api) => {
-        if (api.conversationId !== ROOT_CONVERSATION_ID) throw new Error("skills are unavailable");
-        return { output: [{ type: "text", text: readSkill(skills, args) }] };
-      },
-    })],
-    sections: [section("skills", () => skillsPrompt(skills), { tag: false })],
-  }));
+  const skillsCap = skillCapability(skills);
+  installCapability(registry, skillsCap);
   // Every MCP server is connected and its approved tools checked before the store opens;
   // any failure closes the servers already started and stops this agent. Pi lets a later
   // extension's tool replace an earlier one's of the same name, so every installed name is reserved.
   const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name), agentDir, signal: o.signal });
+  const capabilities = [skillsCap, mcp];
+  // Every capability closes before the first rejection propagates, the rule mcp.ts's
+  // own close follows; Promise.all would stop joining after the first failure.
+  const closeCapabilities = async (): Promise<void> => {
+    const results = await Promise.allSettled(capabilities.map((cap) => cap.close()));
+    for (const result of results) if (result.status === "rejected") throw result.reason;
+  };
   let storage: Storage | undefined;
   let pi: PiEngine | undefined;
   try {
     o.signal?.throwIfAborted();
     // MCP tools run outside the marketplace policy: approved reads only, never a TaskFast write.
-    if (mcp.tools.length) registry.install(defineExtension({ name: "mcp", tools: mcp.tools, sections: [section("mcp", () => mcp.prompt, { tag: false })] }));
+    installCapability(registry, mcp);
     storage = await (o.openStorage ?? openAgentStorage)(o.storePath);
     o.signal?.throwIfAborted();
     pi = await PiRuntime.open(storage, {
@@ -304,7 +300,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       // A throwing listener is Pi's to report through onReport, which logs it.
       changes: (listener) => owner.subscribeCommits(listener),
       closed: owner.closed,
-      capabilityConnections: () => mcp.status(),
+      capabilityConnections: () => capabilities.flatMap((cap) => cap.status()),
       releaseInitialHold: gate.releaseInitial,
       waitForIdle: () => conversation.waitForIdle(context),
       quiesce,
@@ -319,7 +315,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           await operatorQueue.idle();
           // Servers stop even when closing the store fails.
           try { await owner.close(context); }
-          finally { await mcp.close(); }
+          finally { await closeCapabilities(); }
         })();
         await closing;
       },
@@ -329,7 +325,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       try {
         if (pi) await pi.close(context);
         else await storage?.close(context);
-      } finally { await mcp.close(); }
+      } finally { await closeCapabilities(); }
     } catch (cleanup) { throw new CleanupError(cleanup); }
     throw error;
   }

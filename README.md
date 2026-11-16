@@ -330,9 +330,10 @@ Core modules:
 - `model.ts`: model lookup, isolated per-agent settings and the Pi-ai model registry. Provider support is bounded by the exact pin, not arbitrary provider modules.
 - `artifacts.ts`: media capture and handles, shared artifact limits and extensions, validation, content-addressed file planning, private materialization and upload cleanup. Policy keeps cleanup and reservation sequencing; command adapters receive resolved bytes.
 - `tools.ts`: tool table and `prepare`, which validates a call and builds its command and action key.
-- `skills.ts`: `loadSkills`, which checks an agent folder's skills; `readSkill` for the `skill_read` tool; and the skills prompt with its command-to-tool mapping.
+- `skills.ts`: `loadSkills`, which checks an agent folder's skills; `readSkill` for the `skill_read` tool; the skills prompt with its command-to-tool mapping; and `skillCapability`, the skills add-on.
+- `capability.ts`: the `Capability` shape (name, tools, prompt section, status, close) shared by the skills and MCP add-ons, and `installCapability`, which installs an add-on's extension only when it has tools.
 - `mcp-config.ts`: `loadMcpConfig`, which checks `mcp.json` and binds credentials from `.mcp.env`; `toolHash`, the fingerprint an owner approves; and `redact`.
-- `mcp.ts`: `connectMcp`, one pinned `@earendil-works/pi-mcp` client per server, checking approved tools at open and registering them as `mcp_<server>_<tool>`.
+- `mcp.ts`: `connectMcp`, one pinned `@earendil-works/pi-mcp` client per server, checking approved tools at open and registering them as `mcp_<server>_<tool>`; returns the MCP `Capability`.
 - `money.ts`: server-derived amounts, UTC-day accounting helpers and limits.
 - `cli.ts`: one TaskFast child per command, agent config, `--env` first and only `PATH`, `HOME`, `TASKFAST_CONFIG` in its environment. Writes explicitly supplied artifact bytes through the shared safe writer before spawning. Classifies outcomes as `ok`, `failed` or `uncertain`.
 - `event.ts`, `pump.ts`, `listener.ts`: event validation, stream acknowledgement/restart and host-owned stream lifecycle. Repeatedly failing events are recorded in `.taskfast/dead-letter.jsonl` before acknowledgement; failed admission is not acknowledged.

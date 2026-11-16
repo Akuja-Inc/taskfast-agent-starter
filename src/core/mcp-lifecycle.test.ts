@@ -7,10 +7,11 @@ import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { McpClient } from "@earendil-works/pi-mcp";
 import { CleanupError } from "./cleanup-error.js";
 import { afterEach, expect, it, vi } from "vitest";
-import { connectMcp, type McpTools } from "./mcp.js";
+import { connectMcp } from "./mcp.js";
+import type { Capability } from "./capability.js";
 import { toolHash, type McpServer } from "./mcp-config.js";
 
-const opened: McpTools[] = [];
+const opened: Capability[] = [];
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   await Promise.all(opened.splice(0).map((item) => item.close()));
@@ -42,7 +43,7 @@ async function httpFixture(mode: "handshake" | "call" | "metadata" = "call") {
   const config: McpServer = { name: "test", transport: "http", url: `http://127.0.0.1:${address.port}/mcp`, credentials: { Authorization: secret }, tools: mode === "metadata" ? {} : { read: toolHash(tool) } };
   return { config, secret, initialized: () => initialized, requestClosed: () => requestClosed };
 }
-const call = (mcp: McpTools, signal = new AbortController().signal) => mcp.tools[0]!.execute({} as never, { conversationId: ROOT_CONVERSATION_ID } as never, { abortSignal: signal } as never);
+const call = (mcp: Capability, signal = new AbortController().signal) => mcp.tools[0]!.execute({} as never, { conversationId: ROOT_CONVERSATION_ID } as never, { abortSignal: signal } as never);
 
 it("bounds the complete HTTP handshake, including the initialized notification", async () => {
   const fixture = await httpFixture("handshake");
