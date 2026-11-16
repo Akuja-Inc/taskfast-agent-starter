@@ -17,6 +17,8 @@ export const EXCLUDED: Record<string, string> = {
   "cast": "arbitrary contract calls and transactions do not fit the money rules; money.ts runs `cast call` only to read a token's decimals",
   "backer": "owner-level allowlist management, authenticated with a human PAT",
   "agent update-me": "max-task-budget and daily-spend-limit are owner-set guardrails; a profile-only tool needs its own decision",
+  "escalate": "poster and worker on-chain dispute signing (0.22.0) needs its own money and wallet decision",
+  "fee retry": "poster fee recovery with a freshly signed transfer (0.22.0); task_retry_fee still runs the superseded `task retry-fee`, which now only prints a redirect",
   "artifact upload": "task_submit and task_remedy upload through --artifact; a lone upload is never delivered",
   "artifact delete": "policy runs it to clear the agent's own uploads before a submit with files",
   "artifact cid": "delivery by an externally pinned CID; the kit delivers the files the model writes",

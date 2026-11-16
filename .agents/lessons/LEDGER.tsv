@@ -35,3 +35,4 @@ hand:d848d11986a1	hand	2026-10-23T05:49:22Z	agents_md	AGENTS.md	The Cloudflare h
 hand:de3eb1901de1	hand	2026-10-23T05:49:22Z	lesson	.agents/lessons/taskfast-cli-images.md	Slim images lack ca-certificates, so the CLI fails HTTPS with network builder error
 hand:c98fd55aff80	hand	2026-10-23T15:19:27Z	agents_md	AGENTS.md	The Cloudflare webhook path sits outside Access, checks its HMAC before the DO, and answers 2xx only after deliver resolves.
 hand:426e09ee6091	hand	2026-11-15T21:25:49Z	agents_md	AGENTS.md	A worktree needs its own pnpm install; symlinking the main checkout node_modules fails with a pnpm workspace hoist error.
+hand:c9d87b391b41	hand	2026-11-16T04:30:00Z	lesson	.agents/lessons/contract-spec-gaps.md	The vendored OpenAPI text can omit types the server accepts; carve out only confirmed gaps.

@@ -5,7 +5,7 @@ import { isMediaType, omittedLine } from "./artifacts.js";
 const MAX_BYTES = 32 * 1024;
 const TRUNCATED = "\n[truncated]";
 
-// media turns a direct image or embedded media blob into the line the model reads.
+// media turns a direct image or audio block, or an embedded media blob, into the line the model reads.
 export function mcpOutput(result: CallToolResult, secrets: readonly string[], media = (mimeType: string, _data: string) => omittedLine(mimeType)): string {
   // Pi replaces non-image blobs with placeholders. Capture every media blob from the
   // original blocks first; resource links remain text and are never fetched.
@@ -14,6 +14,8 @@ export function mcpOutput(result: CallToolResult, secrets: readonly string[], me
       const { mimeType, blob } = block.resource;
       if (isMediaType(mimeType)) return [media(mimeType, blob)];
     }
+    // Pi turns an audio block into a text placeholder, so capture it from the original.
+    if (block.type === "audio" && isMediaType(block.mimeType)) return [media(block.mimeType, block.data)];
     return toLlmContent({ content: [block] }).map((part) => part.type === "text" ? part.text : media(part.mimeType, part.data));
   });
   if (result.structuredContent !== undefined) parts.push(JSON.stringify(result.structuredContent, null, 2));

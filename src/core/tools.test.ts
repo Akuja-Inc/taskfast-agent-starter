@@ -258,7 +258,7 @@ describe("artifacts", () => {
   });
 
   // The CLI types each upload by the name's last extension, so bundle.tar.gz uploads as gzip.
-  it.each([["clip.mp4", "mp4"], ["clip.webm", "webm"], ["clip.mov", "mov"], ["report.pdf", "pdf"], ["letter.doc", "doc"], ["site.zip", "zip"], ["data.tar", "tar"], ["bundle.tar.gz", "gz"]])("delivers a saved %s beside text and images, with stable remedy keys", (name, ext) => {
+  it.each([["clip.mp4", "mp4"], ["clip.webm", "webm"], ["clip.mov", "mov"], ["report.pdf", "pdf"], ["letter.doc", "doc"], ["letter.docx", "docx"], ["old.xls", "xls"], ["sheet.xlsx", "xlsx"], ["voice.mp3", "mp3"], ["voice.wav", "wav"], ["voice.ogg", "ogg"], ["voice.m4a", "m4a"], ["voice.flac", "flac"], ["site.zip", "zip"], ["data.tar", "tar"], ["bundle.tar.gz", "gz"]])("delivers a saved %s beside text and images, with stable remedy keys", (name, ext) => {
     const file = { name, media: `media:${D}.${ext}` };
     const path = `.pi-state/artifacts/${T}/${D}/${name}`;
     const input = { task_id: T, summary: "Done", artifacts: [file, { name: "logo.png", media: `media:${D}.png` }, results] };

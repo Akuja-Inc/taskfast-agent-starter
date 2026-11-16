@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approve, expectGone, FIXTURE, writeMcp } from "../../test/mcp-fixture.js";
-import { FILES, PNG, VIDEO } from "../../test/fixtures/mcp/server.mjs";
+import { AUDIO, FILES, PNG, VIDEO } from "../../test/fixtures/mcp/server.mjs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -935,8 +935,8 @@ it("delivers an image an approved MCP tool returned by its media handle, also af
   expect(commands.filter((args) => args[1] === "remedy")).toEqual([["task", "remedy", "--summary=Same logo", `--artifact=${path}`, "--", task]]);
 });
 
-// The restart path is the same for every kind, so one document stands for the rest.
-it.each(Object.entries({ ...VIDEO, "application/pdf": FILES["application/pdf"] }))("delivers an approved MCP %s blob after a restart and never repeats an uncertain submit", async (mimeType, bytes) => {
+// The restart path is the same for every kind, so a few documents and audio stand for the rest.
+it.each(Object.entries({ ...VIDEO, "application/pdf": FILES["application/pdf"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document": FILES["application/vnd.openxmlformats-officedocument.wordprocessingml.document"], "audio/mpeg": AUDIO["audio/mpeg"] }))("delivers an approved MCP %s blob after a restart and never repeats an uncertain submit", async (mimeType, bytes) => {
   const dir = agentFolder(false);
   writeMcp(dir, { docs: { command: process.execPath, args: [FIXTURE], tools: { blob: approve("blob") } } });
   const ext = MEDIA_TYPES[mimeType]!.ext;

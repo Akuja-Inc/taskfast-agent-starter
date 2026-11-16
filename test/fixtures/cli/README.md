@@ -14,6 +14,8 @@ PlatformConfigController returns, with a subset of its keys):
 Tests read these files, so the client's parsing is checked against what the CLI
 actually prints. Re-capture them when the pinned CLI version changes.
 
+For the 0.22.0 refresh, the vendored spec and `surface.json` are re-captured: `taskfast` 0.22.0 adds the `escalate` and `fee` groups, supersedes `task retry-fee` (it now only prints a redirect) and types `.docx`, `.xls`, `.xlsx` and five audio uploads. The skill bundle below is still the 0.21.0 capture.
+
 For the 0.21.0 refresh, the release changes the vendored spec, generated client types and poster skill guide, not command implementations. The 87-command help capture is unchanged apart from its version. The older response captures below retain their original release provenance; no affected response shape was identified.
 
 `gh70/` holds the bond captures for issue #70: what `taskfast bond post`, `taskfast task claim`
@@ -24,7 +26,7 @@ commands. `gh70/README.md` says how to re-capture them.
 `task remedy --artifact` and `taskfast artifact list|delete` print, with the stand-in server,
 its request logs and the exact commands. `gh71/README.md` says how to re-capture them.
 
-`surface.json` is the `--help` text of every `taskfast` 0.21.0 command, by command path (`""` is the root), with `taskfast --version`. `node scripts/capture-cli-surface.mjs [path to taskfast]` writes it, running each command with only PATH, an empty HOME and an absent config, because help prints the value of every env var an option reads. It uses `--help`, not `-h`: short help drops the possible values of an option that has only long help, such as `discover --status`. `test/cli-parity.test.ts` (in `pnpm test`) parses it offline and fails when a tool passes a flag or value the CLI refuses, or when a command has neither a tool nor a reason in `EXCLUDED` (`test/cli-parity.ts`). Re-capture it whenever the contract test's pinned CLI tag moves.
+`surface.json` is the `--help` text of every `taskfast` 0.22.0 command, by command path (`""` is the root), with `taskfast --version`. `node scripts/capture-cli-surface.mjs [path to taskfast]` writes it, running each command with only PATH, an empty HOME and an absent config, because help prints the value of every env var an option reads. It uses `--help`, not `-h`: short help drops the possible values of an option that has only long help, such as `discover --status`. `test/cli-parity.test.ts` (in `pnpm test`) parses it offline and fails when a tool passes a flag or value the CLI refuses, or when a command has neither a tool nor a reason in `EXCLUDED` (`test/cli-parity.ts`). Re-capture it whenever the contract test's pinned CLI tag moves.
 
 `skills/taskfast-agent/` is the bundle `taskfast` 0.21.0 writes with `taskfast --env local --config=<empty
 dir>/absent.json --no-trace skills --yes`, run in an empty folder that was also its HOME, with

@@ -20,7 +20,8 @@ export const TOOLS = [
   { name: "delete", description: "Deletes a document.", inputSchema: object({ id: { type: "string" } }, ["id"]), annotations: { destructiveHint: true } },
   { name: "sample", description: "Asks the client for a model completion first.", inputSchema: object() },
   { name: "image", description: "Answers with a PNG image block and the same image as an embedded resource; with `bytes`, one PNG of that size.", inputSchema: object({ bytes: { type: "number" } }) },
-  { name: "blob", description: "Answers with a video, document or archive blob resource; with `bytes`, pads its header to that size.", inputSchema: object({ mimeType: { type: "string" }, bytes: { type: "number" } }) },
+  { name: "blob", description: "Answers with a video, audio, document or archive blob resource; with `bytes`, pads its header to that size.", inputSchema: object({ mimeType: { type: "string" }, bytes: { type: "number" } }) },
+  { name: "audio", description: "Answers with an audio content block; with `bytes`, pads its header to that size.", inputSchema: object({ mimeType: { type: "string" }, bytes: { type: "number" } }) },
 ];
 // The smallest bytes the host accepts as a PNG: the signature and a few bytes after it.
 export const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("fixture")]).toString("base64");
@@ -30,12 +31,23 @@ export const VIDEO = {
   "video/quicktime": Buffer.from("0000001466747970717420200000000071742020", "hex"),
   "video/webm": Buffer.from("1a45dfa39f4286810142f7810142f2810442f381084282847765626d4287810442858102", "hex"),
 };
+// Container headers only: none of these plays as real audio.
+export const AUDIO = {
+  "audio/mpeg": Buffer.from("ID3\u0004\u0000\u0000\u0000\u0000\u0000\u0000", "latin1"),
+  "audio/wav": Buffer.from("RIFF\u0024\u0000\u0000\u0000WAVEfmt ", "latin1"),
+  "audio/ogg": Buffer.from("4f676753000200000000000000000000", "hex"),
+  "audio/mp4": Buffer.from("00000018667479704d344120000000004d34412069736f6d", "hex"),
+  "audio/flac": Buffer.from("664c61430000002210001000", "hex"),
+};
 // Signatures only: none of these opens as a real document or archive.
 const tar = Buffer.alloc(512);
 tar.write("ustar\u000000", 257, "latin1");
 export const FILES = {
   "application/pdf": Buffer.from("%PDF-1.7\n%fixture\n"),
   "application/msword": Buffer.from("d0cf11e0a1b11ae10000000000000000", "hex"),
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": Buffer.concat([Buffer.from("504b0304", "hex"), Buffer.from("docx fixture")]),
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": Buffer.concat([Buffer.from("504b0304", "hex"), Buffer.from("xlsx fixture")]),
+  "application/vnd.ms-excel": Buffer.from("d0cf11e0a1b11ae10000000000000001", "hex"),
   "application/zip": Buffer.concat([Buffer.from("504b0304", "hex"), Buffer.from("fixture")]),
   "application/x-tar": tar,
   "application/gzip": Buffer.from("1f8b0800000000000003", "hex"),
@@ -74,11 +86,11 @@ export async function handle(message) {
     if (params.name === "big") return reply(text("x".repeat(args.size)));
     if (params.name === "image" && args.bytes) return reply({ content: [{ type: "image", mimeType: "image/png", data: Buffer.concat([Buffer.from(PNG, "base64"), Buffer.alloc(args.bytes - Buffer.from(PNG, "base64").length)]).toString("base64") }] });
     if (params.name === "image") return reply({ content: [{ type: "text", text: "Rendered:" }, { type: "image", mimeType: "image/png", data: PNG }, { type: "resource", resource: { uri: "file:///chart", mimeType: "image/png", blob: PNG } }] });
-    if (params.name === "blob") {
-      const mimeType = args.mimeType ?? "video/mp4";
-      const header = { ...VIDEO, ...FILES }[mimeType];
+    if (params.name === "blob" || params.name === "audio") {
+      const mimeType = args.mimeType ?? (params.name === "audio" ? "audio/mpeg" : "video/mp4");
+      const header = { ...VIDEO, ...AUDIO, ...FILES }[mimeType];
       const blob = Buffer.concat([header, Buffer.alloc(Math.max(0, (args.bytes ?? 0) - header.length))]).toString("base64");
-      return reply({ content: [{ type: "resource", resource: { uri: "file:///blob", mimeType, blob } }] });
+      return reply({ content: [params.name === "audio" ? { type: "audio", mimeType, data: blob } : { type: "resource", resource: { uri: "file:///blob", mimeType, blob } }] });
     }
     if (params.name === "exit") { setTimeout(() => process.exit(0), 5); return reply(text("bye")); }
     if (params.name === "sample") {
