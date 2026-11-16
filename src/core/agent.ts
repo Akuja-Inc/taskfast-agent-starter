@@ -2,9 +2,9 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type, StringEnum, type Message, type Models, type TSchema } from "@earendil-works/pi-ai";
 import * as piDurable from "@earendil-works/pi-durable";
 import { parseWalletPasswordFile } from "./cli.js";
-import { createTimeout } from "retry";
-import { createRegistry, defineDoc, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SessionEnd, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
-import { eventProblem } from "./event.js";
+import { createRegistry, defineExtension, defineTool, section, ROOT_CONVERSATION_ID, type Conversation, type SessionEnd, type Storage, type ToolRegistration } from "@earendil-works/pi-durable";
+import { openEventWork, type EventWork } from "./events.js";
+import { openSchedulingGate } from "./gate.js";
 import { createAgentModels } from "./model.js";
 import { addNote, removeNote, replaceNote } from "./notes.js";
 import { agentDirectory, providerSettings } from "./folder.js";
@@ -18,7 +18,7 @@ import { loadSkills, readSkill, skillsPrompt } from "./skills.js";
 import { parseAgentSpec, splitModel } from "./spec.js";
 import { openAgentStorage } from "./storage.js";
 import { TOOLS } from "./tools.js";
-import { ENVS, type AgentSpec, type Json, type MarketEvent, type Runtime } from "./types.js";
+import { ENVS, type AgentSpec, type MarketEvent, type Runtime } from "./types.js";
 
 // The pinned package exports exactly one runtime factory with this public contract.
 // Resolve it without borrowing upstream vocabulary reserved by the kit's name scan.
@@ -29,16 +29,6 @@ if (factories.length !== 1) throw new Error("unsupported Pi runtime factory expo
 const PiRuntime = factories[0];
 type PiEngine = Awaited<ReturnType<typeof PiRuntime.open>>;
 const context = BACKGROUND_CONTEXT;
-export type EventWork = { event: Json; attempt: number } & (
-  | { kind: "admitted"; notBefore?: number }
-  | { kind: "submitted" | "done" | "abandoned"; submission: SubmissionId }
-);
-// A failed event run is resubmitted after a jittered exponential delay, at most
-// `retries` times, then abandoned. The due time is stored, so restarts keep it.
-export const EVENT_RETRY = { retries: 5, factor: 2, minTimeout: 30_000, maxTimeout: 10 * 60_000, randomize: true };
-const Events = defineDoc<{ events: Record<string, EventWork> }>({
-  kind: "taskfast.events", version: 1, scope: "session", initial: () => ({ events: {} }),
-});
 export interface AgentOptions {
   storePath: string;
   spec: AgentSpec;
@@ -188,107 +178,48 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
     policy = marketplacePolicy({ conversation, read: owner, spec, runtime, command: o.command, now: o.now });
     const activePolicy = policy;
     await activePolicy.initialize();
-    await conversation.commit(async (tx) => { await tx.doc(Events); }, context);
-    let closed = false;
-    let recovering: Promise<void> | undefined;
-    let initialHold = o.startHeld === true;
-    let schedulingHolds = initialHold ? 1 : 0;
-    // The operator message machine, bound to this conversation and this hold count.
-    const operatorQueue = openOperatorQueue({
-      conversation, read: owner, context, log,
-      // Both the owner's durable pause and a host scheduling hold stop queue submissions.
-      maySchedule: async () => !((await owner.snapshot(Operator, context))?.paused || schedulingHolds),
-    });
-    async function recover(): Promise<void> {
-      if (closed) return;
-      if (recovering) return recovering;
-      recovering = (async () => {
+    const gate = openSchedulingGate({
+      read: owner, context, log, startHeld: o.startHeld,
+      pass: async () => {
         // Finish withdrawal before any submit() can wake Pi's pre-crash inbox.
         await operatorQueue.recoverSteers();
-        const pending = await owner.snapshot(Events, context);
-        for (const [id, work] of Object.entries(pending?.events ?? {})) {
-          if (work.kind === "done" || work.kind === "abandoned") continue;
-          // Only recovery changes a stored event, so `work` is current unless this pass moves it.
-          let current: EventWork = work;
-          if (work.kind === "submitted") {
-            const submission = await owner.submission(work.submission, context);
-            if (!submission) throw new Error("event submission is missing from storage");
-            const result = await submission.status(context);
-            if (result.status === "queued" || result.status === "placed") continue;
-            current = await conversation.commit(async (tx): Promise<EventWork> => {
-              const state = await tx.doc(Events);
-              const event = state.events[id];
-              if (result.status === "done") return state.events[id] = { ...event, kind: "done", submission: work.submission };
-              if (event.attempt >= EVENT_RETRY.retries) return state.events[id] = { ...event, kind: "abandoned", submission: work.submission };
-              return state.events[id] = { kind: "admitted", event: event.event, attempt: event.attempt + 1, notBefore: now() + createTimeout(event.attempt, EVENT_RETRY) };
-            }, context);
-            if (current.kind === "abandoned") log(`${id} abandoned after ${current.attempt + 1} failed model runs`);
-          }
-          if (current.kind !== "admitted" || (current.notBefore ?? 0) > now()) continue;
-          // Re-read the pause state per event: a pause committed while this pass was
-          // working on earlier events still stops the submissions that follow it.
-          if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) continue;
-          // Request dedupe covers death between submit() and saving its ID here.
-          const submission = await conversation.submit({ type: "input", requestId: `event:${id}:${current.attempt}`, content: `Marketplace event:\n${JSON.stringify(current.event)}` }, context);
-          await conversation.commit(async (tx) => { (await tx.doc(Events)).events[id] = { kind: "submitted", event: current.event, attempt: current.attempt, submission: submission.id }; }, context);
-        }
+        await eventWork.advance();
         // Withdrawal may finish while paused; its replacement must wait for resume.
         await operatorQueue.drain();
-        if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
+        if (!(await gate.mayStart())) return;
         owner.resume();
         const stalled = await owner.inspect(context);
         const queued = stalled.submissions.find((item) => item.status === "queued");
         // One resume input per stall: none while an earlier one is still queued or placed.
-        if (!stalled.tasks.length && queued && !stalled.submissions.some((item) => item.requestId?.startsWith("resume:"))) {
+        if (!stalled.tasks.length && queued && !stalled.submissions.some((item) => item.requestId?.startsWith("resume:")) && await gate.mayStart()) {
           await conversation.submit({ type: "input", requestId: `resume:${queued.id}`, content: "Resume your queued marketplace work after the failed run. Read current state before any write." }, context);
         }
-      })().finally(() => { recovering = undefined; });
-      return recovering;
-    }
+      },
+    });
+    const operatorQueue = openOperatorQueue({ conversation, read: owner, context, log, maySchedule: gate.mayStart });
+    const eventWork = await openEventWork({ conversation, read: owner, context, now, log, maySchedule: gate.mayStart });
+    const recover = gate.run;
     async function deliver(event: MarketEvent): Promise<void> {
-      const problem = eventProblem(event);
-      if (problem) throw new Error(`event refused: ${problem}`);
       // Commit durable admission only. The event pump can ACK immediately; a slow
       // model never holds its socket delivery hostage.
-      await conversation.commit(async (tx) => {
-        const state = await tx.doc(Events);
-        const key = `event:${event.event_id}`;
-        if (!Object.hasOwn(state.events, key)) {
-          const json: Json = JSON.parse(JSON.stringify(event));
-          state.events[key] = { kind: "admitted", event: json, attempt: 0 };
-        }
-      }, context);
-      void recover().catch((error: unknown) => log(`event recovery: ${String(error)}`));
+      await eventWork.admit(event);
+      void gate.runLogged("event recovery");
     }
     async function ping(): Promise<void> {
       await recover();
-      if ((await owner.snapshot(Operator, context))?.paused || schedulingHolds) return;
+      if (!(await gate.mayStart())) return;
       const work = await owner.inspect(context);
-      if (work.tasks.length || work.submissions.length || schedulingHolds || closed) return;
+      if (work.tasks.length || work.submissions.length || !(await gate.mayStart())) return;
       await conversation.submit({ type: "input", content: `Check your marketplace work in your ${spec.role} role and pursue the goals in your instructions. Read current state before acting; do not repeat uncertain writes.` }, context);
     }
     // Restore admitted events even if the process died before submitting to Pi;
     // retry failed model runs and keep queued inputs progressing without repair.
     await recover();
-    const timer = setInterval(() => { void recover().catch((error: unknown) => log(`recovery: ${String(error)}`)); }, o.recoverEveryMs ?? 5000);
+    const timer = setInterval(() => { void gate.runLogged(); }, o.recoverEveryMs ?? 5000);
     timer.unref();
-    // An operator action's own commit is durable before recovery runs, so — as with
-    // deliver() — a recovery failure is logged, never reported as the action's result.
-    const recoverLogged = async (): Promise<void> => {
-      try { await recover(); }
-      catch (error) { log(`recovery: ${String(error)}`); }
-    };
     const quiesce = async (signal: AbortSignal): Promise<() => Promise<void>> => {
       signal.throwIfAborted();
-      if (closed) throw new Error("the agent is closed");
-      schedulingHolds++;
-      let released = false;
-      const release = async () => {
-        if (released) return;
-        released = true;
-        schedulingHolds--;
-        if (!closed) { await recoverLogged(); await recoverLogged(); }
-      };
+      const release = gate.hold();
       let onAbort = () => {};
       const cancelled = new Promise<never>((_resolve, reject) => {
         onAbort = () => reject(signal.reason ?? new Error("waiting cancelled"));
@@ -299,7 +230,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         // Join admissions already in flight before observing idle. No timeout or
         // cancellation path signals Pi or an in-flight marketplace operation.
         await Promise.race([(async () => {
-          await recovering;
+          await gate.settled();
           await operatorQueue.idle();
           await conversation.waitForIdle(context);
         })(), cancelled]);
@@ -314,23 +245,16 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       setPaused: async (paused) => {
         await conversation.commit(async (tx) => { (await tx.doc(Operator)).paused = paused; }, context);
         if (paused) return;
-        // A pass that started while paused may still be in flight; joining it is not
-        // enough. The second call guarantees one fresh pass sees the resumed state.
-        await recoverLogged();
-        await recoverLogged();
+        await gate.fresh();
       },
       message: async ({ requestId, text, steer }) => {
         await operatorQueue.admit({ requestId, text, steer });
-        // Joining a pass whose drain predates admission is not a fresh drain; with
-        // no pass in flight, the first call already is one.
-        const joined = recovering !== undefined;
-        await recoverLogged();
-        if (joined) await recoverLogged();
+        await gate.fresh();
       },
       queued: operatorQueue.read,
       steer: async (requestId) => {
         const result = await operatorQueue.promote(requestId);
-        if (result !== "not_found") await recoverLogged();
+        if (result !== "not_found") await gate.fresh();
         return result;
       },
       withdraw: operatorQueue.withdraw,
@@ -361,16 +285,10 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
         else replaceNote(state.memory, at.index + 1, text);
         return "done" as const;
       }, context),
-      events: async () => (await owner.snapshot(Events, context))?.events ?? {},
+      events: eventWork.read,
       retryEvent: async (eventId) => {
-        await conversation.commit(async (tx) => {
-          const state = await tx.doc(Events);
-          const work = state.events[`event:${eventId}`];
-          if (work?.kind !== "abandoned") throw new Error(`event ${eventId} is not abandoned`);
-          // A new attempt number is a new request ID; reusing the last would dedupe into the failed run.
-          state.events[`event:${eventId}`] = { kind: "admitted", event: work.event, attempt: work.attempt + 1 };
-        }, context);
-        await recoverLogged();
+        await eventWork.retry(eventId);
+        await gate.fresh();
       },
       markChecked: async (id) => { await conversation.commit(async (tx) => { (await tx.doc(Operator)).checked[id] = new Date(now()).toISOString(); }, context); },
     };
@@ -379,6 +297,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       const page = await conversation.entries({ order: "descending" }, limit, undefined, context);
       return [...page.items].reverse().flatMap((entry) => entry.model ?? []);
     }
+    let closing: Promise<void> | undefined;
     return {
       conversation, deliver, ping, recover, status: activePolicy.snapshot, operator, transcript,
       // Every commit, not viewState(): that view skips commits to session documents (operator, policy, events).
@@ -386,26 +305,23 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       changes: (listener) => owner.subscribeCommits(listener),
       closed: owner.closed,
       capabilityConnections: () => mcp.status(),
-      releaseInitialHold: async () => {
-        if (!initialHold) return;
-        initialHold = false;
-        schedulingHolds--;
-        if (!closed) { await recoverLogged(); await recoverLogged(); }
-      },
+      releaseInitialHold: gate.releaseInitial,
       waitForIdle: () => conversation.waitForIdle(context),
       quiesce,
       close: async () => {
-        if (closed) return;
-        closed = true;
-        clearInterval(timer);
-        // A recovery still in flight may reject (SessionFailed after a storage
-        // error); deliver() and ping() already report it, so closing ignores it
-        // and still drains operator admission before releasing ownership.
-        await recovering?.catch(() => {});
-        await operatorQueue.idle();
-        // Servers stop even when closing the store fails.
-        try { await owner.close(context); }
-        finally { await mcp.close(); }
+        if (closing) return;
+        closing = (async () => {
+          clearInterval(timer);
+          // A recovery still in flight may reject (SessionFailed after a storage
+          // error); deliver() and ping() already report it, so closing ignores it
+          // and still drains operator admission before releasing ownership.
+          await gate.close();
+          await operatorQueue.idle();
+          // Servers stop even when closing the store fails.
+          try { await owner.close(context); }
+          finally { await mcp.close(); }
+        })();
+        await closing;
       },
     };
   } catch (error) {
