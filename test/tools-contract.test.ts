@@ -7,7 +7,7 @@ import { MEDIA_TYPES } from "../src/core/artifacts.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):
-// spec/openapi.yaml at tag taskfast-cli-v0.21.0.
+// spec/openapi.yaml at tag taskfast-cli-v0.22.0.
 // To refresh, copy that file from the newest CLI release, update the tag here and the hash in the pin test:
 //   curl -fL -o test/fixtures/openapi.yaml https://raw.githubusercontent.com/Akuja-Inc/taskfast-cli/<tag>/spec/openapi.yaml
 const OPENAPI = join(import.meta.dirname, "fixtures", "openapi.yaml");
@@ -27,20 +27,23 @@ describe("tools match the server contract", () => {
 
   it("pins the byte-identical released spec", () => {
     expect(createHash("sha256").update(bytes).digest("hex"))
-      .toBe("fa40b515c868c9d089b9b1bd4900676e7043e0bee2984ab76c409e6a1ba0f213");
+      .toBe("4867d1ef134b6e0b4a0c09de6892b6e98a08c6e8a4827d2990eb3b25c1d5cef1");
   });
 
-  it("publishes video types and the server's upload cap", () => {
+  it("publishes video and audio types and the server's upload cap", () => {
     const upload = yaml.slice(yaml.indexOf("  /tasks/{task_id}/artifacts:"), yaml.indexOf("  /tasks/{task_id}/artifacts/uploads:"));
-    for (const type of ["video/mp4", "video/webm", "video/quicktime"]) expect(upload).toContain(type);
-    expect(upload).toContain("200MB for video, 50MB for every other type");
-    // The server's video cap is binary bytes, independent of the kit's 50 MiB capture cap.
+    for (const type of ["video/mp4", "video/webm", "video/quicktime", "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/flac"]) expect(upload).toContain(type);
+    expect(upload).toContain("200MB for video and 200MB for audio (each has its own cap), 50MB for every other type");
+    // The server's video and audio caps are binary bytes, independent of the kit's 50 MiB capture cap.
     expect(yaml).toMatch(/max_bytes:[\s\S]*?example: 209715200/);
   });
 
   it("publishes every media type the kit captures", () => {
     const upload = yaml.slice(yaml.indexOf("  /tasks/{task_id}/artifacts:"), yaml.indexOf("  /tasks/{task_id}/artifacts/uploads:"));
-    for (const type of Object.keys(MEDIA_TYPES)) expect(upload).toContain(type);
+    // The 0.22.0 spec text omits the Office types, though the server accepts them (storage.ex)
+    // and CLI 0.22.0 types .docx, .xls and .xlsx. Only these three may be missing from it.
+    const OFFICE = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"];
+    for (const type of Object.keys(MEDIA_TYPES).filter((type) => !OFFICE.includes(type))) expect(upload).toContain(type);
   });
 
   it("bid_list offers exactly the bid statuses BidDetail publishes", () => {

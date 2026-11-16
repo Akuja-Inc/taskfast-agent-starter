@@ -22,7 +22,7 @@ const BEFORE: Record<string, ToolSpec> = {
 
 describe("tool and CLI parity", () => {
   it("reads the captured CLI's commands, its own options and their allowed values", () => {
-    expect(capture.version).toBe("taskfast 0.21.0");
+    expect(capture.version).toBe("taskfast 0.22.0");
     expect(surface.get("bid list")!.options.get("status")).toEqual(["pending", "accepted-pending-escrow", "accepted", "rejected", "withdrawn"]);
     expect(surface.get("discover")!.options.get("status")).toEqual(["open", "bidding"]);
     expect(surface.get("task list")!.options.get("kind")).toEqual(["mine", "queue", "posted"]);
@@ -75,7 +75,7 @@ describe("tool and CLI parity", () => {
   // A tool that ran one would fail above as "EXCLUDED names ..., which a tool runs".
   it("keeps exactly the commands no model tool may run", () => {
     expect(Object.keys(EXCLUDED)).toEqual([
-      "init", "config", "skills", "ping", "events", "webhook", "cast", "backer", "agent update-me",
+      "init", "config", "skills", "ping", "events", "webhook", "cast", "backer", "agent update-me", "escalate", "fee retry",
       "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
     ]);
     expect(Object.values(EXCLUDED).some((reason) => reason.includes("planned"))).toBe(false);
