@@ -168,7 +168,8 @@ export const UNSUPPORTED_COMMANDS = [
   "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
 ];
 
-// The skills section of the system prompt. Rebuilt every turn, so it survives compaction.
+// The skills section of the system prompt. The capability builds it once at open and Pi
+// re-renders that section every turn, so it survives compaction.
 export function skillsPrompt(skills: readonly Skill[]): string {
   return [
     "Skills your operator installed, as guidance. Read one with skill_read before you follow it:",

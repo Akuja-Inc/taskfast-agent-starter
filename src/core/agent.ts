@@ -147,6 +147,12 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
   // extension's tool replace an earlier one's of the same name, so every installed name is reserved.
   const mcp = await connectMcp(loadMcpConfig(agentDir), { log, reserved: registry.snapshot().tools().map(({ tool }) => tool.name), agentDir, signal: o.signal });
   const capabilities = [skillsCap, mcp];
+  // Every capability closes before the first rejection propagates, the rule mcp.ts's
+  // own close follows; Promise.all would stop joining after the first failure.
+  const closeCapabilities = async (): Promise<void> => {
+    const results = await Promise.allSettled(capabilities.map((cap) => cap.close()));
+    for (const result of results) if (result.status === "rejected") throw result.reason;
+  };
   let storage: Storage | undefined;
   let pi: PiEngine | undefined;
   try {
@@ -309,7 +315,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
           await operatorQueue.idle();
           // Servers stop even when closing the store fails.
           try { await owner.close(context); }
-          finally { await Promise.all(capabilities.map((cap) => cap.close())); }
+          finally { await closeCapabilities(); }
         })();
         await closing;
       },
@@ -319,7 +325,7 @@ export async function openMarketplaceAgent(o: AgentOptions): Promise<Marketplace
       try {
         if (pi) await pi.close(context);
         else await storage?.close(context);
-      } finally { await Promise.all(capabilities.map((cap) => cap.close())); }
+      } finally { await closeCapabilities(); }
     } catch (cleanup) { throw new CleanupError(cleanup); }
     throw error;
   }
