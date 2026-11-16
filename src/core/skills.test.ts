@@ -1,8 +1,9 @@
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { afterEach, expect, it } from "vitest";
-import { loadSkills, readSkill, SKILL_COMMANDS, SKILLS_PATH, skillsPrompt, UNSUPPORTED_COMMANDS } from "./skills.js";
+import { loadSkills, readSkill, SKILL_COMMANDS, SKILLS_PATH, skillCapability, skillsPrompt, UNSUPPORTED_COMMANDS } from "./skills.js";
 import { TOOLS } from "./tools.js";
 
 // The real bundle `taskfast skills --yes` writes; see test/fixtures/cli/README.md.
@@ -148,4 +149,20 @@ it("lists names and one-line descriptions, the tool mapping and the precedence r
   expect(prompt).not.toMatch(/tell your operator|ask your operator/);
   expect(prompt).toMatch(/never repeat a write whose result was uncertain/);
   expect(prompt).not.toContain("Read me.");
+});
+
+it("skillCapability installs nothing without skills and the skill_read tool with them", async () => {
+  const empty = skillCapability([]);
+  expect(empty.name).toBe("skills");
+  expect(empty.tools).toEqual([]);
+  expect(empty.prompt).toBe("");
+  expect(empty.status()).toEqual([]);
+  await empty.close();
+  const skills = loadSkills(withBundle());
+  const cap = skillCapability(skills);
+  expect(cap.tools.map((tool) => tool.name)).toEqual(["skill_read"]);
+  expect(cap.prompt).toBe(skillsPrompt(skills));
+  await expect(cap.tools[0]!.execute({} as never, { conversationId: "child" } as never, {} as never)).rejects.toThrow(/skills are unavailable/);
+  const result = await cap.tools[0]!.execute({ skill: "taskfast-agent", file: "reference/WORKER.md" } as never, { conversationId: ROOT_CONVERSATION_ID } as never, {} as never);
+  expect(result.output?.[0]).toEqual({ type: "text", text: readSkill(skills, { skill: "taskfast-agent", file: "reference/WORKER.md" }) });
 });

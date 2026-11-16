@@ -6,12 +6,13 @@ import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { afterEach, expect, it, vi } from "vitest";
 import { approve, expectGone, FIXTURE, httpFixture, writeMcp } from "../../test/mcp-fixture.js";
 import { FILES, PNG } from "../../test/fixtures/mcp/server.mjs";
-import { connectMcp, discoverMcp, type McpTools } from "./mcp.js";
+import { connectMcp, discoverMcp } from "./mcp.js";
+import type { Capability } from "./capability.js";
 import { loadMcpConfig } from "./mcp-config.js";
 import { mediaDigest, MEDIA_TYPES } from "./artifacts.js";
 
 const dirs: string[] = [];
-const open: McpTools[] = [];
+const open: Capability[] = [];
 const servers: { close(): Promise<void> }[] = [];
 afterEach(async () => {
   await Promise.all(open.splice(0).map((mcp) => mcp.close()));
@@ -24,13 +25,13 @@ function agentDir(): string {
   return dir;
 }
 const local = (tools: Record<string, string>, extra: Record<string, unknown> = {}) => ({ command: process.execPath, args: [FIXTURE], tools, ...extra });
-async function connect(dir: string, logs: string[] = [], reserved = ["me", "skill_read"]): Promise<McpTools> {
+async function connect(dir: string, logs: string[] = [], reserved = ["me", "skill_read"]): Promise<Capability> {
   const mcp = await connectMcp(loadMcpConfig(dir), { log: (line) => logs.push(line), reserved });
   open.push(mcp);
   return mcp;
 }
 // Calls a registered tool the way Pi does, on the root conversation.
-async function call(mcp: McpTools, name: string, args: Record<string, unknown>, signal = new AbortController().signal) {
+async function call(mcp: Capability, name: string, args: Record<string, unknown>, signal = new AbortController().signal) {
   const tool = mcp.tools.find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`no tool ${name}`);
   return tool.execute(args as never, { conversationId: ROOT_CONVERSATION_ID } as never, { abortSignal: signal } as never);
