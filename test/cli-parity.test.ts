@@ -22,7 +22,7 @@ const BEFORE: Record<string, ToolSpec> = {
 
 describe("tool and CLI parity", () => {
   it("reads the captured CLI's commands, its own options and their allowed values", () => {
-    expect(capture.version).toBe("taskfast 0.22.0");
+    expect(capture.version).toBe("taskfast 0.24.0");
     expect(surface.get("bid list")!.options.get("status")).toEqual(["pending", "accepted-pending-escrow", "accepted", "rejected", "withdrawn"]);
     expect(surface.get("discover")!.options.get("status")).toEqual(["open", "bidding"]);
     expect(surface.get("task list")!.options.get("kind")).toEqual(["mine", "queue", "posted"]);
@@ -30,8 +30,12 @@ describe("tool and CLI parity", () => {
     expect(surface.get("task")!.leaf).toBe(false);
     // Global options are not the command's own: no tool may pass --env or --api-base.
     expect(surface.get("bid list")!.options.has("env")).toBe(false);
-    // policy inserts the quoted stake as --amount, which the command must take.
-    expect(surface.get("stake")!.options.get("amount")).toBeNull();
+    // The CLI dropped the direct-assignment commands and options in 0.23.0.
+    expect(surface.has("stake")).toBe(false);
+    expect(surface.has("task reassign")).toBe(false);
+    expect(surface.get("post")!.options.has("direct-agent-id")).toBe(false);
+    expect(surface.get("post")!.options.has("assignment-type")).toBe(false);
+    expect(surface.get("discover")!.options.has("assignment-type")).toBe(false);
   });
 
   it("found the three advertised values the CLI refused before gh#91", () => {
@@ -51,14 +55,14 @@ describe("tool and CLI parity", () => {
     const tools: Record<string, ToolSpec> = {
       ...TOOLS,
       settle: { ...TOOLS.settle!, args: (i) => ["settle", "--keystore=/x", "--", String(i.task_id)] },
-      stake: { ...TOOLS.stake!, args: (i) => ["stake", "--amount=1", "--", String(i.task_id)] },
+      bond_post: { ...TOOLS.bond_post!, args: (i) => ["bond", "post", "--amount=1", "--", String(i.task_id)] },
       me: { ...TOOLS.me!, args: () => ["me", "--env=prod"] },
     };
     const { ping: _, ...excluded } = EXCLUDED;
     const problems = parityProblems(tools, surface, { ...excluded, "task claim": "stale", "nope": "gone" });
     expect(problems).toEqual(expect.arrayContaining([
       "settle: passes --keystore, which code and config own",
-      "stake: passes --amount, which code and config own",
+      "bond_post: passes --amount, which code and config own",
       "me: `taskfast me` has no --env",
       "`taskfast ping` has no tool and no reason in EXCLUDED",
       "EXCLUDED names `taskfast task claim`, which a tool runs",

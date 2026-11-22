@@ -151,10 +151,10 @@ export const SKILL_COMMANDS: Record<string, string> = {
   "bid list": "bid_list", "message list": "message_list", "task bids": "task_bids", "bid create": "bid_create",
   "task claim": "task_claim", "bond post": "bond_post", "task submit": "task_submit", "task remedy": "task_remedy", "message send": "message_send", "post": "post_task",
   "bid accept": "bid_accept", "bid reject": "bid_reject", "escrow sign": "escrow_sign", "task approve": "task_approve",
-  "task dispute": "task_dispute", "settle": "settle", "task reassign": "task_reassign", "task open": "task_open",
+  "task dispute": "task_dispute", "settle": "settle", "task open": "task_open",
   "task edit": "task_edit", "task cancel": "task_cancel", "task reopen": "task_reopen",
   "task refuse": "task_refuse", "task abort": "task_abort", "task concede": "task_concede", "bid cancel": "bid_cancel",
-  "task retry-fee": "task_retry_fee", "stake": "stake",
+  "task retry-fee": "task_retry_fee",
   "message conversations": "message_conversations", "platform config": "platform_config", "agent list": "agent_list", "agent get": "agent_get",
   "dispute": "dispute_get", "artifact list": "artifact_list", "artifact get": "artifact_get", "payment get": "payment_get", "payment list": "payment_list",
   "review list": "review_list", "review create": "review_create",
@@ -165,7 +165,7 @@ export const SKILL_COMMANDS: Record<string, string> = {
 // test/cli-parity.ts gives each reason).
 export const UNSUPPORTED_COMMANDS = [
   "init", "config", "skills", "ping", "webhook", "events", "cast", "backer", "agent update-me",
-  "artifact upload", "artifact delete", "artifact cid", "artifact cid-status",
+  "artifact upload", "artifact delete", "artifact cid", "artifact cid-status", "fee retry",
 ];
 
 // The skills section of the system prompt. The capability builds it once at open and Pi

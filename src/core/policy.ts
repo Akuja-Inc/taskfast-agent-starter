@@ -3,7 +3,7 @@ import { defineDoc, ROOT_CONVERSATION_ID, type Conversation, type DocumentReader
 import { runCli, type CliResult, type Outcome } from "./cli.js";
 import { agentDirectory } from "./folder.js";
 import { clearOwnUploads, materializeArtifacts, type ResolvedFile } from "./artifacts.js";
-import { priceOf, reserve, recheck, settle, today, type Action, type Ledger } from "./money.js";
+import { amountOf, reserve, recheck, settle, today, type Action, type Ledger } from "./money.js";
 import { addNote, removeNote } from "./notes.js";
 import { FROZEN, Operator } from "./operator.js";
 import { prepare, UUID } from "./tools.js";
@@ -130,13 +130,8 @@ export function marketplacePolicy(o: PolicyOptions) {
         if (cleared) return { refused: cleared };
       }
       const read = (args: string[]) => command(o.runtime, args);
-      const price = spec.kind === "money" ? await priceOf(spec.amount, input, read) : { usd: 0, flags: [] };
-      if (typeof price === "string") return { refused: price };
-      const amount = price.usd;
-      // Code-fixed options for the counted amount (stake's --amount) go before the
-      // positional delimiter, so the command commits exactly what was reserved.
-      const at = args.includes("--") ? args.indexOf("--") : args.length;
-      const dispatch = [...args.slice(0, at), ...price.flags, ...args.slice(at)];
+      const amount = spec.kind === "money" ? await amountOf(spec.amount, input, read) : 0;
+      if (typeof amount === "string") return { refused: amount };
       // Only money tools carry the owner's limits into the ledger transitions.
       const limits = spec.kind === "money" ? o.spec.limits : undefined;
       // reserve: reservation and funds are atomic and durably committed BEFORE dispatch.
@@ -160,7 +155,7 @@ export function marketplacePolicy(o: PolicyOptions) {
       // it before dispatch; bound commits also reject durable abort marks.
       signal?.throwIfAborted();
       let result: CliResult;
-      try { result = await command(o.runtime, dispatch, resolved.length ? resolved : undefined); }
+      try { result = await command(o.runtime, args, resolved.length ? resolved : undefined); }
       catch (error) { result = { outcome: "uncertain", error: error instanceof Error ? error.message : String(error) }; }
       // A money tool that can spend after its own preflight has no failure the kit can
       // call known: the CLI may have signed before it refused, so a failure that would

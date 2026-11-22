@@ -14,8 +14,8 @@ export const COMMANDS = new Set([
   // Tool writes and money.
   "bid create", "bid cancel", "bid accept", "bid reject", "task claim", "task refuse", "task abort",
   "task concede", "task submit", "task remedy", "task approve", "task dispute", "task retry-fee",
-  "task reassign", "task open", "task edit", "task cancel", "task reopen", "message send",
-  "review create", "post", "settle", "escrow sign", "bond post", "stake",
+  "task open", "task edit", "task cancel", "task reopen", "message send",
+  "review create", "post", "settle", "escrow sign", "bond post",
   // Policy's own: upload cleanup before a submit, and the bond token's decimals.
   "artifact delete", "cast call",
 ]);

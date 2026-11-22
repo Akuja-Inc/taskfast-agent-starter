@@ -26,8 +26,8 @@ export const EXCLUDED: Record<string, string> = {
 };
 
 // Flags no tool passes even where a command takes them: code and config own wallets,
-// keys, RPC endpoints and file paths, and the model never sees them. An amount is only
-// ever the quote priceOf inserts at dispatch (stake's --amount), never a tool's args.
+// keys, RPC endpoints and file paths, and the model never sees them. An amount is never
+// a tool's args.
 const NEVER = new Set(["keystore", "wallet-password-file", "wallet-address", "rpc-url", "criteria-file", "amount"]);
 
 // Valid calls per tool that set every schema field between them, so every flag a tool
@@ -38,7 +38,7 @@ const files = [{ name: "results.json", content: "{}" }];
 export const SAMPLES: Record<string, Record<string, unknown> | Record<string, unknown>[]> = {
   me: {},
   wallet_balance: {},
-  discover: { status: "open", assignment_type: "direct", capability: "writing,research", budget_min: "10.00", budget_max: "40.00", cursor: "c2", limit: 5 },
+  discover: { status: "open", capability: "writing,research", budget_min: "10.00", budget_max: "40.00", cursor: "c2", limit: 5 },
   task_get: { task_id: T },
   task_list: { kind: "mine", status: "in_progress", cursor: "c2", limit: 5 },
   bid_list: { status: "pending", cursor: "c2", limit: 5 },
@@ -62,7 +62,6 @@ export const SAMPLES: Record<string, Record<string, unknown> | Record<string, un
   task_concede: { task_id: T },
   bid_cancel: { bid_id: B },
   bond_post: { task_id: T },
-  stake: { task_id: T },
   task_retry_fee: { task_id: T },
   task_submit: { task_id: T, summary: "Done", artifacts: files },
   task_remedy: { task_id: T, summary: "Fixed", artifacts: files },
@@ -71,9 +70,8 @@ export const SAMPLES: Record<string, Record<string, unknown> | Record<string, un
   post_task: {
     title: "Title", description: "Do it", budget: "40.00", pickup_deadline_hours: 24, capabilities: "writing,research",
     criteria: [{ description: "has results", check_type: "file_exists", check_expression: "results.json", expected_value: "true" }],
-    execution_deadline: "2026-10-20T17:00:00Z", venue: "tempo-zone-moderato", assignment_type: "direct", direct_agent_id: B,
+    execution_deadline: "2026-10-20T17:00:00Z", venue: "tempo-zone-moderato",
   },
-  task_reassign: { task_id: T, agent_id: B },
   task_open: { task_id: T },
   task_edit: { task_id: T, title: "Logo", description: "A logo", budget_max: "50.00", review_window_hours: 24, remedy_window_hours: 48 },
   task_cancel: { task_id: T },
@@ -154,7 +152,7 @@ export function parityProblems(tools: Record<string, ToolSpec>, surface: Map<str
     }
     for (const call of calls) check(tool, call);
     // Every advertised value, on its own beside the required fields, or in the full
-    // sample when it needs a partner field (assignment_type direct and direct_agent_id).
+    // sample when it needs a partner field.
     const required = Object.fromEntries(spec.schema.required.map((f) => [f, sample[f]]));
     const builds = (input: Record<string, unknown>) => { try { spec.args(input); return true; } catch { return false; } };
     for (const [field, prop] of Object.entries(spec.schema.properties)) {

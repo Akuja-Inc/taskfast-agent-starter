@@ -374,73 +374,67 @@ it("counts a bond post that failed after its preflight as uncertain, and never r
   expect(Object.values((await kit.agent.status()).spend)).toEqual([2.5]);
 });
 
-// A stake runs `taskfast stake` with the quote code read, and counts that same quote.
+// A bond post reads its quote with a dry run, counts that quote, and then posts.
 const bondToken = "0x20c0000000000000000000000000000000000000";
-function staking(units: number, stake: () => CliResult | Promise<CliResult>, quote: CliResult = { outcome: "ok", data: { action: "would_post_bond", amount: units, token: bondToken } }) {
-  const stakes: string[][] = [];
+function bonding(units: number, post: () => CliResult | Promise<CliResult>, quote: CliResult = { outcome: "ok", data: { action: "would_post_bond", amount: units, token: bondToken } }) {
+  const posts: string[][] = [];
   const command = async (_rt: unknown, args: string[]): Promise<CliResult> => {
     if (args[0] === "me") return me;
-    if (args[0] === "bond") return quote;
+    if (args[0] === "bond" && args.includes("--dry-run")) return quote;
+    if (args[0] === "bond") { posts.push(args); return post(); }
     if (args[0] === "cast") return { outcome: "ok", data: { decoded: ["6"] } };
-    if (args[0] === "stake") { stakes.push(args); return stake(); }
     return { outcome: "ok", data: {} };
   };
-  return { stakes, command };
+  return { posts, command };
 }
-const stakeCall = (id = "stake") => fauxAssistantMessage([fauxToolCall("stake", { task_id: task }, { id })], { stopReason: "toolUse" });
-
-it("stakes exactly the quoted amount, counts it, and never stakes twice", async () => {
-  const { stakes, command } = staking(2500000, () => ({ outcome: "ok", data: { stake: { status: "assigned" } } }));
-  const kit = await open({ command });
-  kit.faux.setResponses([stakeCall(), fauxAssistantMessage("Staked"), stakeCall("again"), fauxAssistantMessage("Skipped")]);
-  await run(kit.agent);
-  await run(kit.agent);
-  expect(stakes).toEqual([["stake", "--amount=2500000", "--", task]]);
-  const status = await kit.agent.status();
-  expect(status.actions[`stake:${task}`]).toMatchObject({ status: "done", amount: 2.5 });
-  expect(Object.values(status.spend)).toEqual([2.5]);
-});
-
-it("releases a refused stake, then quotes again before the next one", async () => {
-  let refusals = 1;
-  const { stakes, command } = staking(2500000, () => (refusals-- > 0 ? { outcome: "failed", error: "validation [stake_below_floor]: below the minimum" } : { outcome: "ok", data: {} }));
-  const kit = await open({ command });
-  kit.faux.setResponses([stakeCall(), fauxAssistantMessage("Refused")]);
-  await run(kit.agent);
-  expect((await kit.agent.status()).actions[`stake:${task}`]!.status).toBe("failed");
-  expect(Object.values((await kit.agent.status()).spend)).toEqual([0]);
-  kit.faux.setResponses([stakeCall("again"), fauxAssistantMessage("Staked")]);
-  await run(kit.agent);
-  expect(stakes).toHaveLength(2);
-  expect((await kit.agent.status()).actions[`stake:${task}`]!.status).toBe("done");
-});
+const bondCall = (id = "bond") => fauxAssistantMessage([fauxToolCall("bond_post", { task_id: task }, { id })], { stopReason: "toolUse" });
 
 it.each([
   ["the quote cannot be read", { outcome: "failed", error: "validation [not_operator_of_record]" } satisfies CliResult, /could not read the bond quote/],
   ["the quote is over the per-job limit", { outcome: "ok", data: { action: "would_post_bond", amount: 5000000, token: bondToken } } satisfies CliResult, /over your limit/],
-])("refuses a stake before reserving anything when %s", async (_n, quote, why) => {
-  const { stakes, command } = staking(0, () => ({ outcome: "ok", data: {} }), quote);
+])("refuses a bond post before reserving anything when %s", async (_n, quote, why) => {
+  const { posts, command } = bonding(0, () => ({ outcome: "ok", data: {} }), quote);
   const kit = await open({ command });
-  kit.faux.setResponses([stakeCall(), fauxAssistantMessage("Refused")]);
+  kit.faux.setResponses([bondCall(), fauxAssistantMessage("Refused")]);
   await run(kit.agent);
-  expect(stakes).toEqual([]);
+  expect(posts).toEqual([]);
   expect((await kit.agent.status()).actions).toEqual({});
   expect(await toolResults(kit.agent)).toEqual([expect.stringMatching(why)]);
 });
 
-it("keeps an uncertain stake spent and never repeats it, across a store reopen", async () => {
-  const { stakes, command } = staking(2500000, () => ({ outcome: "uncertain", error: "connection lost" }));
+it("keeps an uncertain bond post spent and never repeats it, across a store reopen", async () => {
+  const { posts, command } = bonding(2500000, () => ({ outcome: "uncertain", error: "connection lost" }));
   const kit = await open({ command });
-  kit.faux.setResponses([stakeCall(), fauxAssistantMessage("Unknown")]);
+  kit.faux.setResponses([bondCall(), fauxAssistantMessage("Unknown")]);
   await run(kit.agent);
   await kit.agent.close();
   const reopened = await open({ dir: kit.dir, command });
-  reopened.faux.setResponses([stakeCall("after-reopen"), fauxAssistantMessage("Skipped")]);
+  reopened.faux.setResponses([bondCall("after-reopen"), fauxAssistantMessage("Skipped")]);
   await run(reopened.agent);
-  expect(stakes).toHaveLength(1);
+  expect(posts).toHaveLength(1);
   const status = await reopened.agent.status();
-  expect(status.actions[`stake:${task}`]).toMatchObject({ status: "uncertain", amount: 2.5 });
+  expect(status.actions[`bond:${task}`]).toMatchObject({ status: "uncertain", amount: 2.5 });
   expect(Object.values(status.spend)).toEqual([2.5]);
+});
+
+it("answers a call to a removed marketplace tool as unavailable after a reopen, and sends no command", async () => {
+  const commands: string[][] = [];
+  const command = async (_rt: unknown, args: string[]): Promise<CliResult> => { commands.push(args); return args[0] === "me" ? me : { outcome: "ok", data: {} }; };
+  const kit = await open({ command });
+  kit.faux.setResponses([fauxAssistantMessage("Ready")]);
+  await run(kit.agent);
+  await kit.agent.close();
+  const reopened = await open({ dir: kit.dir, command });
+  const requests: string[] = [];
+  reopened.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("stake", { task_id: task }), fauxToolCall("task_reassign", { task_id: task, agent_id: task })], { stopReason: "toolUse" }),
+    seen(requests, fauxAssistantMessage("Gone")),
+  ]);
+  await run(reopened.agent);
+  expect(requests[0]).toContain("Tool stake is not available");
+  expect(requests[0]).toContain("Tool task_reassign is not available");
+  expect(commands.filter((args) => args[0] !== "me")).toEqual([]);
+  expect((await reopened.agent.status()).actions).toEqual({});
 });
 
 it("charges a failed submission fee again once, counted as the platform's fee", async () => {
