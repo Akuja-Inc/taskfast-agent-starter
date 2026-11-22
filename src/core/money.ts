@@ -98,27 +98,15 @@ export async function findBid(input: Record<string, unknown>, read: (args: strin
 }
 
 // The amount a money tool commits, from code (I9): the bid's price as the server reports
-// it, the platform's submission fee, or a task's quoted bond or stake. The bid read is deliberate,
+// it, the platform's submission fee, or a task's quoted bond. The bid read is deliberate,
 // even if the model just listed the bids itself: the amount must come from the server,
 // never from the model. A string is the reason the amount could not be fixed.
 export async function amountOf(source: AmountSource | undefined, input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<number | string> {
-  const price = await priceOf(source, input, read);
-  return typeof price === "string" ? price : price.usd;
-}
-
-// What a money tool commits, fixed by code: the amount in USD for the agent's limits,
-// and the options its command needs to commit exactly that amount. `taskfast stake`
-// takes the stake as --amount in bond base units, so the quote that is counted is the
-// stake that is sent; every other money command fixes its own amount.
-export interface Price { usd: number; flags: string[] }
-export async function priceOf(source: AmountSource | undefined, input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<Price | string> {
-  if (source === "bondStake" || source === "stakeQuote") {
+  if (source === "bondStake") {
     const quote = await bondQuote(input, read);
-    if (typeof quote === "string") return quote;
-    return { usd: quote.usd, flags: source === "stakeQuote" ? [`--amount=${quote.units}`] : [] };
+    return typeof quote === "string" ? quote : quote.usd;
   }
-  const usd = await serverAmount(source, input, read);
-  return typeof usd === "string" ? usd : { usd, flags: [] };
+  return serverAmount(source, input, read);
 }
 
 async function serverAmount(source: AmountSource | undefined, input: Record<string, unknown>, read: (args: string[]) => Promise<CliResult>): Promise<number | string> {

@@ -42,7 +42,7 @@ If in doubt between `read` and `write`, it is a `write`. If it can move funds, i
 - `schema`: built with `obj(...)`, so `additionalProperties` is false. List required fields.
 - `args(input)`: check every value with the validators at the top of `tools.ts` (`uuid`, `text`, `word`, `money`, `limit`, `hours`, or a new one beside them). Pass options as `--name=value`, using `opt(...)` for optional ones. Pass ids as positionals after `"--"`. Never put a raw input value into the args array.
 - `key(input)` (write and money): names the action, such as `bid:<task>` or `escrow:<bid>`. Two calls with the same key are the same action and run once. Choose what makes two attempts "the same": usually the target id, plus a digest of the text when one task can have many (`message_send`). Policy refuses a write without a key; still check the new entry explicitly.
-- `amount` (money): `bidPrice`, `submissionFee`, `bondStake` or `stakeQuote`. The amount is always read from the server in `money.ts`, never taken from the model's input. A new source means a new `AmountSource` and a new branch in `priceOf`, reading the server. A command that takes its amount as an option (`taskfast stake --amount`) gets that option from `priceOf`'s `flags`, which policy inserts before `--` at dispatch, so the amount sent is the amount counted; the schema never has an amount field.
+- `amount` (money): `bidPrice`, `submissionFee` or `bondStake`. The amount is always read from the server in `money.ts`, never taken from the model's input. A new source means a new `AmountSource` and a new branch in `amountOf`, reading the server. The schema never has an amount field.
 
 If the CLI can refuse the command before acting with an error code not in `REFUSED` (`cli.ts`), leave it out unless the CLI guarantees the server did nothing. An unknown code is treated as `uncertain`, which is the safe side.
 
@@ -50,7 +50,7 @@ If the CLI can refuse the command before acting with an error code not in `REFUS
 
 In `src/core/tools.test.ts`, add the command it builds to the `prepare` cases, at least one refusal for a bad value, and its key for a write.
 
-One test pins the whole table on purpose and will fail until you update it: "marks exactly the five tools that commit funds as money", the list of money tools. Adding to it means the agent can spend money in a new way. Confirm that with the user before you change the expected list.
+One test pins the whole table on purpose and will fail until you update it: "marks exactly the four tools that commit funds as money", the list of money tools. Adding to it means the agent can spend money in a new way. Confirm that with the user before you change the expected list.
 
 In `test/cli-parity.ts`, add one call to `SAMPLES` that sets every field of the tool (a list of calls when fields exclude each other, as `review_list`'s do), and drop the command's `EXCLUDED` entry. `test/cli-parity.test.ts` then checks every flag and every `enum` value the tool passes against the CLI's captured `--help`. A field that feeds a flag with fixed values needs an `enum`; when the server's word differs from the CLI's (`accepted_pending_escrow` and `accepted-pending-escrow`), advertise the server's and translate in `args`, as `oneOf` does.
 

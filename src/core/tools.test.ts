@@ -29,7 +29,7 @@ describe("prepare", () => {
     ["a task collection the CLI does not list", "task_list", { kind: "assigned" }, /must be one of mine, queue, posted/],
     ["a status filter on another collection", "task_list", { kind: "posted", status: "assigned" }, /status filters only kind mine/],
     ["a discover status the CLI does not list", "discover", { status: "assigned" }, /must be one of open, bidding/],
-    ["an assignment type the CLI does not list", "discover", { assignment_type: "auction" }, /must be one of open, direct/],
+    ["an assignment type on discover, which the CLI no longer lists", "discover", { assignment_type: "open" }, /discover has no field assignment_type/],
     ["an empty capability between commas", "discover", { capability: "writing,,research" }, /capability must be a single word/],
     ["a cursor with spaces", "bid_list", { cursor: "next page" }, /next_cursor a previous page returned/],
     ["an empty cursor", "task_bids", { task_id: T, cursor: "" }, /next_cursor a previous page returned/],
@@ -57,8 +57,8 @@ describe("prepare", () => {
     expect(prepare("discover", { cursor: next }).args).toEqual(["discover", `--cursor=${next}`]);
   });
 
-  it("filters discover by assignment type and by every capability a task must require", () => {
-    expect(prepare("discover", { assignment_type: "direct", capability: "writing, research" }).args).toEqual(["discover", "--assignment-type=direct", "--capability=writing", "--capability=research"]);
+  it("filters discover by every capability a task must require", () => {
+    expect(prepare("discover", { capability: "writing, research" }).args).toEqual(["discover", "--capability=writing", "--capability=research"]);
     // A stored call with one tag still runs as it did.
     expect(prepare("discover", { capability: "writing" }).args).toEqual(["discover", "--capability=writing"]);
   });
@@ -75,12 +75,9 @@ describe("prepare", () => {
     expect(prepare("task_get", { task_id: T }).key).toBeNull();
   });
 
-  it("marks exactly the five tools that commit funds as money, each with a code-side amount source", () => {
+  it("marks exactly the four tools that commit funds as money, each with a code-side amount source", () => {
     const money = Object.entries(TOOLS).filter(([, t]) => t.kind === "money");
-    expect(money.map(([n, t]) => [n, t.amount])).toEqual([["bond_post", "bondStake"], ["stake", "stakeQuote"], ["post_task", "submissionFee"], ["task_retry_fee", "submissionFee"], ["escrow_sign", "bidPrice"]]);
-    // The model cannot name a stake: code passes the quote as --amount.
-    expect(Object.keys(TOOLS.stake!.schema.properties)).toEqual(["task_id"]);
-    expect(prepare("stake", { task_id: T })).toMatchObject({ args: ["stake", "--", T], key: `stake:${T}` });
+    expect(money.map(([n, t]) => [n, t.amount])).toEqual([["bond_post", "bondStake"], ["post_task", "submissionFee"], ["task_retry_fee", "submissionFee"], ["escrow_sign", "bidPrice"]]);
     expect(prepare("task_retry_fee", { task_id: T })).toMatchObject({ args: ["task", "retry-fee", "--", T], key: `retry-fee:${T}` });
     expect(Object.values(TOOLS).filter((t) => t.kind !== "money").every((t) => t.amount === undefined)).toBe(true);
     // The model cannot hand escrow a price: the tool has no such field.
@@ -159,22 +156,19 @@ describe("prepare", () => {
   const post = { title: "Logo", description: "A logo for a bakery", budget: "40.00", pickup_deadline_hours: 24 };
   const gate = { description: "has results", check_type: "file_exists", check_expression: "results.json", expected_value: "true" };
 
-  it("posts a direct task with capabilities, criteria, a deadline and a venue, each as its own option", () => {
-    const A = "9A8B7C6D-5E4F-4A3B-8C2D-1E0F9A8B7C6D";
-    const { args, key } = prepare("post_task", { ...post, capabilities: "design, branding", criteria: [gate, { ...gate, check_type: "json_schema", check_expression: '{"type":"object"}', target_artifact_pattern: "*.json" }], execution_deadline: "2026-10-20T17:00:00Z", venue: "tempo-zone-moderato", assignment_type: "direct", direct_agent_id: A });
+  it("posts a task with capabilities, criteria, a deadline and a venue, each as its own option", () => {
+    const { args, key } = prepare("post_task", { ...post, capabilities: "design, branding", criteria: [gate, { ...gate, check_type: "json_schema", check_expression: '{"type":"object"}', target_artifact_pattern: "*.json" }], execution_deadline: "2026-10-20T17:00:00Z", venue: "tempo-zone-moderato" });
     expect(args).toEqual([
       "post", "--title=Logo", "--description=A logo for a bakery", "--budget=40.00", "--pickup-deadline-hours=24", "--capabilities=design,branding",
       `--criterion=${JSON.stringify({ ...gate, target_artifact_pattern: null })}`,
       `--criterion=${JSON.stringify({ ...gate, check_type: "json_schema", check_expression: '{"type":"object"}', target_artifact_pattern: "*.json" })}`,
-      "--execution-deadline=2026-10-20T17:00:00Z", "--venue=tempo-zone-moderato", "--assignment-type=direct", `--direct-agent-id=${A.toLowerCase()}`, "--yes",
+      "--execution-deadline=2026-10-20T17:00:00Z", "--venue=tempo-zone-moderato", "--yes",
     ]);
     // The same title and description are the same post, whatever else changed.
     expect(key).toBe(prepare("post_task", post).key);
   });
 
-  it("builds the direct task commands, keyed by task and new agent", () => {
-    const A = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
-    expect(prepare("task_reassign", { task_id: T, agent_id: A.toUpperCase() })).toMatchObject({ args: ["task", "reassign", `--agent-id=${A}`, "--", T], key: `reassign:${T}:${A}` });
+  it("builds the command that opens an unassigned task to bids, keyed by task", () => {
     expect(prepare("task_open", { task_id: T })).toMatchObject({ args: ["task", "open", "--", T], key: `open:${T}` });
   });
 
@@ -195,9 +189,8 @@ describe("prepare", () => {
     ["a budget with letters", { title: "x", description: "y", budget: "lots", pickup_deadline_hours: 24 }, /decimal amount/],
     ["a pickup window the server does not offer", { title: "x", description: "y", budget: "10.00", pickup_deadline_hours: 48 }, /one of 1, 4, 12, 24, 72/],
     ["an empty title", { title: " ", description: "y", budget: "10.00", pickup_deadline_hours: 24 }, /title must be non-empty/],
-    ["a direct task with no agent", { ...post, assignment_type: "direct" }, /direct_agent_id goes with assignment_type direct/],
-    ["an agent on an open task", { ...post, direct_agent_id: T }, /direct_agent_id goes with assignment_type direct/],
-    ["a direct agent that is not a UUID", { ...post, assignment_type: "direct", direct_agent_id: "--env=prod" }, /direct_agent_id must be a UUID/],
+    ["an assignment type, which the server no longer takes", { ...post, assignment_type: "direct" }, /post_task has no field assignment_type/],
+    ["a direct agent, which the server no longer takes", { ...post, direct_agent_id: T }, /post_task has no field direct_agent_id/],
     ["a capability with spaces", { ...post, capabilities: "data entry" }, /capabilities must be a single word/],
     ["a deadline that is not RFC 3339", { ...post, execution_deadline: "next Friday" }, /RFC 3339/],
     ["a deadline on a day that does not exist", { ...post, execution_deadline: "2026-02-31T10:00:00Z" }, /RFC 3339/],

@@ -7,7 +7,7 @@ import { MEDIA_TYPES } from "../src/core/artifacts.js";
 
 // The tool table must offer exactly the values the server publishes. The spec is the
 // copy taskfast-cli vendors and checks against the live server (its spec-drift gate):
-// spec/openapi.yaml at tag taskfast-cli-v0.22.0.
+// spec/openapi.yaml at tag taskfast-cli-v0.24.0.
 // To refresh, copy that file from the newest CLI release, update the tag here and the hash in the pin test:
 //   curl -fL -o test/fixtures/openapi.yaml https://raw.githubusercontent.com/Akuja-Inc/taskfast-cli/<tag>/spec/openapi.yaml
 const OPENAPI = join(import.meta.dirname, "fixtures", "openapi.yaml");
@@ -27,7 +27,7 @@ describe("tools match the server contract", () => {
 
   it("pins the byte-identical released spec", () => {
     expect(createHash("sha256").update(bytes).digest("hex"))
-      .toBe("4867d1ef134b6e0b4a0c09de6892b6e98a08c6e8a4827d2990eb3b25c1d5cef1");
+      .toBe("88dd4dd1861c4cccdc72d548ab1a764039abe2e10a628b816aa327db83eb7843");
   });
 
   it("publishes video and audio types and the server's upload cap", () => {
@@ -40,8 +40,8 @@ describe("tools match the server contract", () => {
 
   it("publishes every media type the kit captures", () => {
     const upload = yaml.slice(yaml.indexOf("  /tasks/{task_id}/artifacts:"), yaml.indexOf("  /tasks/{task_id}/artifacts/uploads:"));
-    // The 0.22.0 spec text omits the Office types, though the server accepts them (storage.ex)
-    // and CLI 0.22.0 types .docx, .xls and .xlsx. Only these three may be missing from it.
+    // The 0.24.0 spec text omits the Office types, though the server accepts them (storage.ex)
+    // and the CLI types .docx, .xls and .xlsx. Only these three may be missing from it.
     const OFFICE = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"];
     for (const type of Object.keys(MEDIA_TYPES).filter((type) => !OFFICE.includes(type))) expect(upload).toContain(type);
   });

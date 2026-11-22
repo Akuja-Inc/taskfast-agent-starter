@@ -13,8 +13,8 @@ export type ToolKind = "read" | "write" | "money" | "memory";
 // A money tool must name where its amount comes from: the type will not compile without
 // one, so a charged command cannot be added without being counted. bidPrice and
 // submissionFee are prices the server publishes; bondStake is the bond a task's quote
-// requires; stakeQuote is that same quote, which code also passes to `taskfast stake`.
-export type AmountSource = "bidPrice" | "submissionFee" | "bondStake" | "stakeQuote";
+// requires.
+export type AmountSource = "bidPrice" | "submissionFee" | "bondStake";
 type Schema = { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[]; items?: Schema }>; required: string[]; additionalProperties: false };
 interface ToolBase {
   description: string;
@@ -67,7 +67,6 @@ const BID_STATUS = ["pending", "accepted_pending_escrow", "accepted", "rejected"
 const TASK_KIND = ["mine", "queue", "posted"];
 const MINE_STATUS = ["assigned", "in_progress", "under_review", "disputed", "remedied"];
 const DISCOVER_STATUS = ["open", "bidding"];
-const ASSIGNMENT = ["open", "direct"];
 // A list's next_cursor, which the server says to pass back unchanged and never build.
 const cursor = (v: unknown, n: string) => (typeof v === "string" && /^[\x21-\x7e]{1,1024}$/.test(v) ? v : bad(`${n} must be the next_cursor a previous page returned`));
 // The pickup windows the server accepts (Task.pickup_window_hours in the app).
@@ -140,14 +139,13 @@ export const TOOLS: Record<string, ToolSpec> = {
     // --capability per tag.
     schema: obj({
       status: { type: "string", enum: DISCOVER_STATUS, description: "open (taking bids) or bidding (has bids, none accepted); both when omitted" },
-      assignment_type: { type: "string", enum: ASSIGNMENT, description: "open auctions, or direct invitations to you; both when omitted" },
       capability: s("capability tag, or several separated by commas: a task must require them all"),
       budget_min: s("minimum budget, e.g. 10.00"),
       budget_max: s("maximum budget"),
       ...PAGE,
     }),
     args: (i) => [
-      "discover", ...opt("status", i.status, oneOf(DISCOVER_STATUS)), ...opt("assignment-type", i.assignment_type, oneOf(ASSIGNMENT)),
+      "discover", ...opt("status", i.status, oneOf(DISCOVER_STATUS)),
       ...(i.capability === undefined ? [] : tags(i.capability, "capability").map((tag) => `--capability=${tag}`)),
       ...opt("budget-min", i.budget_min, money), ...opt("budget-max", i.budget_max, money), ...page(i),
     ],
@@ -177,7 +175,7 @@ export const TOOLS: Record<string, ToolSpec> = {
   platform_config: { kind: "read", description: "The platform's settings: the submission fee, the completion fee tiers (what share of a payout the platform keeps), settlement venues and contract addresses.", schema: obj({}), args: () => ["platform", "config"] },
   agent_list: {
     kind: "read",
-    description: "Active agents on the marketplace, optionally with one capability: who you could give a direct task to.",
+    description: "Active agents on the marketplace, optionally with one capability.",
     schema: obj({ capability: s("capability tag filter"), ...PAGE }),
     args: (i) => ["agent", "list", ...opt("capability", i.capability, word), ...page(i)],
   },
@@ -248,22 +246,10 @@ export const TOOLS: Record<string, ToolSpec> = {
     amount: "bondStake",
     spendAfterPreflight: true,
   },
-  // A direct high-assurance task waits at awaiting_stake for its agent's performance
-  // stake. The stake is the server's quote: code reads it, counts it, and passes it as
-  // --amount in bond base units, so the model never names it. One POST with the agent's
-  // key and no signing, so a known refusal means nothing was staked.
-  stake: {
-    kind: "money",
-    description: "Post the performance stake a direct high-assurance task assigned to you needs (status awaiting_stake). Spends the stake the server quotes, held as a bond until the task settles.",
-    schema: obj({ task_id: s("task UUID") }, ["task_id"]),
-    args: (i) => ["stake", "--", uuid(i.task_id, "task_id")],
-    key: (i) => `stake:${uuid(i.task_id, "task_id")}`,
-    amount: "stakeQuote",
-  },
-  // A direct task assigned to this agent can be refused before it claims it.
+  // A task assigned to this agent can be refused before it claims it.
   task_refuse: {
     kind: "write",
-    description: "Turn down a direct task assigned to you, before you claim it. Its poster can then give it to someone else.",
+    description: "Turn down a task assigned to you, before you claim it. Its poster can then open it to bids.",
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "refuse", "--", uuid(i.task_id, "task_id")],
     key: (i) => `refuse:${uuid(i.task_id, "task_id")}`,
@@ -326,14 +312,14 @@ export const TOOLS: Record<string, ToolSpec> = {
 
   // A post commits no budget, which is paid later through escrow_sign; it charges the
   // platform's submission fee, so that fee is what it counts against the limits. The CLI
-  // signs only that fee transfer, for open and direct tasks alike (post.rs, 0.19.8).
+  // signs only that fee transfer(post.rs, 0.19.8).
   // --yes acknowledges the CLI's own oversized-budget gate (confirm_above_budget). The
   // kit decides that here: the post spends only the fee, and the budget is spent later
   // by escrow_sign, which counts the bid's price against this agent's own limits.
   // The key stays title and description, as stored calls and their actions hold it.
   post_task: {
     kind: "money",
-    description: "Post a new task: an open auction anyone qualified can bid on, or a direct task for one agent you name. Posting costs the platform's submission fee; you pay a bid's price later, when you fund its escrow. The same title and description post once.",
+    description: "Post a new task: an open auction anyone qualified can bid on. Posting costs the platform's submission fee; you pay a bid's price later, when you fund its escrow. The same title and description post once.",
     schema: obj({
       title: s("short title"),
       description: s("what you need done"),
@@ -343,17 +329,12 @@ export const TOOLS: Record<string, ToolSpec> = {
       criteria: criterionList,
       execution_deadline: s("optional time the work must be done by, RFC 3339 such as 2026-10-20T17:00:00Z; at most 7 days ahead"),
       venue: s("optional settlement venue chain_key from platform config; the default venue when omitted"),
-      assignment_type: { type: "string", enum: ASSIGNMENT, description: "open (the default) or direct, which needs direct_agent_id" },
-      direct_agent_id: s("the agent UUID a direct task is for"),
     }, ["title", "description", "budget", "pickup_deadline_hours"]),
-    args: (i) => {
-      if ((i.assignment_type === "direct") !== (i.direct_agent_id !== undefined)) bad("direct_agent_id goes with assignment_type direct, and only with it");
-      return [
+    args: (i) => [
         "post", `--title=${text(i.title, "title", 200)}`, `--description=${text(i.description, "description")}`, `--budget=${money(i.budget, "budget")}`, `--pickup-deadline-hours=${hours(i.pickup_deadline_hours, "pickup_deadline_hours")}`,
         ...opt("capabilities", i.capabilities, (v, n) => tags(v, n).join(",")), ...criteria(i.criteria), ...opt("execution-deadline", i.execution_deadline, timestamp),
-        ...opt("venue", i.venue, word), ...opt("assignment-type", i.assignment_type, oneOf(ASSIGNMENT)), ...(i.direct_agent_id === undefined ? [] : [`--direct-agent-id=${uuid(i.direct_agent_id, "direct_agent_id")}`]), "--yes",
-      ];
-    },
+        ...opt("venue", i.venue, word), "--yes",
+    ],
     key: (i) => `post:${digest(`${text(i.title, "title", 200)}\n${text(i.description, "description")}`)}`,
     amount: "submissionFee",
   },
@@ -369,18 +350,10 @@ export const TOOLS: Record<string, ToolSpec> = {
     key: (i) => `retry-fee:${uuid(i.task_id, "task_id")}`,
     amount: "submissionFee",
   },
-  // A direct task the agent refused or let lapse sits at unassigned until its poster
-  // names another agent or opens it to bids.
-  task_reassign: {
-    kind: "write",
-    description: "Give a direct task of yours that sits unassigned (its agent refused or let it lapse) to another agent. Its escrow flow starts again.",
-    schema: obj({ task_id: s("task UUID"), agent_id: s("the new agent's UUID") }, ["task_id", "agent_id"]),
-    args: (i) => ["task", "reassign", `--agent-id=${uuid(i.agent_id, "agent_id")}`, "--", uuid(i.task_id, "task_id")],
-    key: (i) => `reassign:${uuid(i.task_id, "task_id")}:${uuid(i.agent_id, "agent_id")}`,
-  },
+  // A task the agent refused or let lapse sits at unassigned until its poster opens it to bids.
   task_open: {
     kind: "write",
-    description: "Turn a direct task of yours that sits unassigned into an open auction anyone qualified can bid on.",
+    description: "Turn a task of yours that sits unassigned (its agent refused or let it lapse) into an open auction anyone qualified can bid on.",
     schema: obj({ task_id: s("task UUID") }, ["task_id"]),
     args: (i) => ["task", "open", "--", uuid(i.task_id, "task_id")],
     key: (i) => `open:${uuid(i.task_id, "task_id")}`,
