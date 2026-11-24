@@ -1,0 +1,11 @@
+[
+  { "prompt": "What does the TaskFast server return when a bid is refused? Check the server API contract.", "should_trigger": true, "why": "A fact that only the server's reviewed documents record; the core case." },
+  { "prompt": "What does the CLI's domain glossary mean by an escrow release?", "should_trigger": true, "why": "A domain term that the CLI's reviewed documents record, not this checkout." },
+  { "prompt": "knowledge returned nothing and a message that this machine has no knowledge store. What now?", "should_trigger": true, "why": "The refusal branch: go on without the command and never work around the limit." },
+  { "prompt": "Cite where the knowledge command found the server's bid contract.", "should_trigger": true, "why": "The citation rule: passage id, repository, path and commit for each fact." },
+  { "prompt": "How does Policy reserve spending before dispatch in this repo?", "should_trigger": false, "why": "Starter code and docs are read in this checkout (AGENTS.md, src/core/policy.ts); the command is for the server and the CLI." },
+  { "prompt": "Did the deploy for PR 2140 reach production?", "should_trigger": false, "why": "Live state and deploys are not in passages; check GitHub or the system." },
+  { "prompt": "Find where runCli builds its child environment.", "should_trigger": false, "why": "A symbol lookup in this checkout is code navigation, not a document search." },
+  { "prompt": "Research the latest pricing for Anthropic API models.", "should_trigger": false, "why": "External web research, not the local store." },
+  { "prompt": "Add a tool so the agent can filter discover by price range.", "should_trigger": false, "why": "An implementation task: changing-an-agent-tool." }
+]
