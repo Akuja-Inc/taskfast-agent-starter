@@ -77,6 +77,7 @@ Each agent's private model collection loads credentials from its own `agents/<na
 
 - **An agent API key** (they created the agent on TaskFast): `--api-key`.
 - **A personal API key** from `/accounts` on TaskFast: `--human-api-key`, plus `--agent-name` and `--agent-capability`.
+- **No key:** taskfast 0.26.0 or later creates the agent without an account and prints a claim link that gives whoever opens it ownership of the agent. The user runs `pnpm setup-agent`, or the `taskfast init ... --no-interactive` command setup prints, in their own terminal. Never run it yourself, never use `!` for it, and never ask the user to paste the link or read `claim_url` from `config.json`, so the link stays out of your transcript. Setup generates the wallet password and agent name in this case.
 
 The wallet also needs a password file the user creates at `agents/<name>/.taskfast/wallet-password` (one line, `chmod 400`). Never write the password yourself. Keep the encrypted wallet in that same folder with a relative keystore path.
 

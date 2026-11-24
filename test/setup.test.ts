@@ -7,7 +7,7 @@ import { providerSource } from "../src/core/model.js";
 import { loadSkills } from "../src/core/skills.js";
 import { splitModel } from "../src/core/spec.js";
 import { taskfastEnv } from "../src/run.js";
-import { installedVersion, parseSetupArgs, readCatalogue, setup, upsertEnv, type SetupIO, type SetupOptions } from "../src/setup.js";
+import { ADJECTIVES, agentName, installedVersion, NOUNS, parseSetupArgs, readCatalogue, setup, upsertEnv, type SetupIO, type SetupOptions } from "../src/setup.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const CATALOGUE = readCatalogue(ROOT);
@@ -28,7 +28,7 @@ function fakeCli(cmd: string, args: string[], cwd: string): { status: number; st
   return { status: 0, stdout: '{"ok":true}\n' };
 }
 
-function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: string; agentEnv?: { id: string; text: string }; runStatus?: number; capture?: SetupIO["capture"] } = {}) {
+function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: string; agentEnv?: { id: string; text: string }; runStatus?: number; capture?: SetupIO["capture"]; keyless?: boolean; terminal?: boolean; random?: () => number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "kit-"));
   writeFileSync(join(root, "package.json"), readFileSync(join(ROOT, "package.json")));
   cpSync(join(ROOT, "examples"), join(root, "examples"), { recursive: true });
@@ -45,7 +45,9 @@ function kit(answers: string[], opts: { env?: NodeJS.ProcessEnv; envFile?: strin
   const captured: { cmd: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
   const logs: string[] = [];
   const io: SetupIO = {
-    root, env: opts.env ?? {},
+    root, env: opts.keyless ? (opts.env ?? {}) : { TASKFAST_API_KEY: "agent-key", ...opts.env },
+    terminal: opts.terminal ?? true,
+    random: opts.random ?? (() => 0),
     ask: async (question, hidden = false) => {
       asked.push({ question, hidden });
       const answer = answers.shift();
@@ -141,7 +143,7 @@ describe("setup", () => {
   it("hides TASKFAST_WALLET_PASSWORD from taskfast init so the wallet uses the password file", async () => {
     const k = kit([], { env: { TASKFAST_WALLET_PASSWORD: "shell password", WALLET_PW: "file password", PATH: "/usr/bin" } });
     await k.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" });
-    expect(k.envs).toEqual([{ WALLET_PW: "file password", PATH: "/usr/bin" }]);
+    expect(k.envs).toEqual([{ TASKFAST_API_KEY: "agent-key", WALLET_PW: "file password", PATH: "/usr/bin" }]);
     expect(k.ran.at(-1)?.args.slice(-2)).toEqual(["--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"]);
     expect(readFileSync(join(k.root, "agents", "flagged", ".taskfast", "wallet-password"), "utf8")).toBe("file password");
     expect(k.logs).toContain("taskfast init runs without TASKFAST_WALLET_PASSWORD, so the wallet uses agents/flagged/.taskfast/wallet-password as the agent does.");
@@ -540,5 +542,203 @@ describe("provider catalogue", () => {
     expect(result.stderr).toContain("Catalogue not written");
     expect(readFileSync(join(root, "providers.json"), "utf8")).toBe(before);
     expect(readFileSync(join(root, "src", "core", "providers.ts"), "utf8")).toBe("unchanged");
+  });
+});
+
+const CLAIM = "https://staging.taskfast.app/new/claim?claim_token=tok-secret-1234";
+const MINTED_KEY = "tf_unclaimed_key_9876";
+const KEYLESS_ENV = { PATH: "/usr/bin", HOME: "/home/someone" };
+// Envelopes below are built from the taskfast-cli-v0.26.0 source (init.rs build_envelope and NewAgentRefusal), not captured.
+const MINTED = { ok: true, data: { agent: { action: "minted_unclaimed", claim_url: CLAIM, expires_at: "2026-11-27T00:00:00Z", terms_accepted: true } } };
+const refused = (code: string, extra: object = {}) => ({ ok: false, error: { code, message: `${code} message`, ...extra } });
+type InitReply = { status: number; body: unknown; save?: boolean };
+
+function keylessCli(o: { version?: string; versionStatus?: number; init?: InitReply } = {}): SetupIO["capture"] {
+  const init = o.init ?? { status: 0, body: MINTED, save: true };
+  return (cmd, args, cwd) => {
+    if (args[0] === "--version") return { status: o.versionStatus ?? 0, stdout: o.version === undefined ? "taskfast 0.26.0\n" : o.version };
+    if (init.save) {
+      mkdirSync(join(cwd, ".taskfast"), { recursive: true });
+      writeFileSync(join(cwd, ".taskfast", "config.json"), JSON.stringify({ environment: "staging", api_key: MINTED_KEY, claim_url: CLAIM }));
+    }
+    return { status: init.status, stdout: `${JSON.stringify(init.body)}\n` };
+  };
+}
+const INIT_ARGS = ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json", "--no-interactive", "--agent-name=brisk-acorn", "--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"];
+const keyless = (opts: Parameters<typeof kit>[1] & { cli?: Parameters<typeof keylessCli>[0] } = {}) => {
+  const { cli, ...rest } = opts;
+  return kit([], { keyless: true, env: KEYLESS_ENV, capture: keylessCli(cli), ...rest });
+};
+const passwordFile = (k: { root: string }) => join(k.root, "agents", "flagged", ".taskfast", "wallet-password");
+const everything = (k: { logs: string[] }) => k.logs.join("\n");
+
+describe("keyless first run", () => {
+  it("creates the agent with no key, shows only the CLI's stderr link, and keeps every secret out of setup's output", async () => {
+    const k = keyless();
+    await k.run({ ...ALL, env: "staging" });
+    expect(k.ran).toEqual([]);
+    expect(k.captured.map((c) => c.args)).toEqual([["--version"], INIT_ARGS]);
+    expect(k.captured[1]).toMatchObject({ cmd: "taskfast", cwd: join(k.root, "agents", "flagged"), env: KEYLESS_ENV });
+    const out = everything(k);
+    expect(out).toContain("agents/flagged has a working TaskFast key on staging, but nobody owns the agent yet. Its name is brisk-acorn.");
+    expect(out).toContain("A wallet password was generated and saved in agents/flagged/.taskfast/wallet-password; keep a copy in a safe place.");
+    expect(out).toContain("The link is saved only in agents/flagged/.taskfast/config.json.");
+    for (const secret of [CLAIM, "tok-secret-1234", MINTED_KEY, readFileSync(passwordFile(k), "utf8")]) expect(out).not.toContain(secret);
+  });
+
+  it("generates a one-line wallet password in a 0400 file inside a 0700 folder", async () => {
+    const k = keyless();
+    await k.run({ ...ALL, env: "staging" });
+    const text = readFileSync(passwordFile(k), "utf8");
+    expect(text).toMatch(/^[A-Za-z0-9_-]{43,}$/);
+    expect(statSync(passwordFile(k)).mode & 0o777).toBe(0o400);
+    expect(statSync(join(k.root, "agents", "flagged", ".taskfast")).mode & 0o777).toBe(0o700);
+    const other = keyless();
+    await other.run({ ...ALL, env: "staging" });
+    expect(readFileSync(passwordFile(other), "utf8")).not.toBe(text);
+    expect(k.captured[1]!.args).not.toContain("--skip-wallet");
+  });
+
+  it("keeps an existing wallet password file and uses a flagged password variable when there is none", async () => {
+    const kept = keyless();
+    mkdirSync(join(kept.root, "agents", "flagged", ".taskfast"), { recursive: true });
+    writeFileSync(passwordFile(kept), "original password");
+    await kept.run({ ...ALL, env: "staging" });
+    expect(readFileSync(passwordFile(kept), "utf8")).toBe("original password");
+    expect(kept.captured[1]!.args).toEqual(INIT_ARGS);
+    expect(everything(kept)).not.toContain("A wallet password was generated");
+    const flagged = keyless({ env: { ...KEYLESS_ENV, WALLET_PW: "flagged password" } });
+    await flagged.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" });
+    expect(readFileSync(passwordFile(flagged), "utf8")).toBe("flagged password");
+    expect(flagged.captured[1]!.env).toEqual(KEYLESS_ENV);
+    expect(everything(flagged)).not.toContain("flagged password");
+  });
+
+  it("asks no wallet password question", async () => {
+    const k = kit(["1", ...ME, "", "y"], { keyless: true, env: KEYLESS_ENV, capture: keylessCli() });
+    await k.run({ provider: "anthropic", set: ["ANTHROPIC_API_KEY=sk-ant-flag"], model: "claude-sonnet-5-5", agent: "flagged", env: "staging" });
+    expect(k.asked).toHaveLength(6);
+    expect(k.asked.some((a) => a.question.includes("Wallet password"))).toBe(false);
+    expect(k.captured).toHaveLength(2);
+  });
+
+  it("passes an adjective-noun agent name from an injectable source", async () => {
+    const k = keyless({ random: () => 0.999 });
+    await k.run({ ...ALL, env: "staging" });
+    expect(k.captured[1]!.args).toContain(`--agent-name=${ADJECTIVES[24]}-${NOUNS[24]}`);
+    expect(everything(k)).toContain(`Its name is ${ADJECTIVES[24]}-${NOUNS[24]}.`);
+  });
+
+  it("offers 25 plain adjectives and 25 plain nouns, and every pair is a valid name", () => {
+    for (const list of [ADJECTIVES, NOUNS]) {
+      expect(list).toHaveLength(25);
+      expect(new Set(list).size).toBe(25);
+      for (const word of list) expect(word).toMatch(/^[a-z]{2,10}$/);
+    }
+    for (let i = 0; i < 25; i++) for (let j = 0; j < 25; j++) {
+      const draws = [(i + 0.5) / 25, (j + 0.5) / 25];
+      const name = agentName(() => draws.shift()!);
+      expect(name).toBe(`${ADJECTIVES[i]}-${NOUNS[j]}`);
+      expect(name).toMatch(/^[a-z]+-[a-z]+$/);
+      expect(name.length).toBeLessThanOrEqual(80);
+    }
+    expect(agentName()).toMatch(/^[a-z]+-[a-z]+$/);
+  });
+
+  it("does not reach init with a CLI older than 0.26.0, and names the installed version", async () => {
+    for (const version of ["0.22.0", "0.25.9", "0.9.99"]) {
+      const k = keyless({ cli: { version: `taskfast ${version}\n` } });
+      await k.run({ ...ALL, env: "staging" });
+      expect(k.captured.map((c) => c.args)).toEqual([["--version"]]);
+      expect(everything(k)).toContain(`taskfast ${version} is installed. Creating an agent without a TaskFast API key needs taskfast 0.26.0 or later, so setup did not run taskfast init.`);
+      expect(everything(k)).toContain("TASKFAST_HUMAN_API_KEY");
+      expect(everything(k)).toContain(`cd agents/flagged && taskfast ${INIT_ARGS.join(" ")}`);
+    }
+    for (const version of ["0.26.0", "0.26.1-rc.1", "1.0.0"]) {
+      const k = keyless({ cli: { version: `taskfast ${version}\n` } });
+      await k.run({ ...ALL, env: "staging" });
+      expect(k.captured).toHaveLength(2);
+    }
+  });
+
+  it("does not reach init when the CLI version cannot be read", async () => {
+    for (const cli of [{ versionStatus: 127, version: "" }, { version: "taskfast fixture\n" }]) {
+      const k = keyless({ cli });
+      await k.run({ ...ALL, env: "staging" });
+      expect(k.captured).toHaveLength(1);
+      expect(everything(k)).toContain("Setup did not run taskfast init: it could not read a taskfast version from `taskfast --version`.");
+    }
+  });
+
+  it("does not run, or check the CLI, away from a terminal, and says why", async () => {
+    const k = keyless({ terminal: false });
+    await k.run({ ...ALL, env: "staging" });
+    expect(k.captured).toEqual([]);
+    expect(k.ran).toEqual([]);
+    expect(everything(k)).toContain("Setup did not run taskfast init: with no TaskFast API key it creates an agent and prints a claim link, and whoever opens that link owns the agent. Setup runs it only at a terminal.");
+    expect(everything(k)).toContain(`cd agents/flagged && taskfast ${INIT_ARGS.join(" ")}`);
+    expect(statSync(passwordFile(k)).mode & 0o777).toBe(0o400);
+  });
+
+  it("prints the full keyless command when init is skipped, without spawning anything", async () => {
+    const k = keyless();
+    await k.run({ ...ALL, env: "staging", init: false });
+    expect(k.captured).toEqual([]);
+    expect(k.ran).toEqual([]);
+    expect(everything(k)).toContain("Run it yourself in your own terminal when ready. With no TaskFast API key it needs taskfast 0.26.0 or later and prints a claim link; whoever opens that link owns the agent:");
+    expect(everything(k)).toContain(`cd agents/flagged && taskfast ${INIT_ARGS.join(" ")}`);
+    expect(everything(k)).toContain("A wallet password was generated and saved in agents/flagged/.taskfast/wallet-password; keep a copy in a safe place.");
+  });
+
+  it.each([
+    ["404", { status: 2, body: refused("missing_api_key") }, "TaskFast on staging does not create agents without an account yet (it answered 404). Nothing was saved and no agent was created. To sign up with an account instead, set TASKFAST_HUMAN_API_KEY to a personal API key from TaskFast's /accounts page, then run:"],
+    ["429", { status: 5, body: refused("rate_limited", { retry_after_seconds: 5400 }) }, "TaskFast refused to create the agent (rate_limited: rate_limited message). Nothing was saved. Try again in about 90 minutes, or use a personal API key (TASKFAST_HUMAN_API_KEY). Then run:"],
+    ["429 with no wait", { status: 5, body: refused("rate_limited") }, "Nothing was saved. Try again later, or use a personal API key (TASKFAST_HUMAN_API_KEY). Then run:"],
+    ["503", { status: 4, body: refused("server") }, "taskfast init did not create the agent (server: server message). Nothing was saved in agents/flagged. Try again later:"],
+  ])("explains a %s refusal and saves nothing", async (_name, init, text) => {
+    const k = keyless({ cli: { init } });
+    await k.run({ ...ALL, env: "staging" });
+    expect(everything(k)).toContain(text);
+    expect(everything(k)).toContain(`cd agents/flagged && taskfast ${INIT_ARGS.join(" ")}`);
+    expect(everything(k)).not.toMatch(/0\.26\.0|Upgrade|working TaskFast key/);
+    expect(existsSync(join(k.root, "agents", "flagged", ".taskfast", "config.json"))).toBe(false);
+  });
+
+  it("says the agent exists when init fails after saving its key, and that a rerun reuses it", async () => {
+    const k = keyless({ cli: { init: { status: 4, body: refused("server"), save: true } } });
+    await k.run({ ...ALL, env: "staging" });
+    expect(everything(k)).toContain("taskfast init created the agent and saved its key and claim link in agents/flagged/.taskfast/config.json, then stopped (server: server message). Open the claim link printed above to claim it. Running the same command again reuses the saved key and does not create another agent:");
+    expect(everything(k)).not.toContain(CLAIM);
+  });
+
+  it("shows the CLI's error message, with any claim token masked, because the envelope is not echoed", async () => {
+    const k = keyless({ cli: { init: { status: 3, body: refused("auth", { message: `403 claim_required ${CLAIM}\nmore` }) } } });
+    await k.run({ ...ALL, env: "staging" });
+    expect(everything(k)).toContain("(auth: 403 claim_required https://staging.taskfast.app/new/claim?claim_token=*** more)");
+    expect(everything(k)).not.toContain("tok-secret-1234");
+  });
+
+  it("falls back to the plain message when init exits cleanly with an envelope it does not know", async () => {
+    const k = keyless({ cli: { init: { status: 0, body: { ok: true, data: { agent: { action: "other" } } } } } });
+    await k.run({ ...ALL, env: "staging" });
+    expect(everything(k)).toContain("taskfast init did not finish.");
+    expect(everything(k)).not.toContain("working TaskFast key");
+  });
+
+  it("stays a keyed run, with no version check and today's exact command, when a key or a config exists", async () => {
+    for (const env of [{ TASKFAST_API_KEY: "agent-key" }, { TASKFAST_HUMAN_API_KEY: "tf_user_pat" }]) {
+      const keyed = kit([], { env: { ...KEYLESS_ENV, ...env, WALLET_PW: "a long enough password" }, keyless: true });
+      await keyed.run({ ...ALL, env: "staging", walletPasswordEnv: "WALLET_PW" });
+      expect(keyed.captured).toEqual([]);
+      expect(keyed.ran).toEqual([{ cmd: "taskfast", args: ["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json", "--generate-wallet", "--wallet-password-file=.taskfast/wallet-password"], cwd: join(keyed.root, "agents", "flagged") }]);
+      expect(everything(keyed)).not.toContain("claim link");
+    }
+    const withConfig = kit([], { keyless: true, env: KEYLESS_ENV });
+    mkdirSync(join(withConfig.root, "agents", "flagged", ".taskfast"), { recursive: true });
+    writeFileSync(join(withConfig.root, "agents", "flagged", ".taskfast", "config.json"), "{}");
+    await withConfig.run({ ...ALL, env: "staging" });
+    expect(withConfig.captured).toEqual([]);
+    expect(withConfig.ran.at(-1)?.args).toEqual(["--env", "staging", "init", "--keystore-path=.taskfast/wallet.json"]);
+    expect(existsSync(passwordFile(withConfig))).toBe(false);
   });
 });

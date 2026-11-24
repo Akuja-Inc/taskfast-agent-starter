@@ -2,7 +2,7 @@ import { existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync, renameSyn
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, it, vi } from "vitest";
-import { runCli } from "./cli.js";
+import { cliOutcome, runCli } from "./cli.js";
 import type { Env } from "./types.js";
 
 const directories: string[] = [];
@@ -99,4 +99,16 @@ it("refuses unsafe artifact paths before spawning a child", async () => {
     expect(existsSync(marker)).toBe(false);
   }
   expect(readdirSync(outside)).toEqual([]);
+});
+
+it("masks a claim token in an error before it can reach the model", () => {
+  const link = "https://staging.taskfast.app/new/claim?claim_token=abc123def&x=1";
+  const fromEnvelope = cliOutcome(JSON.stringify({ ok: false, error: { code: "auth", message: `403 claim_required, open ${link}` } }), "exit 3");
+  const fromStderr = cliOutcome("", undefined, `403 claim_required ${link}`);
+  for (const result of [fromEnvelope, fromStderr]) {
+    expect(result.outcome === "failed" || result.outcome === "uncertain").toBe(true);
+    expect(JSON.stringify(result)).not.toContain("abc123def");
+    expect(JSON.stringify(result)).toContain("claim_token=***");
+  }
+  expect(fromEnvelope.outcome).toBe("failed");
 });

@@ -16,7 +16,7 @@ function kit(): string {
   return root;
 }
 
-it.skipIf(!HAS_PTY).each(["handoff", "secret", "cancel"])("setup terminal: %s", (scenario) => {
+it.skipIf(!HAS_PTY).each(["handoff", "secret", "cancel", "keyless"])("setup terminal: %s", (scenario) => {
   const root = kit();
   const run = spawnSync("python3", [join(ROOT, "test/setup-terminal.py"), process.execPath, join(ROOT, "dist/src/setup.js"), root, scenario], { encoding: "utf8", timeout: 15_000 });
   expect(run.error).toBeUndefined();

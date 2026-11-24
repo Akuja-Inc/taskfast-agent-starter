@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -145,6 +145,92 @@ export interface SetupIO {
   // Runs a command without the terminal; returns its exit status and stdout.
   capture(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): { status: number; stdout: string };
   log(line: string): void;
+  terminal: boolean;
+  random?: () => number;
+}
+
+export const ADJECTIVES = [
+  "brisk", "calm", "clever", "cosy", "eager", "gentle", "happy", "jolly", "keen", "kind", "lively", "lucky", "merry",
+  "neat", "noble", "polite", "proud", "quick", "quiet", "sunny", "swift", "tidy", "warm", "witty", "zesty",
+];
+export const NOUNS = [
+  "acorn", "badger", "beacon", "breeze", "comet", "daisy", "falcon", "fern", "harbor", "heron", "lantern", "maple", "meadow",
+  "otter", "pebble", "pine", "puffin", "river", "robin", "sparrow", "thistle", "tulip", "willow", "wren", "yarrow",
+];
+const pick = (words: string[], random: () => number) => words[Math.min(words.length - 1, Math.floor(random() * words.length))]!;
+export function agentName(random: () => number = Math.random): string {
+  return `${pick(ADJECTIVES, random)}-${pick(NOUNS, random)}`;
+}
+
+const KEYLESS_CLI = [0, 26, 0] as const;
+const KEYLESS_ARGS = "--no-interactive";
+
+function cliVersion(io: SetupIO, dir: string): number[] | null {
+  const m = /^taskfast (\d+)\.(\d+)\.(\d+)/.exec(io.capture("taskfast", ["--version"], dir, childEnv(io)).stdout);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+function childEnv(io: SetupIO): NodeJS.ProcessEnv {
+  return { ...(io.env.PATH === undefined ? {} : { PATH: io.env.PATH }), ...(io.env.HOME === undefined ? {} : { HOME: io.env.HOME }) };
+}
+const atLeast = (found: number[], need: readonly number[]) => {
+  for (let i = 0; i < need.length; i++) if (found[i] !== need[i]) return found[i]! > need[i]!;
+  return true;
+};
+
+function readEnvelope(stdout: string): { action?: string; code?: string; message?: string; retryAfter?: number } {
+  try {
+    const value: unknown = JSON.parse(stdout);
+    if (!isRecord(value)) return {};
+    const agent = isRecord(value.data) && isRecord(value.data.agent) ? value.data.agent : undefined;
+    const error = isRecord(value.error) ? value.error : undefined;
+    return {
+      ...(value.ok === true && typeof agent?.action === "string" ? { action: agent.action } : {}),
+      ...(typeof error?.code === "string" ? { code: error.code } : {}),
+      ...(typeof error?.message === "string" ? { message: error.message.replace(/claim_token=[^&\s"']+/g, "claim_token=***").replace(/\s+/g, " ").slice(0, 300) } : {}),
+      ...(typeof error?.retry_after_seconds === "number" ? { retryAfter: error.retry_after_seconds } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+interface KeylessRun {
+  id: string;
+  dir: string;
+  environment: Environment;
+  initArgs: string[];
+  name: string;
+  ran: boolean;
+  generated: boolean;
+}
+
+function keylessInit(io: SetupIO, c: KeylessRun): void {
+  const command = `\n  cd agents/${c.id} && taskfast ${c.initArgs.join(" ")}`;
+  const note = c.generated ? `\nA wallet password was generated and saved in agents/${c.id}/${PASSWORD_PATH}; keep a copy in a safe place.` : "";
+  const stop = (why: string) => io.log(`\n${why}${command}${note}`);
+  if (!c.ran) return stop("Run it yourself in your own terminal when ready. With no TaskFast API key it needs taskfast 0.26.0 or later and prints a claim link; whoever opens that link owns the agent:");
+  if (!io.terminal) return stop("Setup did not run taskfast init: with no TaskFast API key it creates an agent and prints a claim link, and whoever opens that link owns the agent. Setup runs it only at a terminal. Run it yourself in your own terminal, not through a coding agent.");
+  const found = cliVersion(io, c.dir);
+  if (!found) return stop("Setup did not run taskfast init: it could not read a taskfast version from `taskfast --version`. Install taskfast 0.26.0 or later (https://github.com/Akuja-Inc/taskfast-cli). Then run:");
+  if (!atLeast(found, KEYLESS_CLI)) return stop(`taskfast ${found.join(".")} is installed. Creating an agent without a TaskFast API key needs taskfast 0.26.0 or later, so setup did not run taskfast init. Upgrade it (brew upgrade akuja-inc/taskfast/taskfast-cli, or see https://github.com/Akuja-Inc/taskfast-cli), or set TASKFAST_HUMAN_API_KEY to a personal API key from TaskFast's /accounts page. Then run:`);
+  const result = io.capture("taskfast", c.initArgs, c.dir, childEnv(io));
+  const reply = readEnvelope(result.stdout);
+  const saved = existsSync(join(c.dir, ".taskfast/config.json"));
+  const why = reply.code === undefined ? "no reason given" : `${reply.code}${reply.message ? `: ${reply.message}` : ""}`;
+  if (result.status === 0 && reply.action === "minted_unclaimed") {
+    io.log(`\nagents/${c.id} has a working TaskFast key on ${c.environment}, but nobody owns the agent yet. Its name is ${c.name}. Open the claim link printed above and sign in before the time taskfast printed, or the key stops working. Whoever opens the link owns the agent, so do not paste it into a chat or share it. Until it is claimed, the agent cannot bid, accept a bid, register a webhook or update its profile. The link is saved only in agents/${c.id}/.taskfast/config.json.${note}`);
+  } else if (saved) {
+    io.log(`\ntaskfast init created the agent and saved its key and claim link in agents/${c.id}/.taskfast/config.json, then stopped (${why}). Open the claim link printed above to claim it. Running the same command again reuses the saved key and does not create another agent:${command}${note}`);
+  } else if (reply.code === "missing_api_key") {
+    stop(`TaskFast on ${c.environment} does not create agents without an account yet (it answered 404). Nothing was saved and no agent was created. To sign up with an account instead, set TASKFAST_HUMAN_API_KEY to a personal API key from TaskFast's /accounts page, then run:`);
+  } else if (reply.code === "rate_limited") {
+    const minutes = reply.retryAfter === undefined ? 0 : Math.ceil(reply.retryAfter / 60);
+    stop(`TaskFast refused to create the agent (${why}). Nothing was saved. ${minutes > 0 ? `Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}` : "Try again later"}, or use a personal API key (TASKFAST_HUMAN_API_KEY). Then run:`);
+  } else if (reply.code !== undefined) {
+    stop(`taskfast init did not create the agent (${why}). Nothing was saved in agents/${c.id}. Try again later:`);
+  } else {
+    stop("taskfast init did not finish. Run it yourself when ready:");
+  }
 }
 
 const VALUE = /^[^\s#"'`\\]+$/;
@@ -412,14 +498,18 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
 
   // 4. The agent's TaskFast account, in the environment given by --env.
   const cliEnv = taskfastEnv(environment);
-  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init", `--keystore-path=${WALLET_PATH}`];
+  const keyless = !io.env.TASKFAST_API_KEY && !io.env.TASKFAST_HUMAN_API_KEY && !existsSync(join(dir, ".taskfast/config.json"));
+  const name = keyless ? agentName(io.random) : "";
+  const initArgs = [...(cliEnv === "prod" ? [] : ["--env", cliEnv]), "init", `--keystore-path=${WALLET_PATH}`, ...(keyless ? [KEYLESS_ARGS, `--agent-name=${name}`] : [])];
   const initCmd = `taskfast ${initArgs.join(" ")}`;
-  const ran = o.init ?? !/^n/i.test(await io.ask(`\nRun \`${initCmd}\` in agents/${id} now? It signs the agent up on ${environment} and sets up its wallet. [Y/n]: `));
+  const outcome = keyless ? `creates the agent on ${environment} without a TaskFast account, sets up its wallet and prints a link you open to claim it` : `signs the agent up on ${environment} and sets up its wallet`;
+  const ran = o.init ?? !/^n/i.test(await io.ask(`\nRun \`${initCmd}\` in agents/${id} now? It ${outcome}. [Y/n]: `));
+  const generated = keyless && !existsSync(passwordPath) && o.walletPasswordEnv === undefined;
   // An existing file may already encrypt a wallet, so it is never replaced.
   if (existsSync(passwordPath)) io.log(`Using the wallet password already in agents/${id}/${PASSWORD_PATH}`);
   else {
     // Only an interactive init asks, so a run answered entirely by flags never prompts.
-    let value = o.walletPasswordEnv === undefined ? (ran && o.init === undefined ? undefined : "") : io.env[o.walletPasswordEnv];
+    let value = o.walletPasswordEnv !== undefined ? io.env[o.walletPasswordEnv] : generated ? randomBytes(32).toString("base64url") : ran && o.init === undefined ? undefined : "";
     while (value === undefined) {
       // Untrimmed: the CLI keeps spaces, so the file holds exactly what was typed.
       const v = await io.ask(`Wallet password for signing posts, escrow and settlement, at least ${MIN_PASSWORD} characters (input is masked; press Enter to skip): `, true);
@@ -445,8 +535,11 @@ export async function setup(io: SetupIO, o: SetupOptions = {}): Promise<void> {
   // unlocked when the agent signs. Pass --wallet-password-env TASKFAST_WALLET_PASSWORD to use its value.
   const { TASKFAST_WALLET_PASSWORD: shellPassword, ...initEnv } = io.env;
   if (ran && shellPassword) io.log(`taskfast init runs without TASKFAST_WALLET_PASSWORD, so the wallet uses agents/${id}/${PASSWORD_PATH} as the agent does.`);
-  const status = ran ? io.run("taskfast", initArgs, dir, initEnv) : -1;
-  if (status !== 0) io.log(`\n${ran ? "taskfast init did not finish. " : ""}Run it yourself when ready:\n  cd agents/${id} && taskfast ${initArgs.join(" ")}`);
+  if (keyless) keylessInit(io, { id, dir, environment, initArgs, name, ran, generated });
+  else {
+    const status = ran ? io.run("taskfast", initArgs, dir, initEnv) : -1;
+    if (status !== 0) io.log(`\n${ran ? "taskfast init did not finish. " : ""}Run it yourself when ready:\n  cd agents/${id} && taskfast ${initArgs.join(" ")}`);
+  }
 
   io.log(`\nNext:\n  pnpm agents --env ${environment}`);
 }
@@ -495,6 +588,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     root: process.cwd(),
     env: process.env,
     log: (line) => console.log(line),
+    terminal: Boolean(process.stderr.isTTY),
     ask: async (question, hidden = false) => {
       if (!lines) {
         const message = question.trim();
