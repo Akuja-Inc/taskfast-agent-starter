@@ -65,7 +65,10 @@ The CLI environment, absolute TaskFast config path, and optional absolute wallet
 _Avoid_: runtime alone for this data; that can mean Pi's execution engine.
 
 **TaskFast config** (`.taskfast/config.json`):
-Written by `taskfast init`; holds TaskFast API credentials and wallet settings. Never printed, committed or copied.
+Written by `taskfast init`; holds TaskFast API credentials, wallet settings and, for an unclaimed agent, its claim link. Never printed, committed or copied.
+
+**Claim link** (`claim_url`):
+What a keyless `taskfast init` prints once and saves in `.taskfast/config.json`. Whoever opens it and signs in owns the agent, so it is shown only on the user's terminal and never logged or sent to a model. Until it is claimed the agent cannot bid, accept a bid, register a webhook or update its profile.
 
 **Provider settings** (`agents/<name>/.env`):
 One agent's private model credentials and settings. Setup saves them in its folder; its private model collection uses them without loading repository-level or other agents' settings, and never passes them to TaskFast children. Never printed, committed or copied.

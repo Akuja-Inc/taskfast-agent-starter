@@ -68,7 +68,7 @@ export function cliOutcome(stdout: string, failure: string | undefined, stderr =
   } catch {}
   if (failure === undefined && envelope?.ok === true) return { outcome: "ok", data: envelope.data ?? null };
   const code = typeof envelope?.error?.code === "string" ? envelope.error.code : null;
-  const message = typeof envelope?.error?.message === "string" ? envelope.error.message : (failure ?? stderr).slice(0, 500) || "taskfast gave no readable result";
+  const message = (typeof envelope?.error?.message === "string" ? envelope.error.message : (failure ?? stderr).slice(0, 500) || "taskfast gave no readable result").replace(/claim_token=[^&\s"']+/g, "claim_token=***");
   const outcome: Outcome = code && REFUSED.has(code) ? "failed" : "uncertain";
   return { outcome, error: code ? `${code}: ${message}` : message };
 }

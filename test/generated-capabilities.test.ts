@@ -32,7 +32,7 @@ it.each(["stdio", "http"])("runs a generated agent's capabilities through compac
     cpSync(join(ROOT, "examples"), join(root, "examples"), { recursive: true });
     cpSync(join(ROOT, "providers.json"), join(root, "providers.json"));
     const io: SetupIO = {
-      root, env: {},
+      root, env: {}, terminal: false,
       ask: async () => { throw new Error("fully flagged setup must not prompt"); },
       run: () => { throw new Error("setup must not initialize an account or install software"); },
       // Offline stand-in for the CLI export, using its unchanged, captured bundle.
